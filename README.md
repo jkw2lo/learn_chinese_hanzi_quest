@@ -198,6 +198,18 @@ can never leave the writer deaf to a real hand. Pointer lock is commonly
 refused inside an embedded frame that wasn't granted it — the page says so and
 suggests opening in its own tab.
 
+**Settings → Start the trackpad automatically** arms every writing box as it
+appears, instead of waiting for the 触控 button or `T`. It is off by default,
+because pointer lock hides the cursor and doing that unasked is startling.
+
+Auto-arming goes through `padAuto()`, which is allowed to fail. Pointer lock
+generally wants a user gesture and a drill card that arrives on the auto-advance
+timer hasn't got one, so a refusal here is expected rather than exceptional: it
+sets `pad.quiet`, which suppresses the "your browser blocked pointer lock"
+note. An automatic attempt the browser turns down is not an error the learner
+needs to read about — the manual button is still exactly where it was. Only an
+attempt they actually asked for gets an explanation.
+
 ## Audio
 
 **Characters play bundled clips, not synthesised speech.** `speechSynthesis`
@@ -320,6 +332,61 @@ everything else: `tallyExtra()` fires only when `session.practice` is set and
 rep never counts as a character revised or ticks anything off. A smoke check
 holds both directions.
 
+## Placement — finding where to start
+
+Plenty of people arrive already reading 人 and 大 and 中国. Making them click
+through twenty characters they have known for years is the fastest way to lose
+them, so a quiz offered once at the end of the tour walks the curriculum **in
+order** and finds where recognition gives out.
+
+It probes rather than tests everything: a block of `PROBE_SIZE` (5) characters
+sampled evenly across `PROBE_WINDOW` (20) curriculum positions. Score
+`PROBE_PASS` (4) or better and the whole window is credited and the next block
+starts; drop below and the walk stops there. Someone who reads the first ~95
+characters is placed at 100 after about 30 questions — roughly two minutes.
+That is the deliberate trade: the quiz stays short, at the cost of crediting
+characters it never actually showed.
+
+Questions are **meaning → character**, not the other way round. Recognising 山
+among four English words is easy to fake by elimination; picking 山 out of four
+plausible characters is not. Distractors come from within 30 positions in the
+curriculum, so they are of a piece — a block of easy ones would place everybody
+at the end. There is an explicit "I don't know this one", because the quiz is
+only useful if people answer honestly, and the screen says so.
+
+Credit is deliberately shallow, for the same reason. A credited character
+starts at `PLACED_LVL` (2), flagged `placed: true`, with its first review fanned
+across the next `PLACED_SPREAD` (5) days — 100 characters land as 20 reviews a
+day, not a wall of 100, and nothing is due on day one at all. Anything credited
+in error surfaces within the week as an ordinary review.
+
+**`placeAt()` may only ever add.** A character already in the record is left
+strictly alone. Without that, retaking the quiz after a month of study would
+knock every one of those characters back to level 2 and reset its due date — a
+silent, partial reset dressed up as a re-place. A smoke check holds it.
+
+## Personalisation
+
+Two optional questions, asked once after placement: a name, and any number of
+interests from `INTERESTS` in `js/data.js` (10 categories, 8 words each).
+
+The name is used where the app addresses you and nowhere else. The interests
+feed **one thing**: the word of the week. They explicitly do *not* reorder the
+curriculum — that order is load-bearing, 马 has to arrive before 妈 and 吗
+whatever you happen to be interested in, and letting a preference reshuffle it
+would quietly break the thing that makes each character easier than the last.
+
+So the word of the week runs *beside* the curriculum rather than through it:
+one real word from what you said you cared about, usually built from characters
+well past where you have reached, with a line about where it comes from. It is
+deliberately not a drill — never scheduled, graded, counted, or added to the
+review queue. The moment it becomes homework it stops being the thing that
+makes you want to keep going. The card says as much: *nothing to do here*.
+
+`wordOfWeek()` seeds the pick from an ISO week key, so it is stable all week and
+survives reloads, and it won't repeat until everything in your chosen interests
+has had a turn.
+
 ## Go deeper, and what "solid" means
 
 A character is **solid** in a skill after `PASSES_FOR_SOLID` (3) clean answers
@@ -382,6 +449,34 @@ Three things live outside `state` and have to be cleared by hand:
 The theme is deliberately *not* reset: it's a display preference in its own
 localStorage key, not progress.
 
+## What a practice round draws on
+
+Sorting the whole library by weakness and taking the top N stopped working once
+the library got big: the same forty characters were always the weakest, so the
+same forty came round every time and the hundred behind them were never seen
+again.
+
+Two rules in `practicePool()` fix it.
+
+**70/30 by recency.** `RECENT_SHARE` of a round comes from the last
+`RECENT_WINDOW` (40) characters introduced, because those are what is actually
+at risk of slipping. The remaining 30% reaches back into everything older, so
+the early stages don't rot. A new learner with nothing older just gets a full
+round of recent ones.
+
+**Least-shown first.** Each character record now carries `shown` alongside
+`skills`: `skills` counts clean answers, `shown` counts times *asked at all*.
+Ordering by `shown` is what rotates the pool. Weakness is only the tie-break —
+ordering by weakness first pins a character you keep missing to the front of the
+queue permanently, which is how you end up seeing 难 six times in an evening.
+
+Over 40 simulated rounds against a 200-character library the split holds at
+exactly 70%, 160 distinct characters come up, and no older character is asked
+more than three times. The eligible set is passed *into* `practicePool` rather
+than filtered afterwards — filtering a ready-made pool down to the writable ones
+used to hand back a short round and quietly break the split it had just
+computed.
+
 ## Sticking points
 
 A character missed five or more times, and more often than it's been right,
@@ -397,8 +492,10 @@ grouped as Studying / Sound / Your data, and reachable from any tab. Record is
 progress only. Saving progress has its own button (⤓) beside the gear, because
 it's the one thing worth doing before you know you needed it.
 
-A six-step tour runs on the first visit (`state.tour`) and can be replayed
-from Settings. The last step is about saving to a file, because that's the one
+A six-step tour runs on the first visit (`state.tour`), then the placement offer,
+then the two profile questions — in that order, each waiting for the last, so
+the first run is a short sequence rather than a pile of dialogs. All three can
+be replayed from Settings. The last step is about saving to a file, because that's the one
 thing the app can't do for you and the one thing you only miss once it's gone.
 
 ## A note on the streak
@@ -411,7 +508,7 @@ resets. The tracker also shows total days studied, which never resets.
 
     index.html        page shell
     css/app.css       the whole design system
-    js/data.js        curriculum, radicals, the menu — all the content
+    js/data.js        curriculum, radicals, the menu, interests — all the content
     js/strokes.js     bundled stroke-order data (generated, do not hand-edit)
     js/audio.js       bundled spoken clips (generated, do not hand-edit)
     js/srs.js         scheduling, streaks, the menu day-pick, storage

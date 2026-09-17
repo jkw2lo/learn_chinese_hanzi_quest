@@ -1508,6 +1508,76 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 
 /* ---------- first-run tour ---------- */
 
+/* ---------- interests, and the word of the week ---------- */
+
+.int-grid { display: grid; grid-template-columns: 1fr; gap: .45rem; }
+@media (min-width: 520px) { .int-grid { grid-template-columns: 1fr 1fr; } }
+.int {
+  display: flex; align-items: center; gap: .6rem; text-align: left;
+  padding: .6rem .7rem; border-radius: var(--r);
+  border: 1px solid var(--rule); background: var(--sheet); cursor: pointer;
+  transition: border-color .15s, background .15s, transform .12s;
+}
+.int:hover { transform: translateY(-1px); border-color: var(--ink-3); }
+.int.on { border-color: var(--jade); background: var(--jade-wash); }
+.int-icon { font-size: 1.2rem; line-height: 1; flex: none; }
+.int-body { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.int-body b { font-size: .84rem; font-weight: 600; }
+.int-body .han { font-family: var(--f-han-ui); font-size: .72rem; color: var(--ink-3); }
+.int.on .int-body .han { color: var(--jade); }
+
+.wotw { margin-top: .9rem; padding: .9rem 1rem 1rem; display: flex; flex-direction: column; gap: .6rem; }
+.wotw-word {
+  display: flex; flex-direction: column; align-items: center; gap: .15rem;
+  padding: .7rem .5rem; border-radius: var(--r); border: 1px solid var(--rule-2);
+  background: var(--paper); cursor: pointer; width: 100%;
+  transition: border-color .15s, transform .12s;
+}
+.wotw-word:hover { border-color: var(--gold); transform: translateY(-1px); }
+.wotw-word .z { font-family: var(--f-han); font-size: 1.9rem; line-height: 1.15; color: var(--ink); }
+.wotw-word .p { font-family: var(--f-pin); font-size: .84rem; color: var(--jade); }
+.wotw-word .m { font-size: .8rem; color: var(--ink-2); }
+.wotw-note { font-size: .78rem; line-height: 1.55; color: var(--ink-2); }
+.wotw .note.dim { font-size: .7rem; color: var(--ink-3); }
+.wotw-empty .note { font-size: .78rem; }
+
+/* ---------- placement quiz ---------- */
+
+.place {
+  position: fixed; inset: 0; z-index: 85; background: var(--paper);
+  display: none; flex-direction: column;
+}
+.place.on { display: flex; }
+.place-bar {
+  display: flex; align-items: center; gap: .8rem;
+  padding: .6rem .8rem; border-bottom: 1px solid var(--rule-2); background: var(--sheet);
+}
+.place-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--rule-2); overflow: hidden; }
+.place-prog > i { display: block; height: 100%; background: var(--jade); transition: width .4s ease; }
+.place-count { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
+.place-body { flex: 1; overflow-y: auto; display: grid; place-items: center; padding: 1.5rem 1rem 3rem; }
+.place-inner {
+  width: min(32rem, 100%); display: flex; flex-direction: column;
+  align-items: center; gap: .9rem; text-align: center;
+}
+.place-q { font-family: var(--f-display); font-size: 1.9rem; line-height: 1.15; }
+.place-inner h1 { font-family: var(--f-display); font-size: 1.4rem; line-height: 1.25; }
+.place-opts { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; width: 100%; margin-top: .3rem; }
+.place-opt {
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r);
+  padding: 1.1rem .6rem; cursor: pointer; transition: transform .12s, border-color .15s, background .15s;
+}
+.place-opt .han { font-family: var(--f-han); font-size: 2.6rem; line-height: 1; color: var(--ink); }
+.place-opt:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--ink-3); box-shadow: var(--shadow); }
+.place-opt:disabled { cursor: default; }
+.place-opt.right { border-color: var(--jade); background: var(--jade-wash); }
+.place-opt.wrong { border-color: var(--seal); background: var(--seal-wash); }
+.place-seal { font-size: 2.6rem; line-height: 1; }
+.place-foot { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center; margin-top: .4rem; }
+.place-inner .note { max-width: 30rem; }
+.place-inner .note.dim { font-size: .72rem; color: var(--ink-3); }
+@media (min-width: 560px) { .place-opts { grid-template-columns: repeat(4, 1fr); } }
+
 /* ---------- asking before something irreversible ----------
 
    Modelled on the tour card, one step above it, because it can be raised from

@@ -1,6 +1,10 @@
 /* Hanzi Quest — curriculum data.
    Each entry: c=character, p=pinyin, m=meaning, comp=components,
    story=mnemonic, words=[[word,pinyin,meaning]], sent=[zh,pinyin,en] */
+/* Lives here rather than in app.js because srs.js needs it too, and srs.js is
+   loaded without app.js by the smoke harness. One binding, one owner. */
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
 const HQ = [];
 HQ.push(
 {c:"一",p:"yī",m:"one",comp:[],story:"One finger, laid flat. The simplest character in the language — and your first.",words:[["一个","yí gè","one (of something)"],["第一","dì yī","first"],["一天","yì tiān","one day"]],sent:["我有一个哥哥。","Wǒ yǒu yí gè gēge.","I have one older brother."]},
@@ -752,6 +756,128 @@ const MENU_CHARS = (() => {
 
 /* The menu grows up as you do: names first, then descriptions, then a
    specials board with longer dish names and a line from the kitchen. */
+/* ============================================================
+   Interests — what the word of the week is drawn from
+
+   The curriculum order is fixed and it is not going to be about your
+   hobbies: you get 一 and 人 and 是 whether or not you care about them,
+   because they are what everything else is built on. That is correct and
+   also a bit joyless.
+
+   So this runs alongside rather than through it. Pick a few interests and
+   the app shows one real word a week from them — often using characters
+   well past where you have got to, which is the point. It is a postcard
+   from further up the road, not a drill: nothing here is scheduled, graded
+   or counted, and no word of the week ever enters your review queue.
+
+   Each word: [hanzi, pinyin, meaning, a line worth knowing about it].
+   ============================================================ */
+
+const INTERESTS = {
+  food:   { icon: "🍜", name: "Food & cooking", zh: "美食", words: [
+    ["火锅","huǒguō","hotpot","Literally fire pot. In Chongqing the broth is half chilli oil, and the pot is often split down the middle so the faint-hearted have somewhere to go."],
+    ["小笼包","xiǎolóngbāo","soup dumplings","Little basket bun. The soup gets inside by folding chilled aspic into the filling — it melts as it steams."],
+    ["麻辣","málà","numbing-spicy","Two different sensations: 麻 is the buzz of Sichuan pepper, 辣 is chilli heat. Sichuan cooking is built on holding both at once."],
+    ["下厨","xiàchú","to cook","To go down to the kitchen. Used of someone who does not usually cook doing it anyway."],
+    ["夜市","yèshì","night market","Night market. The 市 is the same one in 超市 supermarket and 城市 city — a place of trade."],
+    ["家常菜","jiācháng cài","home cooking","Home-ordinary dishes. The highest praise a Chinese restaurant meal can get is that it tastes like this."],
+    ["回锅肉","huíguōròu","twice-cooked pork","Returned-to-the-pot meat. Boiled, sliced, then fried again — the classic test of a Sichuan cook."],
+    ["好吃","hǎochī","tasty","Good-eat. The parallel 好看 good-look and 好听 good-listen work exactly the same way."]
+  ]},
+  travel: { icon: "✈️", name: "Travel", zh: "旅行", words: [
+    ["旅行","lǚxíng","to travel","Travel-go. 旅 once meant a company of soldiers on the march."],
+    ["高铁","gāotiě","high-speed rail","High iron. China laid more of it in fifteen years than the rest of the world combined."],
+    ["长城","chángchéng","the Great Wall","Long wall. Not one wall but many, built and rebuilt over roughly two thousand years."],
+    ["护照","hùzhào","passport","Protect-certificate. 照 is the same character as in photograph."],
+    ["古镇","gǔzhèn","old town","Ancient town. What the tourist signs point at when the old quarter has survived."],
+    ["山水","shānshuǐ","landscape","Mountains-water. Also the name of the entire tradition of Chinese landscape painting."],
+    ["迷路","mílù","to get lost","Confused-road. A useful thing to be able to say."],
+    ["一路平安","yílù píng'ān","safe journey","May the whole road be peaceful. What you say to someone leaving."]
+  ]},
+  music:  { icon: "🎵", name: "Music", zh: "音乐", words: [
+    ["音乐","yīnyuè","music","Sound-joy. 乐 is read yuè here and lè when it means happy — the same character, because music was what joy was made of."],
+    ["唱歌","chànggē","to sing","Sing-song. Chinese often pairs a verb with its own object like this."],
+    ["古筝","gǔzhēng","guzheng","An ancient zither, twenty-one strings over movable bridges. Older than the guitar by a couple of thousand years."],
+    ["摇滚","yáogǔn","rock music","Shake-roll. A direct calque of rock and roll, and a good one."],
+    ["民谣","mínyáo","folk music","People-ballad. The genre most Chinese singer-songwriters come out of."],
+    ["节奏","jiézòu","rhythm","Joint-play. 节 is the node on a bamboo stalk — the regular break in something continuous."],
+    ["听众","tīngzhòng","audience","Listening-crowd. 众 is three people stacked up: a crowd, drawn as one."],
+    ["好听","hǎotīng","lovely to hear","Good-listen. The exact parallel of 好吃 tasty."]
+  ]},
+  film:   { icon: "🎬", name: "Film & TV", zh: "电影", words: [
+    ["电影","diànyǐng","film","Electric shadow. One of the best coinages in the language."],
+    ["导演","dǎoyǎn","director","Guide-perform. Also the verb: to direct."],
+    ["武侠","wǔxiá","martial chivalry","The genre of wandering swordsmen. 侠 is a person who rights wrongs outside the law."],
+    ["字幕","zìmù","subtitles","Character-curtain. Chinese broadcasts are subtitled even in Mandarin, because the dialects differ so much."],
+    ["剧情","jùqíng","plot","Drama-circumstance. 情 covers feeling, situation and the facts of a case."],
+    ["演员","yǎnyuán","actor","Performing-member. The 员 is the same one in 服务员 waiter."],
+    ["票房","piàofáng","box office","Ticket-room. Literally the booth; now the takings."],
+    ["看完","kànwán","to finish watching","Watch-complete. 完 after a verb is how Chinese says all the way through."]
+  ]},
+  sport:  { icon: "⚽", name: "Sport & fitness", zh: "运动", words: [
+    ["运动","yùndòng","exercise, sport","Move-motion. Also used for a political movement."],
+    ["跑步","pǎobù","running","Run-step. The 步 is a picture of two footprints, one after the other."],
+    ["太极","tàijí","tai chi","Supreme ultimate. The slow form is a martial art practised at walking pace."],
+    ["乒乓球","pīngpāngqiú","table tennis","Ping-pong ball — the first two characters are the sound of the ball, which is where the English got it too."],
+    ["加油","jiāyóu","go on, keep going","Add oil. Shouted at athletes, students and anyone having a bad week."],
+    ["比赛","bǐsài","match, competition","Compare-contest. 比 is two people side by side, being measured against each other."],
+    ["队友","duìyǒu","teammate","Team-friend. The 友 is the same one in 朋友."],
+    ["出汗","chūhàn","to sweat","Out-sweat. What the exercise is for."]
+  ]},
+  books:  { icon: "📚", name: "Books & writing", zh: "读书", words: [
+    ["书法","shūfǎ","calligraphy","Writing-method. Treated as a fine art on the level of painting, and judged on the movement of the brush."],
+    ["小说","xiǎoshuō","novel","Small talk. Fiction was once thought the lesser form; the name stuck after it stopped being true."],
+    ["诗","shī","poetry","The Tang dynasty produced so much of it that 唐诗 is its own category of thing."],
+    ["成语","chéngyǔ","idiom","Set phrase. Almost always four characters, almost always compressing a whole story into them."],
+    ["笔画","bǐhuà","stroke","Brush-stroke. Every character has a fixed number and a fixed order, which is why the writing drills insist."],
+    ["作家","zuòjiā","writer","Make-expert. The 家 suffix turns a craft into the person who practises it."],
+    ["读者","dúzhě","reader","Reading-one. 者 makes a doer out of a verb, like -er in English."],
+    ["翻译","fānyì","to translate","Turn-over and interpret. Also the noun: a translator."]
+  ]},
+  nature: { icon: "🌿", name: "Nature & outdoors", zh: "自然", words: [
+    ["自然","zìrán","nature; natural","Self-so. That which is the way it is of its own accord — a Daoist idea before it was a word for the outdoors."],
+    ["爬山","páshān","to hike","Climb-mountain. Used for anything from a stroll up a hill to a serious ascent."],
+    ["日出","rìchū","sunrise","Sun-out. 日落 sunset is sun-fall."],
+    ["樱花","yīnghuā","cherry blossom","Cherry flower. 花 is both the flower and the verb to spend — money, and time."],
+    ["竹子","zhúzi","bamboo","The 竹 radical sits on top of dozens of characters, 笔 pen among them."],
+    ["下雪","xiàxuě","to snow","Down-snow. Weather in Chinese falls: 下雨 rain, 下雪 snow."],
+    ["星空","xīngkōng","starry sky","Star-emptiness. 空 is both empty and sky, which is a reasonable thing to notice."],
+    ["空气","kōngqì","air","Empty-vapour. 气 is one of the oldest ideas in the language: breath, steam, energy, mood."]
+  ]},
+  tech:   { icon: "💻", name: "Technology", zh: "科技", words: [
+    ["电脑","diànnǎo","computer","Electric brain. The Taiwanese coinage that beat the mainland's 计算机 calculating machine in ordinary speech."],
+    ["手机","shǒujī","mobile phone","Hand machine. 机 was originally a loom."],
+    ["上网","shàngwǎng","to go online","Up-net. 网 is a picture of a net, and needed no new character for the internet."],
+    ["软件","ruǎnjiàn","software","Soft-piece. 硬件 hardware is hard-piece."],
+    ["密码","mìmǎ","password","Secret code. Also the PIN for your card."],
+    ["人工智能","réngōng zhìnéng","artificial intelligence","Human-made wisdom-ability. Usually shortened to 人工智能 in full or AI in speech."],
+    ["搜索","sōusuǒ","to search","Seek-and-seek. Two near-synonyms doubled up, which Chinese does often."],
+    ["死机","sǐjī","to crash","Dead machine. Blunt and perfect."]
+  ]},
+  art:    { icon: "🎨", name: "Art & design", zh: "艺术", words: [
+    ["艺术","yìshù","art","Skill-technique. Both halves once meant a practical craft."],
+    ["国画","guóhuà","Chinese painting","National painting. Ink on paper or silk, named to distinguish it from oils."],
+    ["水墨","shuǐmò","ink wash","Water-ink. The whole tradition rests on how much water is in the brush."],
+    ["颜色","yánsè","colour","Face-colour. 颜 is the complexion of a face; the word widened from there."],
+    ["设计","shèjì","design","Set out a plan. Also the noun, and the verb to design."],
+    ["印章","yìnzhāng","seal, chop","The red stamp on a painting. The 汉 in this app's own header is set in one."],
+    ["对称","duìchèn","symmetry","Facing-balance. The organising principle of most Chinese characters."],
+    ["留白","liúbái","negative space","Leave white. In painting, the unpainted part is considered part of the composition."]
+  ]},
+  business:{ icon: "💼", name: "Work & business", zh: "工作", words: [
+    ["公司","gōngsī","company","Public office. 上班 is to go to work; 下班 is to leave."],
+    ["同事","tóngshì","colleague","Same-matter. The person you share the work with."],
+    ["开会","kāihuì","to hold a meeting","Open-meet. 会 is both the meeting and the verb can."],
+    ["加班","jiābān","to work overtime","Add-shift. The 996 debate — nine to nine, six days — is about this word."],
+    ["工资","gōngzī","wages","Work-resources. 资 is capital or funds."],
+    ["老板","lǎobǎn","boss","Old board. Originally the shopkeeper behind the counter."],
+    ["合作","hézuò","to cooperate","Join-make. Also partnership."],
+    ["面试","miànshì","job interview","Face-test. The 试 is the same one in 考试 exam."]
+  ]}
+};
+
+const INTEREST_KEYS = Object.keys(INTERESTS);
+
 const MENU_TIERS = [
   { n: 1, at: 0,  label: "Dish names only" },
   { n: 2, at: 15, label: "With descriptions" },

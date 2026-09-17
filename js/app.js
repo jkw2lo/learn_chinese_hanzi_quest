@@ -28,7 +28,7 @@ const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m] : (RADICAL
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
-const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+/* shuffle lives in data.js — srs.js needs it as well */
 const pick = (arr, n) => shuffle([...arr]).slice(0, n);
 const one = arr => arr[(Math.random() * arr.length) | 0];
 
@@ -328,9 +328,20 @@ function writerBox(char, id) {
 const PAD_SENSITIVITY = 0.55;   /* trackpad travel : ink travel */
 
 const pad = { active: false, svg: null, box: null, lockEl: null, dot: null, hint: null,
-              x: 0, y: 0, ink: false, onEnd: null, onDraw: null };
+              x: 0, y: 0, ink: false, onEnd: null, onDraw: null, quiet: false };
 
 const padSupported = () => !!document.body.requestPointerLock && !!window.MouseEvent;
+
+/* Arm the trackpad on a writing box the learner didn't explicitly ask to arm.
+
+   Pointer lock normally wants a user gesture, and a drill card that arrives on
+   the auto-advance timer hasn't got one — so this is a request that is allowed
+   to be turned down. It fails silently and leaves the manual button exactly
+   where it was, which is why `quiet` exists. */
+function padAuto(box, mount, onEnd, onDraw, lockEl) {
+  if (!state.padAuto || pad.active || !padSupported()) return false;
+  return padStart(box, mount, onEnd, onDraw, lockEl, true);
+}
 
 /* Two sinks: a hanzi-writer quiz, fed mouse events it will believe, or a
    free page that just wants the brush position. */
@@ -442,11 +453,12 @@ function padArm() {
   document.addEventListener("keyup", padKey);
 }
 
-function padStart(box, mount, onEnd, onDraw, lockEl) {
+function padStart(box, mount, onEnd, onDraw, lockEl, quiet) {
   const svg = mount ? mount.querySelector("svg") : null;
   if ((!svg && !onDraw) || !padSupported() || pad.active) return false;
   pad.svg = svg; pad.box = box; pad.onEnd = onEnd; pad.onDraw = onDraw || null;
   pad.lockEl = lockEl || box;
+  pad.quiet = !!quiet;
 
   document.addEventListener("pointerlockchange", padLockChange);
   document.addEventListener("pointerlockerror", padRefused);
@@ -460,7 +472,12 @@ function padStart(box, mount, onEnd, onDraw, lockEl) {
 /* Pointer lock can be refused — notably inside an embedded frame that wasn't
    granted it. Say so plainly rather than leaving a dead button. */
 function padRefused() {
+  const quiet = pad.quiet;
   padStop();
+  /* An automatic attempt that the browser turns down is not an error the
+     learner needs to read about — the button is still right there. Only an
+     attempt they actually asked for gets an explanation. */
+  if (quiet) return;
   const box = pad.box || $(".tian");
   if (!box || box.querySelector(".pad-note")) return;
   const note = document.createElement("span");
@@ -485,6 +502,7 @@ function padStop() {
   pad.box?.classList.remove("padding-on");
   pad.dot = pad.hint = pad.svg = pad.box = pad.lockEl = null;
   pad.onDraw = null;
+  pad.quiet = false;
   const cb = pad.onEnd; pad.onEnd = null;
   cb?.();
 }
@@ -655,18 +673,19 @@ function practiceChars(mode) {
   return mode === "write" ? all.filter(c => window.STROKE_DATA[c]) : all;
 }
 
-/* The shakiest slice of that, which is what a round actually draws from. */
-function practiceAvailable(mode) {
-  let pool = practicePool(PRACTICE[mode].skill, 60);
-  if (mode === "write") pool = pool.filter(c => window.STROKE_DATA[c]);
-  return pool;
-}
+/* The characters one round draws, chosen by practicePool's 70/30 recency
+   split and least-shown-first rotation. The eligible set is passed in rather
+   than filtered out afterwards: filtering a ready-made pool down to the
+   writable ones used to hand a short round back, and quietly broke the split
+   it had just been at pains to get right. */
+const ROUND = 10;
+const practiceRound = mode => practicePool(PRACTICE[mode].skill, ROUND, practiceChars(mode));
 
 function startPractice(mode) {
   const cfg = PRACTICE[mode];
-  const pool = practiceAvailable(mode);
+  const pool = practiceRound(mode);
   if (!pool.length) return;
-  session.queue = pool.slice(0, 10).map(c => ({ t: "drill", c, kind: one(cfg.kinds) }));
+  session.queue = pool.map(c => ({ t: "drill", c, kind: one(cfg.kinds) }));
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
   session.combo = session.bestCombo = 0;
@@ -867,6 +886,11 @@ function renderDrill(item, ch, body, foot) {
       if (!padStart($(".tian", body), $("#" + wid, body), () => { btn.disabled = false; })) btn.disabled = false;
     });
 
+    /* with the setting on, the box arms itself as it appears */
+    const autoPad = () => padAuto($(".tian", body), $("#" + wid, body), () => {
+      const btn = $("#padW"); if (btn) btn.disabled = false;
+    });
+
     /* Looking at the strokes shouldn't end the question — that's the moment
        you most want to try it. So the hint offers a way back into writing. */
     const showStrokes = () => {
@@ -893,6 +917,7 @@ function renderDrill(item, ch, body, foot) {
         <button class="btn btn-ghost btn-sm" id="skipW">${peeked ? "Show me again" : "Show me the strokes"}</button>`;
       bindPad();
       $("#skipW").onclick = showStrokes;
+      autoPad();
       w.quiz({
         showHintAfterMisses: 2,
         onMistake: () => missed++,
@@ -1511,6 +1536,7 @@ function renderNotebook() {
     nbFollow();
   }));
   renderNotebookPadState();
+  nbAutoPad();
 }
 
 /* Keep the brush on whichever square is live, without disturbing the lock. */
@@ -1574,6 +1600,17 @@ function startSquare(i) {
 }
 
 const byWordLabel = () => nb.word ? esc(nb.word[0]) : "Today's characters";
+
+/* The notebook moves between squares without tearing the lock down, so this
+   only ever has to fire for the first square of an exercise. */
+function nbAutoPad() {
+  const sq = $(`#nbStage .nb-sq[data-sq="${nb.idx}"]`);
+  const mount = $("#nbw" + nb.idx);
+  if (!sq || !mount || !mount.querySelector("svg")) return;
+  if (padAuto($(".tian", sq), mount, renderNotebookPadState, null, $("#nbStage"))) {
+    setTimeout(renderNotebookPadState, 60);
+  }
+}
 
 function nbPad() {
   if (pad.active) { padStop(); renderNotebookPadState(); return; }
@@ -1677,6 +1714,7 @@ function buildWritePage() {
   wpControls();
   wpSizePage();
   wpBindInk();
+  wpAutoPad();
 
   $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
   $("#wpClear").onclick = () => wpClear();
@@ -1920,6 +1958,10 @@ function wpPad() {
   if (padStart($("#wpPage"), null, wpControls, wpDraw)) setTimeout(wpControls, 50);
 }
 
+function wpAutoPad() {
+  if (padAuto($("#wpPage"), null, wpControls, wpDraw)) setTimeout(wpControls, 50);
+}
+
 async function wpSave() {
   if (!wp.strokes.length) return;
   const page = $("#wpPage");
@@ -2105,7 +2147,8 @@ function renderToday() {
   const clear = newLeft === 0 && due === 0;
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
-  const headline = clear ? "You're clear for today." : done > 0 ? "Keep going." : "Ready when you are.";
+  const who = state.name ? `, ${state.name}` : "";
+  const headline = clear ? `You're clear for today${who}.` : done > 0 ? `Keep going${who}.` : `Ready when you are${who}.`;
   const sub = clear
     ? (remainingNew() ? "Nothing is due. You can study ahead whenever you like."
        : "Every character in the library is in your review rotation.")
@@ -2174,6 +2217,38 @@ function renderToday() {
       </span>
       <span class="deck-go">→</span>
     </button>`;
+
+  /* ---- word of the week: a postcard from further up the road ---- */
+  const wk = wordOfWeek();
+  const wotw = (() => {
+    if (!wk) {
+      return `<div class="sheet wotw wotw-empty">
+        <div class="pr-head"><span class="eyebrow">Word of the week <span class="han">每周一词</span></span></div>
+        <p class="note">Tell the app what you're interested in and it'll show you one real word a week from it —
+          usually made of characters well past where you've got to.</p>
+        <button class="btn btn-ghost btn-sm btn-block" id="wotwSetup">Pick your interests</button>
+      </div>`;
+    }
+    const cat = INTERESTS[wk.cat];
+    const [word, pin, mean, note] = cat.words[wk.i];
+    const glyphs = [...word].filter(c => /[\u4e00-\u9fff]/.test(c));
+    const known = glyphs.filter(isKnown).length;
+    return `<div class="sheet wotw">
+      <div class="pr-head">
+        <span class="eyebrow">Word of the week <span class="han">每周一词</span></span>
+        <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}</span>
+      </div>
+      <button class="wotw-word" id="wotwSay" title="Hear it">
+        <span class="z">${renderZh(word)}</span>
+        <span class="p">${esc(pin)}</span>
+        <span class="m">${esc(mean)}</span>
+      </button>
+      <p class="wotw-note">${esc(note)}</p>
+      <p class="note dim">${known === glyphs.length
+        ? "You can already read every character in it."
+        : `${known} of ${glyphs.length} character${glyphs.length === 1 ? "" : "s"} are ones you know — the rest are ahead of you. Nothing to do here; it isn't a drill.`}</p>
+    </div>`;
+  })();
 
   const decks = `<div class="sheet decks">
     <span class="eyebrow">Flashcards</span>
@@ -2262,7 +2337,7 @@ function renderToday() {
     <div class="pr-grid pr-grid-3">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
         const chars = practiceChars(id);
-        const n = practiceAvailable(id).length;
+        const n = chars.length;
         const st = skillStanding(cfg.skill, chars);
         const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
         const seg = (cls, count) => count
@@ -2346,10 +2421,15 @@ function renderToday() {
   $("#viewToday").innerHTML = `<div class="wrap">
     <div class="cols">
       <div class="section">${hero}${todoBlock}${deeper}${sideQuest}</div>
-      <div class="col-side">${decks}</div>
+      <div class="col-side">${decks}${wotw}</div>
     </div>
   </div>`;
 
+  $("#wotwSetup")?.addEventListener("click", () => openProfile(false));
+  $("#wotwSay")?.addEventListener("click", () => {
+    const c = INTERESTS[wk.cat].words[wk.i][0];
+    sayPhrase(c, true);
+  });
   $("#startBtn")?.addEventListener("click", startSession);
   $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
@@ -2634,6 +2714,12 @@ function openSettings() {
           <label>Include writing drills<small>Trace from memory once a character is solid.</small></label>
           <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
         </div>
+        <div class="settings-row">
+          <label>Start the trackpad automatically<small>${padSupported()
+            ? "Every writing box arms itself for trackpad writing, instead of waiting for the 触控 button or <kbd class=\"opt-n\">T</kbd>. Esc drops out of it. Some browsers only allow this straight after a click — where one refuses, the button is still there."
+            : "This browser has no pointer lock, so trackpad writing isn't available here."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="padTgl" ${padSupported() ? "" : "disabled"}>${state.padAuto ? "On" : "Off"}</button>
+        </div>
       </div>
     </div>
 
@@ -2677,6 +2763,18 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="backupBtn">Save</button>
         </div>
         <div class="settings-row">
+          <label>About you<small>${state.name ? `Called ${esc(state.name)}. ` : ""}${(state.interests || []).length
+            ? `${state.interests.length} interest${state.interests.length === 1 ? "" : "s"} picked — they set the word of the week.`
+            : "Set a name and pick interests for the word of the week."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="profileBtn">Edit</button>
+        </div>
+        <div class="settings-row">
+          <label>Find my level<small>${state.placed && state.placed.at
+            ? `Placed you at ${state.placed.at} characters on ${esc(new Date(state.placed.on).toLocaleDateString())}. Taking it again only ever adds characters — it never removes progress.`
+            : "A quick check that walks the curriculum in order and credits what you already read."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="placeBtn">${state.placed ? "Retake" : "Start"}</button>
+        </div>
+        <div class="settings-row">
           <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
           <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
         </div>
@@ -2694,8 +2792,11 @@ function openSettings() {
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $("#padTgl").onclick = () => { state.padAuto = !state.padAuto; save(); openSettings(); };
   $("#audioTgl").onclick = () => { state.audio = !state.audio; save(); openSettings(); };
   $("#backupBtn").onclick = openBackup;
+  $("#profileBtn").onclick = () => openProfile(false);
+  $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
   $("#tourBtn").onclick = () => { closeSheet(); setTimeout(() => startTour(true), 250); };
   $("#resetBtn").onclick = async () => {
     const pages = (await diaryAll()).length;
@@ -2944,6 +3045,188 @@ function onKey(e) {
 }
 
 /* ============================================================
+   Profile — a name, and what you care about
+
+   Two questions, both skippable. The name is used where the app addresses you
+   directly and nowhere else. The interests feed the word of the week and
+   nothing else — in particular they do NOT reorder the curriculum, because the
+   teaching order is load-bearing: 马 has to arrive before 妈 and 吗 whatever
+   you happen to be interested in.
+   ============================================================ */
+
+function openProfile(firstRun) {
+  const chosen = new Set(state.interests || []);
+  openSheet(`<span class="han">关于你</span> About you`, `<div class="wrap"><div class="section">
+    <div class="today-head">
+      <h1>${firstRun ? "Two quick questions." : "About you"}</h1>
+      <p class="note">Both optional, and both changeable later. Your name is only ever used to address you.
+        Your interests pick the word of the week — they don't change the order characters are taught in,
+        because that order is what makes each character easier than the last.</p>
+    </div>
+
+    <div class="sheet block">
+      <div class="block-head"><span class="k">名字</span><span class="t">What should we call you?</span></div>
+      <input type="text" id="pfName" class="search" maxlength="40" placeholder="Your name"
+        value="${esc(state.name || "")}" autocomplete="given-name">
+    </div>
+
+    <div class="sheet block">
+      <div class="block-head"><span class="k">兴趣</span><span class="t">What are you into?</span></div>
+      <p class="note">Pick any number. Each week you'll get one real word from them — usually built from
+        characters well past where you've got to, which is the point of it.</p>
+      <div class="int-grid">
+        ${INTEREST_KEYS.map(k => {
+          const it = INTERESTS[k];
+          return `<button class="int ${chosen.has(k) ? "on" : ""}" data-int="${esc(k)}" aria-pressed="${chosen.has(k)}">
+            <span class="int-icon">${esc(it.icon)}</span>
+            <span class="int-body"><b>${esc(it.name)}</b><span class="han">${esc(it.zh)}</span></span>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="split">
+      <button class="btn btn-ghost" id="pfSkip">${firstRun ? "Skip for now" : "Cancel"}</button>
+      <button class="btn btn-seal" id="pfSave">Save</button>
+    </div>
+  </div></div>`);
+
+  $$("#svBody .int").forEach(b => b.onclick = () => {
+    const k = b.dataset.int;
+    if (chosen.has(k)) chosen.delete(k); else chosen.add(k);
+    b.classList.toggle("on", chosen.has(k));
+    b.setAttribute("aria-pressed", chosen.has(k));
+  });
+  $("#pfSkip").onclick = () => { state.profiled = true; save(); closeSheet(); };
+  $("#pfSave").onclick = () => {
+    state.name = $("#pfName").value.trim().slice(0, 40);
+    const next = [...chosen];
+    /* a changed interest set invalidates a pick that may no longer be in it */
+    if ((state.interests || []).join() !== next.join()) state.wotw = null;
+    state.interests = next;
+    state.profiled = true;
+    save();
+    closeSheet();
+  };
+}
+
+/* ============================================================
+   Placement — finding where to start
+
+   Four options, meaning to character. Meaning-to-character rather than the
+   other way round because recognising 山 among four English words is easy to
+   fake by elimination, while picking 山 out of four plausible characters is
+   not. The distractors are drawn from nearby in the curriculum so they look
+   alike; a block of easy ones would place everybody at the end.
+   ============================================================ */
+
+const place = { start: 0, block: [], idx: 0, right: 0, asked: 0, done: false };
+
+function openPlacement() {
+  place.start = 0; place.idx = 0; place.right = 0; place.asked = 0; place.done = false;
+  place.block = probeBlock(0);
+  $("#place").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderPlacement();
+}
+
+function closePlacement() {
+  $("#place").classList.remove("on");
+  document.body.style.overflow = "";
+  renderAll();
+  maybeOfferProfile();
+}
+
+function placementOptions(c) {
+  const ch = CHAR_INDEX[c];
+  /* neighbours in the curriculum: same era, similar difficulty, genuinely
+     confusable — rather than three characters from four stages away */
+  const near = HQ
+    .filter(x => x.c !== c && Math.abs(x.i - ch.i) <= 30)
+    .sort((a, b) => Math.abs(a.i - ch.i) - Math.abs(b.i - ch.i));
+  return shuffle([ch, ...pick(near.slice(0, 18), 3)]);
+}
+
+function renderPlacement() {
+  const total = Math.ceil(HQ.length / PROBE_WINDOW);
+  const doneBlocks = Math.floor(place.start / PROBE_WINDOW);
+  $("#placeProg").style.width = `${Math.min(100, (doneBlocks / total) * 100)}%`;
+  $("#placeCount").textContent = place.done ? "" : `${place.asked} asked`;
+
+  if (place.done) return renderPlacementDone();
+
+  const c = place.block[place.idx];
+  const ch = CHAR_INDEX[c];
+  const opts = placementOptions(c);
+
+  $("#placeBody").innerHTML = `<div class="place-inner">
+    <span class="eyebrow">Which character means</span>
+    <h1 class="place-q">${esc(ch.m)}</h1>
+    <div class="place-opts">
+      ${opts.map(o => `<button class="place-opt" data-c="${esc(o.c)}"><span class="han">${esc(o.c)}</span></button>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-sm" id="placeDunno">I don't know this one</button>
+    <p class="note">Answer honestly — guessing right here means the app skips teaching it.</p>
+  </div>`;
+
+  $$("#placeBody .place-opt").forEach(b => b.onclick = () => placementAnswer(b.dataset.c === c, b));
+  $("#placeDunno").onclick = () => placementAnswer(false, null);
+}
+
+function placementAnswer(ok, btn) {
+  place.asked++;
+  if (ok) place.right++;
+  $$("#placeBody .place-opt").forEach(b => {
+    b.disabled = true;
+    if (b.dataset.c === place.block[place.idx]) b.classList.add("right");
+  });
+  if (btn && !ok) btn.classList.add("wrong");
+  say(place.block[place.idx]);
+  setTimeout(placementNext, ok ? 340 : 900);
+}
+
+function placementNext() {
+  place.idx++;
+  if (place.idx < place.block.length) return renderPlacement();
+
+  /* block finished: passed it, or this is where the walk stops */
+  const passed = place.right >= Math.min(PROBE_PASS, place.block.length);
+  const nextStart = place.start + PROBE_WINDOW;
+  if (passed && nextStart < HQ.length) {
+    place.start = nextStart;
+    place.block = probeBlock(place.start);
+    place.idx = 0; place.right = 0;
+    return renderPlacement();
+  }
+  place.result = passed ? HQ.length : place.start;
+  place.done = true;
+  renderPlacement();
+}
+
+function renderPlacementDone() {
+  const at = place.result;
+  const fresh = HQ.slice(0, at).filter(ch => !isKnown(ch.c)).length;
+  const stage = at >= HQ.length ? STAGES[STAGES.length - 1] : (STAGES.find(s => at < s.end) || STAGES[0]);
+  $("#placeProg").style.width = "100%";
+  $("#placeBody").innerHTML = `<div class="place-inner">
+    <span class="place-seal">${at ? esc(stage.icon) : "🌱"}</span>
+    <h1>${at ? `You already read about ${at} character${at === 1 ? "" : "s"}.` : "We'll start at the beginning."}</h1>
+    <p class="note">${at
+      ? `That puts you in <b>${esc(stage.name)} ${esc(stage.zh)}</b>. ${fresh === at
+          ? `All ${at}`
+          : `The ${fresh} of them you don't already have`} go straight into your review rotation over the next few days rather than being taught from scratch — anything you were shakier on than you thought will surface there. Nothing you've already studied is touched.`
+      : `Nothing to skip, which is the easiest place to start from. ${HQ.length} characters, in an order where each one makes the next easier.`}</p>
+    <div class="place-foot">
+      <button class="btn btn-ghost" id="placeRedo">Take it again</button>
+      <button class="btn btn-seal" id="placeGo">${at ? "Start here" : "Start from the beginning"}</button>
+    </div>
+    <p class="note dim">You can reset and re-place from Settings at any time.</p>
+  </div>`;
+  $("#placeRedo").onclick = openPlacement;
+  $("#placeGo").onclick = () => { if (at) placeAt(at); else { state.placed = { at: 0, on: dayKey() }; save(); } closePlacement(); };
+}
+
+/* ============================================================
    Asking before something irreversible
 
    This used to be window.confirm(). Inside the cross-origin frame an artifact
@@ -3033,6 +3316,29 @@ function endTour() {
   state.tour = true; save();
   $("#tour").classList.remove("on");
   document.body.style.overflow = "";
+  maybeOfferPlacement();
+}
+
+/* Offered once, at the end of the tour, and only to a genuinely empty record —
+   asking someone mid-streak where they'd like to start would be alarming. */
+async function maybeOfferPlacement() {
+  if (wasPlaced() || Object.keys(state.chars).length) return;
+  const yes = await askConfirm({
+    k: "定位",
+    title: "Do you already read some Chinese?",
+    body: `A quick check walks the ${HQ.length} characters in order and finds where your recognition starts to give out, `
+        + "so you don't spend a fortnight on characters you have known for years. Under two minutes.",
+    yes: "Find my level", no: "Start from scratch"
+  });
+  if (yes) openPlacement();
+  else { state.placed = { at: 0, on: dayKey() }; save(); maybeOfferProfile(); }
+}
+
+/* Asked once, after placement is settled, so the first run is two short
+   questions rather than a gauntlet of dialogs. */
+function maybeOfferProfile() {
+  if (state.profiled) return;
+  setTimeout(() => { if (!state.profiled) openProfile(true); }, 400);
 }
 
 function renderTour() {
@@ -3130,6 +3436,7 @@ function boot() {
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
+    if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();
     else if ($("#charView").classList.contains("on")) closeSheet();
@@ -3137,6 +3444,7 @@ function boot() {
   });
   initTips();
   $("#flashClose").onclick = closeFlash;
+  $("#placeClose").onclick = closePlacement;
   $("#nbClose").onclick = closeNotebook;
   /* #nbPad lives inside the notebook stage now, and is bound when it renders */
   $("#flashPrev").onclick = () => flashStep(-1);

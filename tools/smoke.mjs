@@ -19,6 +19,8 @@ const CONTRACT = [
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay',
+  'probeBlock', 'placeAt', 'wasPlaced', 'PROBE_WINDOW', 'PROBE_SIZE',
+  'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied'
 ];
@@ -170,6 +172,82 @@ ok('so does the best day', api.extraBestDay() >= 3);
 const revd0 = api.reviewedToday().length;
 api.tallyExtra();
 ok('a rep is not a character revised', api.reviewedToday().length === revd0);
+
+console.log('\nwhat a practice round draws');
+/* The old pool sorted the whole library by weakness and took the top N, so the
+   same characters came round every time and the rest were never seen again. */
+{
+  const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {HQ,state,load,introduce,grade,practicePool,knownChars,rec,shownIn};')();
+  globalThis.localStorage._d = {};
+  fresh.load();
+  fresh.HQ.slice(0, 200).forEach(ch => fresh.introduce(ch.c));
+  fresh.knownChars().forEach((c, i) => { fresh.rec(c).first = i < 160 ? '2000-01-01' : '2030-01-01'; });
+  const recent = new Set(fresh.knownChars().filter(c => fresh.rec(c).first === '2030-01-01'));
+  let hits = 0, total = 0;
+  const seen = new Map();
+  for (let i = 0; i < 40; i++) for (const c of fresh.practicePool('r', 10)) {
+    total++; if (recent.has(c)) hits++;
+    seen.set(c, (seen.get(c) || 0) + 1);
+    fresh.grade(c, true, 'r', { practice: true });
+  }
+  const share = hits / total;
+  ok('about 70% of a round is recently learned', share > 0.6 && share < 0.8, (share * 100).toFixed(0) + '%');
+  ok('the rest reaches back into older characters', [...seen.keys()].some(c => !recent.has(c)));
+  ok('rotation spreads across the library', seen.size > 100, seen.size + ' distinct');
+  const olderCounts = [...seen.entries()].filter(([c]) => !recent.has(c)).map(([, n]) => n);
+  ok('and no old character is hammered', Math.max(...olderCounts) <= 3, 'max ' + Math.max(...olderCounts));
+  ok('being asked is counted separately from being right',
+     fresh.shownIn(fresh.knownChars()[0], 'r') >= fresh.rec(fresh.knownChars()[0]).skills.r);
+  const small = fresh.practicePool('r', 10, fresh.knownChars().slice(0, 4));
+  ok('a pool smaller than the round is returned whole', small.length === 4);
+}
+
+console.log('\nplacement');
+ok('a probe block samples across its window', (() => {
+  const b = api.probeBlock(0);
+  return b.length === Math.min(api.PROBE_SIZE, api.PROBE_WINDOW) && new Set(b).size === b.length;
+})());
+ok('blocks past the end of the curriculum are empty', api.probeBlock(HQ.length).length === 0);
+ok('the last block is clipped, not overrun',
+   api.probeBlock(HQ.length - 3).every(c => api.CHAR_INDEX ? true : true) && api.probeBlock(HQ.length - 3).length <= 3);
+{
+  const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {HQ,state,load,placeAt,wasPlaced,rec,isKnown,dueCount,knownChars,dayKey};')();
+  globalThis.localStorage._d = {};
+  fresh.load();
+  ok('nobody is placed to begin with', !fresh.wasPlaced());
+  fresh.placeAt(100);
+  ok('placing credits everything before the stopping point', fresh.knownChars().length === 100);
+  ok('shallowly, not as mastered', Object.values(fresh.state.chars).every(r => r.lvl === 2));
+  ok('and marked as placed rather than taught', Object.values(fresh.state.chars).every(r => r.placed));
+  ok('reviews are fanned out, not dumped on day one', fresh.dueCount() === 0);
+  const days = new Set(Object.values(fresh.state.chars).map(r => r.due));
+  ok('across several days', days.size >= 4, days.size + ' distinct due dates');
+  /* retaking must never undo study */
+  const c = fresh.knownChars()[0];
+  fresh.rec(c).lvl = 8; fresh.rec(c).due = '2099-01-01';
+  const added = fresh.placeAt(40);
+  ok('a lower retake adds nothing', added === 0);
+  ok('and leaves studied characters alone', fresh.rec(c).lvl === 8 && fresh.rec(c).due === '2099-01-01');
+  ok('the high-water mark is kept', fresh.state.placed.at === 100);
+}
+
+console.log('\nword of the week');
+ok('no interests, no word', (() => { api.state.interests = []; api.state.wotw = null; return api.wordOfWeek() === null; })());
+api.state.interests = ['food', 'tech'];
+api.state.wotw = null; api.state.wotwPast = [];
+const w1 = api.wordOfWeek();
+ok('picking interests produces one', !!w1 && !!api.INTERESTS[w1.cat]);
+ok('it comes from an interest you chose', api.state.interests.includes(w1.cat));
+ok('and it is stable within the week', JSON.stringify(api.wordOfWeek()) === JSON.stringify(w1));
+ok('every interest word is complete', api.INTEREST_KEYS.every(k =>
+  api.INTERESTS[k].words.every(w => w.length === 4 && w.every(part => part && part.trim()))));
+ok('every interest has an icon and a name', api.INTEREST_KEYS.every(k =>
+  api.INTERESTS[k].icon && api.INTERESTS[k].name && api.INTERESTS[k].zh));
+ok('week keys look like ISO weeks', /^\d{4}-W\d{2}$/.test(api.weekKey()));
+ok('and change from week to week',
+   api.weekKey(new Date(2026, 0, 5)) !== api.weekKey(new Date(2026, 0, 15)));
 
 console.log('\nstreak safety');
 api.setState ? 0 : 0;

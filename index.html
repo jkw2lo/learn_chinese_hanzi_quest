@@ -84,6 +84,16 @@
   </div>
 </div>
 
+<!-- placement quiz -->
+<div class="place" id="place" role="dialog" aria-label="Where to start">
+  <div class="place-bar">
+    <button class="icon-btn" id="placeClose" aria-label="Close">✕</button>
+    <span class="place-prog"><i id="placeProg"></i></span>
+    <span class="place-count" id="placeCount"></span>
+  </div>
+  <div class="place-body" id="placeBody"></div>
+</div>
+
 <!-- confirm, in the page: the sandbox an artifact runs in has no allow-modals,
      so window.confirm() there returns false without ever asking -->
 <div class="ask" id="ask" role="dialog" aria-modal="true" aria-labelledby="askTitle">
