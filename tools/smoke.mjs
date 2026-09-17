@@ -16,7 +16,8 @@ const CONTRACT = [
   'POS_LABEL', 'MENU', 'MENU_CHARS',
   'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote',
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
-  'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage', 'skillPct',
+  'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
+  'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied'
 ];
@@ -119,9 +120,66 @@ const tierGlyphs = [...withDesc.flatMap(i => cjk(i[4][0])),
 ok('every glyph in the grown-up menu is a taught character',
    tierGlyphs.every(c => CHAR_INDEX[c]), [...new Set(tierGlyphs.filter(c => !CHAR_INDEX[c]))].join(' '));
 
+console.log('\nwhat today\'s numbers count');
+/* "Reviewed today" read as a count of characters but incremented on every
+   answer, so one character drilled four times read as four. */
+const rc = api.knownChars()[0];
+const revsBefore = api.reviewedToday().length;
+api.tally('rev', rc);
+api.tally('rev', rc);
+api.tally('rev', rc);
+ok('three answers on one character is one character revised',
+   api.reviewedToday().length === revsBefore + 1, api.reviewedToday().join(' '));
+ok('but every answer still counts as a card', api.today().rev >= 3);
+const rc2 = api.knownChars()[1];
+api.tally('rev', rc2);
+ok('a second character is counted separately', api.reviewedToday().length === revsBefore + 2);
+
+console.log('\nskill standing');
+/* The tiles used to show only how many characters had crossed three clean
+   passes, so a whole round of practice could leave the screen unchanged. */
+api.nextNew(4).forEach(api.introduce);          /* make sure there are four to measure */
+const sc = api.knownChars().slice(0, 4);
+sc.forEach(c => { api.rec(c).skills.p = 0; });
+const zero = api.skillStanding('p', sc);
+ok('four characters to measure', sc.length === 4, `got ${sc.length}`);
+ok('nothing practised reads as zero', zero.pct === 0 && zero.solid === 0 && zero.untouched === sc.length);
+api.rec(sc[0]).skills.p = 1;
+const one = api.skillStanding('p', sc);
+ok('one clean pass moves the ring', one.pct > zero.pct, `${zero.pct} → ${one.pct}`);
+ok('without claiming the character is solid', one.solid === 0 && one.partway === 1);
+sc.forEach(c => { api.rec(c).skills.p = api.PASSES_FOR_SOLID; });
+const full = api.skillStanding('p', sc);
+ok('three passes each is a full ring', full.pct === 1 && full.solid === sc.length && full.untouched === 0);
+sc.forEach(c => { api.rec(c).skills.p = 99; });
+ok('extra reps never overflow it', api.skillStanding('p', sc).pct === 1);
+ok('an empty set is not a division by zero', api.skillStanding('p', []).pct === 0);
+ok('buckets account for every character',
+   full.buckets.reduce((a, b) => a + b, 0) === full.total);
+
 console.log('\nstreak safety');
 api.setState ? 0 : 0;
 ok('days studied counts every active day', typeof api.daysStudied() === 'number' && api.daysStudied() >= 1);
+
+console.log('\nreset leaves nothing behind');
+/* Object.assign(state, blank()) only overwrites the keys blank() declares, so
+   anything the record grew afterwards survived a "reset everything". */
+api.nextNew(3).forEach(api.introduce);
+api.state.menuPick = { d: api.dayKey(), c: api.MENU_CHARS[0], done: false };
+api.state.lastBackup = 1;
+api.state.somethingAddedLater = 'still here';
+api.save();
+ok('there is something to clear', Object.keys(api.state.chars).length > 0);
+const fresh = api.resetProgress();
+ok('characters are gone', Object.keys(fresh.chars).length === 0);
+ok('days are gone', Object.keys(fresh.days).length === 0);
+ok('the streak is gone', fresh.streak.cur === 0 && fresh.streak.last === null);
+ok('settings are back to their defaults', fresh.goalNew === api.blank().goalNew);
+const strays = Object.keys(fresh).filter(k => !(k in api.blank()));
+ok('no key outlives the reset', !strays.length, strays.join(' '));
+const stored = JSON.parse(globalThis.localStorage.getItem('hanzi-quest-v1'));
+ok('and the stored copy matches', !Object.keys(stored).some(k => !(k in api.blank())));
+ok('the tour is due again', fresh.tour === false);
 
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');
 process.exit(failures ? 1 : 0);
