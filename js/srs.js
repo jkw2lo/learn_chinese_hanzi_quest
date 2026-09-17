@@ -77,6 +77,21 @@ function save() {
   saveTimer = setTimeout(pushRemote, 1500);
 }
 
+/* Start again, leaving nothing behind.
+
+   This was `Object.assign(state, blank())`, which only overwrites the keys
+   blank() happens to declare — so everything the record grew afterwards
+   survived the wipe: the day's menu pick (`menuPick`), the last-backup stamp,
+   and whatever the next feature adds. Replacing the binding outright is the
+   only version that stays correct as the shape of the record changes. The
+   caller clears the practice diary, which lives in IndexedDB, separately. */
+function resetProgress() {
+  state = blank();
+  try { localStorage.removeItem(KEY); } catch { /* storage unavailable */ }
+  save();                                /* writes the blank record, and syncs it */
+  return state;
+}
+
 /* ---------- optional cross-device sync ---------- */
 
 let remoteDoc = null;
@@ -181,12 +196,21 @@ function today() {
   return state.days[k];
 }
 
-function tally(kind) {
+/* `rev` counts answers, which is the right unit for the activity heatmap — a
+   day of forty reps was a bigger day than one of four. It is the wrong unit
+   for "reviewed today": a character you saw four times in one session is one
+   character revised, not four, and counting it four times made the number
+   race ahead of the queue it was sitting next to. So the characters
+   themselves are recorded alongside the rep count. */
+function tally(kind, ch) {
   const t = today();
   t[kind]++;
+  if (kind === "rev" && ch) (t.revC = t.revC || {})[ch] = true;
   touchStreak();
   save();
 }
+
+const reviewedToday = () => Object.keys((state.days[dayKey()] || {}).revC || {});
 
 function touchStreak() {
   const k = dayKey();
@@ -321,10 +345,39 @@ function currentStage() {
 
 /* ---------- skill mastery, for the progress view ---------- */
 
-function skillPct(skill) {
-  const known = Object.values(state.chars);
-  if (!known.length) return 0;
-  /* three clean answers on a skill counts that character as solid in it */
-  const solid = known.filter(r => (r.skills[skill] || 0) >= 3).length;
-  return solid / HQ.length;
+/* Three clean answers in a mode is what makes a character solid in it. The
+   number is arbitrary but the shape isn't: one right answer can be a lucky
+   guess, three spread over different days is knowledge. */
+const PASSES_FOR_SOLID = 3;
+
+const passesIn = (c, skill) => {
+  const r = rec(c);
+  return (r && r.skills && r.skills[skill]) || 0;
+};
+
+/* How a skill stands across a set of characters.
+
+   "12 of 30 solid" alone hid the actual work: two clean passes on every
+   character reads as zero, and so does none. What's wanted is credit for the
+   passes themselves — going through the material again and getting it right
+   is the thing that makes it stick — so this also returns the buckets, and a
+   percentage against the whole three-passes-each goal rather than against a
+   threshold nothing crosses for a week. */
+function skillStanding(skill, chars) {
+  const buckets = [0, 0, 0, 0];         /* characters with 0, 1, 2, 3+ clean passes */
+  let passes = 0;
+  chars.forEach(c => {
+    const n = Math.min(PASSES_FOR_SOLID, passesIn(c, skill));
+    buckets[n]++;
+    passes += n;
+  });
+  const total = chars.length;
+  return {
+    total, buckets, passes,
+    solid: buckets[PASSES_FOR_SOLID],
+    partway: buckets[1] + buckets[2],
+    untouched: buckets[0],
+    goal: total * PASSES_FOR_SOLID,
+    pct: total ? passes / (total * PASSES_FOR_SOLID) : 0
+  };
 }

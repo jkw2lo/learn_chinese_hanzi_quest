@@ -141,6 +141,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .icon-btn:hover { background: var(--sunken); color: var(--ink); }
 
+/* A copy of your progress is the one thing this app can't recover for you,
+   so the button says so quietly when there isn't one. */
+.icon-btn.nudge { position: relative; border-color: color-mix(in srgb, var(--gold) 40%, transparent); color: var(--gold); }
+.icon-btn.nudge::after {
+  content: ""; position: absolute; top: -3px; right: -3px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); border: 1.5px solid var(--sheet);
+}
+
 /* ---------- the four-week tracker: one row, under the bar ---------- */
 
 .tracker {
@@ -302,6 +311,13 @@ p { margin: 0; }
 .stage-name b { font-family: var(--f-display); font-size: 1rem; font-weight: 600; }
 .stage-zh { font-family: var(--f-han-ui); font-size: .76rem; color: var(--ink-3); letter-spacing: .1em; }
 .stage-count { font-size: .8rem; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Filenames and the odd shell command — small enough not to shout. */
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .9em; background: var(--sunken); color: var(--ink-2);
+  padding: .05em .3em; border-radius: 4px; white-space: nowrap;
+}
 
 .bar { height: 6px; border-radius: 3px; background: var(--rule-2); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--jade); border-radius: 3px; transition: width .7s cubic-bezier(.2,.8,.3,1); }
@@ -1224,6 +1240,12 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
 @media (min-width: 620px) { .pr-grid-4 { grid-template-columns: repeat(4, 1fr); } }
 
+/* Three modes, three columns. This was never defined, so the row inherited
+   .pr-grid's four and left a quarter of the sheet empty beside it — and the
+   narrower tiles wrapped their own caption. */
+.pr-grid-3 { grid-template-columns: 1fr; }
+@media (min-width: 620px) { .pr-grid-3 { grid-template-columns: repeat(3, 1fr); } }
+
 .pr-deep { flex-direction: row; align-items: center; gap: .65rem; padding: .7rem .75rem; }
 .pr-ring { position: relative; width: 38px; height: 38px; flex: none; }
 .pr-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
@@ -1234,9 +1256,20 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
   font-family: var(--f-han); font-size: 1rem; color: var(--ink-2);
 }
 .pr-ring-flat .pr-ring-k { font-family: var(--f-body); font-size: 1.3rem; color: var(--gold); }
-.pr-deep-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; text-align: left; }
+.pr-deep-body { display: flex; flex-direction: column; gap: .22rem; min-width: 0; text-align: left; }
 .pr-deep-body b { font-size: .84rem; font-weight: 600; }
 .pr-deep-body small { font-size: .7rem; color: var(--ink-3); }
+
+/* One bar per mode, split by how many clean passes each character has had.
+   The gradient from full jade to bare rule is the point: two passes on
+   everything looks different from three on half of it, and both look
+   different from nothing, which a single "n of m solid" couldn't show. */
+.pr-meter { display: flex; gap: 2px; height: 5px; border-radius: 3px; overflow: hidden; }
+.pr-meter > i { display: block; min-width: 2px; border-radius: 2px; transition: flex-grow .6s cubic-bezier(.2,.8,.3,1); }
+.pr-meter .s3 { background: var(--jade); }
+.pr-meter .s2 { background: color-mix(in srgb, var(--jade) 58%, var(--rule-2)); }
+.pr-meter .s1 { background: color-mix(in srgb, var(--jade) 28%, var(--rule-2)); }
+.pr-meter .s0 { background: var(--rule-2); }
 
 /* ---------- practice diary ---------- */
 
@@ -1435,6 +1468,34 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 }
 
 /* ---------- first-run tour ---------- */
+
+/* ---------- asking before something irreversible ----------
+
+   Modelled on the tour card, one step above it, because it can be raised from
+   inside the tour's own settings sheet. */
+
+.ask {
+  position: fixed; inset: 0; z-index: 90; display: none;
+  align-items: center; justify-content: center; padding: 1.2rem;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(3px);
+}
+.ask.on { display: flex; animation: rise .22s ease both; }
+.ask-card {
+  width: min(24rem, 100%); background: var(--sheet);
+  border: 1px solid var(--rule); border-radius: 14px;
+  box-shadow: var(--shadow-lift); overflow: hidden;
+}
+.ask-body { padding: 1.3rem 1.3rem 1rem; display: flex; flex-direction: column; gap: .5rem; }
+.ask-k { font-family: var(--f-han); font-size: 1.8rem; line-height: 1; color: var(--seal); }
+.ask-body h2 { font-family: var(--f-display); font-size: 1.1rem; }
+.ask-body p { font-size: .88rem; line-height: 1.6; color: var(--ink-2); }
+.ask-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: .5rem;
+  padding: .75rem 1rem; border-top: 1px solid var(--rule-2); background: var(--paper);
+}
+.ask-danger { background: var(--seal); border-color: var(--seal); color: #fff; }
+.ask-danger:hover { filter: brightness(1.08); }
 
 .tour {
   position: fixed; inset: 0; z-index: 80; display: none;

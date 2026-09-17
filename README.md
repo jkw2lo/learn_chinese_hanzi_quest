@@ -30,13 +30,17 @@ They exist because they caught real problems: the component checker found 32 of
 
 No build step, no dependencies. Clone it and:
 
-    node tools/make-audio.mjs     # generates js/audio.js (macOS only, ~1 min)
-    node tools/server.mjs         # then open http://localhost:8731
+    node tools/server.mjs         # open http://localhost:8731
 
-`js/audio.js` is not in the repo — it's 2.1 MB of macOS speech output, and
-redistributing Apple's synthesised voice is a grey area. Without it the app
-falls back to the browser's speech engine, which is unreliable inside an
-embedded frame (see **Audio** below). On a Mac, generating it takes a minute.
+Everything the page needs is committed, including `js/audio.js`. That file used
+to be left out of the repo — it's 2.1 MB of macOS speech output and
+redistributing Apple's synthesised voice is a grey area — but leaving it out
+meant a clone, and anything published from one, served a 404 for it and went
+silent, with nothing on screen to say why. A missing script fails quietly. It's
+in the repo now; if you'd rather it weren't, add it back to `.gitignore` and
+regenerate it locally with `node tools/make-audio.mjs` (macOS, about a minute).
+Settings says plainly when the clips aren't loaded, so that path isn't a mystery
+either. See **Audio** below.
 
 ## What's here
 
@@ -58,16 +62,19 @@ before you can write it from memory.
    far today. Anything learned from the Library lands here too.
 2. **Today's practice** — a to-do list, everything scoped to *today's*
    characters so it's short and finishable: 学习 learn, 认读 recognise,
-   阅读 read, 发音 say, 抄写 write out. Each ticks off when you finish it.
-   The counter only counts tasks that are actually *available*, so a locked
-   row (reading, before you can read anything) never blocks a clean sweep.
+   阅读 read, 发音 say, 抄写 write out. Each ticks off when you finish it,
+   learning included — see **What the numbers count** for why that row is on
+   the list rather than above it, and why a locked row is now shown in the
+   fraction as locked rather than left out of it.
    Ticks are **evidence-based**: a task completes when every one of today's
    characters has been answered correctly in that task's drill during a
    session — so doing pronunciation from *Go deeper* ticks 发音 just the same
    as doing it from the row. Each task declares which drill kinds prove it
    (`proves`), so 认读 and 阅读 can't tick each other.
 3. **Go deeper** — the same skills over your *whole* library, shakiest first,
-   each with a ring showing how solid that skill is. The optional extra.
+   each with a ring that fills with every clean pass and a bar showing how the
+   characters are spread across nought, one, two and three of them. The
+   optional extra. See **Go deeper, and what "solid" means**.
 4. **Read a Menu** — the side quest.
 
 Both flashcard decks sit together in the right-hand rail on wide screens,
@@ -204,7 +211,14 @@ attempts at fixing the engine failed because the engine was never the fix.
 So `tools/make-audio.mjs` records all 302 characters with macOS `say` and
 bundles them as base64 AAC in `js/audio.js` (1.6 MB of audio, 2.1 MB encoded).
 They play through one shared `<audio>` element, unlocked with a muted play on
-the first real click so later programmatic plays are allowed.
+the first real click so later programmatic plays are allowed. **That file is
+committed**, because the app is only as good as its sound and a clone without
+it is silent in a way nothing on screen explains — see **Running it**.
+
+If the bundle is missing altogether — a clone that hasn't regenerated it,
+a deploy that dropped the file — `clipCount()` is zero and the Sound panel in
+Settings says so and gives the command to fix it, rather than leaving someone
+turning the volume up at a page that was never going to make a sound.
 
 Words and sentences aren't bundled — they'd multiply the weight — so
 `sayPhrase()` reads them **one character at a time from the clips** instead.
@@ -253,11 +267,95 @@ ignored while the trackpad holds it for inking.
 
 ## Backup
 
-Settings → Backup exports progress *and* the practice diary as one JSON file.
-The artifact sandbox blocks downloads a page starts for itself, so it asks the
-host to save via the `downloads` capability and falls back to copyable text
-where that isn't available. Restore takes a file or pasted text, and refuses
-anything that isn't a Hanzi Quest backup before touching your data.
+The **⤓ button in the top bar** saves progress *and* the practice diary as one
+JSON file, and loads one back. See **Progress storage** for why it's in the top
+bar and how the three save paths differ.
+
+## What the numbers count
+
+Every counter on Today is a count of **characters**, because the queues it sits
+beside — New, Due — are counts of characters. Mixing the two units made the
+page argue with itself, so three things changed:
+
+- **Revised today** was `days[today].rev`, which increments on every answer.
+  A character drilled four times in one session read as four characters
+  revised, and the number ran ahead of the queue next to it. `tally()` now also
+  records *which* character (`days[k].revC`), and `reviewedToday()` counts
+  those. The rep count is still kept, and is still what the activity heatmap
+  and the "cards done" total use — a day of forty reps *was* a bigger day than
+  one of four. It's just not what "revised today" means.
+- **The hero ring** measured answers against a queue of characters, so it
+  outran itself for the same reason. It's `learnedToday() + reviewedToday()`
+  over that plus what's left.
+- **Today's practice** counted only the four drills, and silently dropped any
+  that couldn't be started yet — so a day where no sentence in your library
+  used today's characters read "3 of 3 done" while five rows sat on screen with
+  two unticked. Learning the day's characters is the first step *on* that list,
+  so it counts like the others; a step that genuinely can't be done yet is
+  shown with a lock and a reason, and reported separately (`2 of 4 done · 1
+  locked`) instead of shrinking the denominator until the list looks finished.
+
+## Go deeper, and what "solid" means
+
+A character is **solid** in a skill after `PASSES_FOR_SOLID` (3) clean answers
+in that mode. That threshold is still right — one correct answer can be a lucky
+guess — but reporting *only* it was wrong, in two ways:
+
+- The ring moved on the third correct answer and not before, so a whole round
+  of practice could change nothing on screen. It now fills with **every clean
+  pass**: `skillStanding().pct` is passes (capped at three each) over the
+  three-passes-each goal. Going back over the same characters and getting them
+  right again is what makes them stick, so it should be visible while it's
+  happening.
+- "5 of 5 solid" was measured against every character known, which **writing
+  can never reach** — a character with no stroke data can't be drilled, so the
+  ring sat permanently short of full. Each mode is now measured against
+  `practiceChars(mode)`, the characters it can actually ask about.
+
+Under each tile is a bar split by how many passes each character has had —
+solid, two, one, untouched. Two passes on everything looks different from three
+on half of it, and both look different from nothing; a single fraction showed
+all three as the same. Record's Skills panel uses the same maths, over the
+characters you know rather than the whole 302-character library — a bar reading
+3% when everything you've met is solid is describing the syllabus, not you.
+
+## Asking before something irreversible
+
+**Never use `window.confirm()` here.** The artifact this is published as runs
+in a cross-origin frame with no `allow-modals` in its sandbox, and a sandbox
+without it makes `confirm()` **return `false` immediately** — no dialog, no
+error, nothing in the console. Every guard written as
+`if (!confirm(...)) return;` therefore silently became `return;`:
+
+- **Reset everything** did nothing at all.
+- **Restore from a backup** did nothing at all.
+- Closing a session part-way through was **impossible** — the guard could
+  never be satisfied.
+
+`askConfirm({k, title, body, yes, no, danger})` draws the question in the page
+and returns a promise, so it behaves the same in a frame, in a tab and on
+GitHub Pages. Cancel is focused by default and Escape and a backdrop click both
+cancel, because every caller so far is destructive. It sits above the tour in
+the stacking order (`z-index: 90`) since it can be raised from a settings sheet.
+
+## Reset
+
+`resetProgress()` replaces the `state` binding outright. It used to be
+`Object.assign(state, blank())`, which only overwrites the keys `blank()`
+declares — so everything the record grew afterwards survived a "reset
+everything": `menuPick`, `lastBackup`, and whatever the next feature adds. A
+smoke check now asserts that no key outlives a reset, so this can't rot again.
+
+Three things live outside `state` and have to be cleared by hand:
+
+- the **practice diary**, which is IndexedDB (`diaryClear()`),
+- the **exercise book on screen** — `renderWrite()` deliberately no-ops once
+  built, so `wpReset()` clears the canvas and re-renders the diary strip,
+- and the **tour**, which only runs at boot, so the reset re-runs it rather
+  than dropping you into a blank app with no explanation.
+
+The theme is deliberately *not* reset: it's a display preference in its own
+localStorage key, not progress.
 
 ## Sticking points
 
@@ -271,10 +369,12 @@ identical repetition.
 Settings used to sit at the bottom of the Record tab, where nobody would look
 for them. They're now their own sheet behind the **gear in the top bar**,
 grouped as Studying / Sound / Your data, and reachable from any tab. Record is
-progress only.
+progress only. Saving progress has its own button (⤓) beside the gear, because
+it's the one thing worth doing before you know you needed it.
 
-A five-step tour runs on the first visit (`state.tour`) and can be replayed
-from Settings.
+A six-step tour runs on the first visit (`state.tour`) and can be replayed
+from Settings. The last step is about saving to a file, because that's the one
+thing the app can't do for you and the one thing you only miss once it's gone.
 
 ## A note on the streak
 
@@ -340,6 +440,24 @@ Progress lives in `localStorage`, so the app works offline and starts
 instantly. Published as an Artifact with the `db` capability it also syncs to
 the viewer's private store, so one streak follows you between devices.
 
+`localStorage` is not a safe place to keep months of work: clearing browser
+data, switching browsers or studying in a private window loses all of it, and
+the app can't recover it afterwards. So saving a copy is a **top-bar button**
+(⤓, next to the gear), not a setting three screens down — it was buried under
+Settings → Your data → Backup before, where nobody would find it before they
+needed it. It grows a gold dot once there are five characters' worth of
+progress and no saved copy, or when the last one is a fortnight old.
+
+`doExport()` writes one JSON file — `state` plus every diary page out of
+IndexedDB — and has three ways to hand it over, because the two contexts this
+runs in allow different things. On an ordinary page a `Blob` and a synthetic
+click on a download link puts it straight in Downloads. Inside the artifact
+sandbox that is blocked outright and silently, so there it asks the host's
+`downloads` capability to save it. If neither lands, the JSON is shown in a
+textarea to copy. Restoring takes a file or pasted text, checks the `app` field
+so a stray JSON file doesn't wipe a streak, asks (via `askConfirm`, not
+`confirm` — see **Asking before something irreversible**) and reloads.
+
 ## Licensing
 
 The code is yours to license as you see fit — there's no LICENSE file, which
@@ -348,8 +466,10 @@ relicense, though:
 
 - **Stroke data** (`js/strokes.js`) comes from Make Me a Hanzi, under the
   Arphic Public License. Keep the attribution below if you publish this.
-- **Speech clips** (`js/audio.js`, generated) are macOS system voice output.
-  Fine for personal study; think twice before distributing them.
+- **Speech clips** (`js/audio.js`, generated) are macOS system voice output,
+  and they *are* committed here so the app makes a sound wherever it's served.
+  Fine for personal study; if you publish this somewhere public, that's the one
+  file worth a second thought — `.gitignore` it and regenerate locally instead.
 
 ## Credits
 

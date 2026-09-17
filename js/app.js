@@ -92,6 +92,12 @@ const TIAN_SVG = `<svg class="tian-grid" viewBox="0 0 100 100" aria-hidden="true
 let audioEl = null, audioUnlocked = false;
 const clipFor = t => (window.HQ_AUDIO && window.HQ_AUDIO[t]) || null;
 
+/* js/audio.js is generated, not hand-written, and a clone that hasn't run
+   tools/make-audio.mjs simply 404s it — silently, the way a missing script
+   always does. Knowing that lets Settings say so instead of leaving someone
+   turning the volume up at a page that was never going to make a sound. */
+const clipCount = () => (window.HQ_AUDIO && Object.keys(window.HQ_AUDIO).length) || 0;
+
 function ensureAudioEl() {
   if (!audioEl) { audioEl = new Audio(); audioEl.preload = "auto"; }
   return audioEl;
@@ -640,6 +646,16 @@ const PRACTICE = {
   say:   { k: "\u53d1\u97f3", name: "Pronunciation", blurb: "Sound and tone",             kinds: ["p", "l"], skill: "p" }
 };
 
+/* Every character this mode could ever ask you about — the honest denominator
+   for its progress. Writing is the reason this isn't just "everything you
+   know": a character with no stroke data can't be drilled, so counting it
+   would put the writing ring permanently short of full. */
+function practiceChars(mode) {
+  const all = knownChars();
+  return mode === "write" ? all.filter(c => window.STROKE_DATA[c]) : all;
+}
+
+/* The shakiest slice of that, which is what a round actually draws from. */
 function practiceAvailable(mode) {
   let pool = practicePool(PRACTICE[mode].skill, 60);
   if (mode === "write") pool = pool.filter(c => window.STROKE_DATA[c]);
@@ -1023,7 +1039,7 @@ function settle(item, ch, ok, foot, extra, slips) {
   $("#qtimer")?.classList.add("spent");
   session.qStart = 0;
   grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice, gentle: writing });
-  if (!item.fresh) { tally("rev"); session.reviewed++; }
+  if (!item.fresh) { tally("rev", ch.c); session.reviewed++; }
   if (ok) {
     session.right++; session.combo++;
     session.bestCombo = Math.max(session.bestCombo, session.combo);
@@ -1614,6 +1630,7 @@ function diaryTx(mode, fn) {
 const diaryPut = page => diaryTx("readwrite", st => st.put(page));
 const diaryDel = id   => diaryTx("readwrite", st => st.delete(id));
 const diaryAll = ()   => diaryTx("readonly",  st => st.getAll()).then(r => r || []);
+const diaryClear = ()  => diaryTx("readwrite", st => st.clear());
 
 function renderWrite() {
   if (!wp.built) buildWritePage(); else wpControls();
@@ -1873,6 +1890,15 @@ function wpClear() {
   wp.strokes = []; wp.cur = null;
 }
 
+/* After a reset. renderWrite() deliberately no-ops once the page is built, so
+   without this the exercise book keeps the ink that was on it and the diary
+   strip keeps listing pages that have just been deleted. */
+function wpReset() {
+  if (!wp.built) return;
+  wpClear();
+  wpDiary();
+}
+
 function wpBindInk() {
   const c = $("#wpInk");
   let drawing = false;
@@ -2025,11 +2051,16 @@ function startTodayDrill(task) {
 function renderToday() {
   const t = today();
   const due = dueCount();
+  const got = learnedToday();
+  const revd = reviewedToday();
   const newLeft = Math.max(0, Math.min(state.goalNew, remainingNew()) - t.new);
-  const done = t.new + t.rev;
+  /* Characters on both sides of this fraction. `newLeft` and `due` count
+     characters, so measuring what's done in answers made the ring run ahead
+     of the queue beside it — a character answered four times is one character
+     off the list, not four. */
+  const done = got.length + revd.length;
   const pct = (done + newLeft + due) ? done / (done + newLeft + due) : 1;
   const clear = newLeft === 0 && due === 0;
-  const got = learnedToday();
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
   const headline = clear ? "You're clear for today." : done > 0 ? "Keep going." : "Ready when you are.";
@@ -2066,7 +2097,7 @@ function renderToday() {
       <div class="queue">
         <span class="qpill new">New <b>${newLeft}</b></span>
         <span class="qpill due">Due <b>${due}</b></span>
-        <span class="qpill">Reviewed today <b>${t.rev}</b></span>
+        <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Revised today <b>${revd.length}</b></span>
       </div>
     </div>
 
@@ -2110,57 +2141,89 @@ function renderToday() {
       `${all.length} card${all.length === 1 ? "" : "s"} you've learned`, "all")}
   </div>`;
 
-  /* ---- the to-do list ---- */
+  /* ---- the to-do list ----
+
+     Learning the day's characters is the first step on this list, not a
+     separate thing that happens above it, so it counts towards the total like
+     every other row. A step that can't be done yet — no sentence in your
+     library uses today's characters — is shown but left out of the fraction,
+     rather than quietly shrinking the denominator so that a partly finished
+     list reads as complete. */
   const learnDone = got.length > 0 && clear;
-  const rows = [
-    `<div class="todo ${learnDone ? "done" : ""} ${newLeft + due > 0 ? "now" : ""}" data-todo="learn">
-      <span class="todo-tick">${learnDone ? "✓" : ""}</span>
-      <span class="todo-k han">学习</span>
-      <span class="todo-body"><b>Learn today's characters</b><small>${got.length} learned${due ? ` · ${due} to review` : ""}</small></span>
-      <span class="todo-go">${newLeft + due > 0 ? "→" : ""}</span>
-    </div>`,
+  const steps = [
+    { id: "learn", el: "div", k: "学习", name: "Learn today's characters",
+      sub: `${got.length} learned${due ? ` · ${due} to review` : ""}`,
+      ready: true, done: learnDone, now: newLeft + due > 0, go: newLeft + due > 0 ? "→" : "" },
     ...TODAY_TASKS.map(task => {
       const n = taskPool(task).length;
-      const ok = didToday(task.id);
-      const locked = n === 0;
-      return `<button class="todo ${ok ? "done" : ""} ${locked ? "locked" : ""}" data-todo="${task.id}" ${locked ? "disabled" : ""}>
-        <span class="todo-tick">${ok ? "✓" : ""}</span>
-        <span class="todo-k han">${esc(task.k)}</span>
-        <span class="todo-body"><b>${esc(task.name)}</b><small>${locked
-          ? (task.kind === "d" ? "Needs a word or sentence you can read" : "Learn a character first")
-          : esc(task.sub) + ` · ${n}`}</small></span>
-        <span class="todo-go">${locked ? "" : ok ? "again" : "→"}</span>
-      </button>`;
+      const ready = n > 0, done = didToday(task.id);
+      return {
+        id: task.id, el: "button", k: task.k, name: task.name,
+        sub: ready ? `${task.sub} · ${n}`
+           : task.kind === "d" ? "Unlocks once a word or sentence uses today's characters"
+           : "Learn a character first",
+        ready, done, now: false, go: ready ? (done ? "again" : "→") : "🔒"
+      };
     })
-  ].join("");
+  ];
+
+  const rows = steps.map(st => {
+    const attrs = `class="todo ${st.done ? "done" : ""} ${st.ready ? "" : "locked"} ${st.now ? "now" : ""}" data-todo="${st.id}"`;
+    const inner = `<span class="todo-tick">${st.done ? "✓" : ""}</span>
+      <span class="todo-k han">${esc(st.k)}</span>
+      <span class="todo-body"><b>${esc(st.name)}</b><small>${esc(st.sub)}</small></span>
+      <span class="todo-go">${st.go}</span>`;
+    return st.el === "div" ? `<div ${attrs}>${inner}</div>`
+                           : `<button ${attrs} ${st.ready ? "" : "disabled"}>${inner}</button>`;
+  }).join("");
+
+  const ready = steps.filter(st => st.ready);
+  const stepsDone = ready.filter(st => st.done).length;
+  const waiting = steps.length - ready.length;
 
   const todoBlock = `<div class="sheet todo-block">
     <div class="pr-head">
       <span class="eyebrow">Today's practice</span>
-      <span class="dim" style="font-size:.76rem">${(() => {
-        const avail = TODAY_TASKS.filter(taskAvailable);
-        if (!avail.length) return "nothing to practise yet";
-        return `${avail.filter(x => didToday(x.id)).length} of ${avail.length} done`;
-      })()}</span>
+      <span class="dim" style="font-size:.76rem"
+        title="${waiting ? `${waiting} more step${waiting === 1 ? "" : "s"} unlock as your library grows` : "Every step on today's list can be done now"}">
+        ${stepsDone} of ${ready.length} done${waiting ? ` · ${waiting} locked` : ""}</span>
     </div>
+    <div class="bar ${stepsDone === ready.length ? "gold" : ""}"><i style="width:${(stepsDone / ready.length * 100).toFixed(1)}%"></i></div>
     <div class="todo-list">${rows}</div>
   </div>`;
 
-  /* ---- go deeper: the whole library, weakest first ---- */
+  /* ---- go deeper: the whole library, weakest first ----
+
+     The old tile read "5 of 5 solid" against a ring that only moved on the
+     third correct answer for a character, so a whole round of practice could
+     change nothing on screen — and against a denominator of every character
+     known, which writing can never reach because not every character has
+     stroke data to write. Both are fixed here: each mode is measured against
+     the characters it can actually draw on, the ring fills with every clean
+     pass rather than only the third, and the bar underneath shows the shape
+     of it — how much is solid, how much has been round once or twice, how
+     much hasn't been touched. Going through the material again and getting it
+     right is the thing that makes it stick, so it should be visible. */
   const deeper = `<div class="sheet practice">
     <div class="pr-head">
       <span class="eyebrow">Go deeper</span>
-      <span class="dim" style="font-size:.76rem">Shakiest first · solid = 3 right</span>
+      <span class="dim" style="font-size:.76rem">Shakiest first · ${PASSES_FOR_SOLID} clean passes makes a character solid</span>
     </div>
     <div class="pr-grid pr-grid-3">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
+        const chars = practiceChars(id);
         const n = practiceAvailable(id).length;
-        const solid = knownChars().filter(c => (rec(c).skills[cfg.skill] || 0) >= 3).length;
-        const total = Math.max(1, knownChars().length);
-        const p = solid / total;
-        const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, p);
+        const st = skillStanding(cfg.skill, chars);
+        const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
+        const seg = (cls, count) => count
+          ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
+        const line = !chars.length
+          ? (id === "write" ? "No character you know has stroke data yet" : "Learn a character first")
+          : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
         return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
-          title="Solid means three correct answers for that character in this mode">
+          title="${chars.length
+            ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
+            : "Nothing to practise in this mode yet"}">
           <span class="pr-ring">
             <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
               ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
@@ -2168,7 +2231,10 @@ function renderToday() {
           </span>
           <span class="pr-deep-body">
             <b>${esc(cfg.name)}</b>
-            <small>${n ? `${solid} of ${total} solid` : "Learn a character first"}</small>
+            <span class="pr-meter" aria-hidden="true">
+              ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
+            </span>
+            <small>${esc(line)}</small>
           </span>
         </button>`;
       }).join("")}
@@ -2451,18 +2517,28 @@ function renderRecord() {
             <span class="eyebrow">Skills</span>
             <div class="skills">
               ${skills.map(([k, label, key]) => {
-                const pct = skillPct(key);
-                return `<div class="skill">
+                /* Measured against the characters you know, not the whole
+                   library — a bar that reads 3% when every character you've
+                   met is solid is telling you about the syllabus, not about
+                   you. Handwriting is measured against the ones that have
+                   stroke data, which are the only ones it can ask for. */
+                const st = skillStanding(key, key === "w" ? practiceChars("write") : knownChars());
+                const seg = (cls, count) => count
+                  ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
+                return `<div class="skill" title="${st.passes} of ${st.goal} clean passes across ${st.total} character${st.total === 1 ? "" : "s"}">
                   <span class="k">${esc(k)}</span>
-                  <span style="display:flex;flex-direction:column;gap:.25rem">
+                  <span style="display:flex;flex-direction:column;gap:.3rem;min-width:0">
                     <span style="font-size:.8rem">${esc(label)}</span>
-                    <span class="bar"><i style="width:${(pct * 100).toFixed(1)}%"></i></span>
+                    <span class="pr-meter">${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}</span>
+                    <span style="font-size:.7rem;color:var(--ink-3)">${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}</span>
                   </span>
-                  <span class="v">${Math.round(pct * 100)}%</span>
+                  <span class="v">${Math.round(st.pct * 100)}%</span>
                 </div>`;
               }).join("")}
             </div>
-            <p class="note">A character counts toward a skill after three clean answers in that mode. Strong: ${strong} of ${known}.</p>
+            <p class="note">A character is solid in a skill after ${PASSES_FOR_SOLID} clean answers in that mode, and the bar fills with each one —
+              going back over the same characters and getting them right again is what the percentage is measuring.
+              Strong overall: ${strong} of ${known}.</p>
           </div>
         </div>
 
@@ -2509,9 +2585,17 @@ function openSettings() {
       <div class="stack" style="gap:.2rem">
         <span class="eyebrow" style="margin-bottom:.5rem">Sound</span>
         <div class="settings-row">
-          <label>Speak characters aloud<small>Characters play a recorded clip.</small></label>
+          <label>Speak characters aloud<small>${clipCount()
+            ? `Characters play one of ${clipCount()} recorded clips.`
+            : "No recorded clips are loaded — see below."}</small></label>
           <button class="btn btn-ghost btn-sm" id="audioTgl">${state.audio ? "On" : "Off"}</button>
         </div>
+        ${clipCount() ? "" : `<div class="settings-row stacked">
+          <label>Recorded clips are missing
+            <small><code>js/audio.js</code> didn't load, so characters fall back to your system voice —
+              which many browsers don't have a Chinese one for. Regenerate it on a Mac with
+              <code>node tools/make-audio.mjs</code> and reload.</small></label>
+        </div>`}
         <div class="settings-row stacked">
           <label>Voice for words and sentences
             <small>Longer phrases use your system voice — and some voices are listed but silent, so test a few.</small></label>
@@ -2532,8 +2616,9 @@ function openSettings() {
       <div class="stack" style="gap:.2rem">
         <span class="eyebrow" style="margin-bottom:.5rem">Your data</span>
         <div class="settings-row">
-          <label>Back up your progress<small>Export or restore everything, diary included.</small></label>
-          <button class="btn btn-ghost btn-sm" id="backupBtn">Backup</button>
+          <label>Save your progress to a file<small>Writes one .json file — progress, streak and diary — that you can load back in later.
+            ${state.lastBackup ? `Last saved ${esc(new Date(state.lastBackup).toLocaleDateString())}.` : "You haven't saved a copy yet."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="backupBtn">Save</button>
         </div>
         <div class="settings-row">
           <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
@@ -2556,9 +2641,22 @@ function openSettings() {
   $("#audioTgl").onclick = () => { state.audio = !state.audio; save(); openSettings(); };
   $("#backupBtn").onclick = openBackup;
   $("#tourBtn").onclick = () => { closeSheet(); setTimeout(() => startTour(true), 250); };
-  $("#resetBtn").onclick = () => {
-    if (!confirm("Clear your streak and all character progress? This can't be undone.")) return;
-    Object.assign(state, blank()); save(); closeSheet();
+  $("#resetBtn").onclick = async () => {
+    const pages = (await diaryAll()).length;
+    if (!await askConfirm({
+      k: "清除",
+      title: "Reset everything?",
+      body: `This clears ${Object.keys(state.chars).length} character${Object.keys(state.chars).length === 1 ? "" : "s"}, `
+          + `your ${liveStreak()}-day streak, every day on the calendar`
+          + `${pages ? `, and all ${pages} page${pages === 1 ? "" : "s"} of your practice diary` : ""}. `
+          + `It can't be undone${state.lastBackup ? " — only a saved file can bring it back" : ", and you have no saved copy"}.`,
+      yes: "Reset everything", no: "Keep my progress", danger: true
+    })) return;
+    resetProgress();
+    await diaryClear();                  /* the diary is IndexedDB, not localStorage */
+    wpReset();
+    closeSheet();
+    startTour(true);                     /* a blank app with no explanation is just blank */
   };
   $("#voiceSel")?.addEventListener("change", e => {
     const i = zhVoices.findIndex(v => v.name === e.target.value);
@@ -2607,28 +2705,71 @@ async function buildBackup() {
   };
 }
 
+/* Three ways out, in order of how well each works where it works.
+
+   On an ordinary page — a clone, GitHub Pages — a Blob and a click on a
+   download link puts the file straight in Downloads, which is what anyone
+   asking to "save my progress" actually means. Inside the artifact sandbox
+   that is blocked outright and silently, so there we ask the host to save it.
+   If neither lands, the text itself is still worth having. */
+function blobDownload(name, text) {
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return true;
+  } catch { return false; }
+}
+
 async function doExport() {
   const data = await buildBackup();
   const text = JSON.stringify(data);
   const name = `hanzi-quest-${dayKey()}.json`;
-  const saver = window.claude?.use ? await claude.use("downloads").catch(() => null) : null;
-  if (saver) {
-    try { await saver.save({ filename: name, data: text }); return { saved: true, name }; }
-    catch { /* declined or unavailable — fall through to copyable text */ }
+  const sandboxed = !!window.claude?.use;
+
+  const remember = how => { state.lastBackup = Date.now(); save(); return { saved: true, name, how }; };
+
+  if (sandboxed) {
+    const saver = await claude.use("downloads").catch(() => null);
+    if (saver) {
+      try { await saver.save({ filename: name, data: text }); return remember("host"); }
+      catch { /* declined or unavailable — fall through */ }
+    }
+  } else if (blobDownload(name, text)) {
+    return remember("download");
   }
   return { saved: false, name, text };
 }
 
+/* Nagging is rude, but losing six weeks to a cleared cache is worse. The dot
+   appears once there is something worth losing and no copy of it. */
+function backupStale() {
+  const known = Object.keys(state.chars).length;
+  if (known < 5) return false;
+  if (!state.lastBackup) return true;
+  return (Date.now() - state.lastBackup) > 14 * 864e5;
+}
+
 function openBackup() {
-  openSheet(`<span class="han">备份</span> Backup`, `<div class="wrap"><div class="section">
+  const last = state.lastBackup
+    ? new Date(state.lastBackup).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })
+    : null;
+  openSheet(`<span class="han">备份</span> Save your progress`, `<div class="wrap"><div class="section">
     <div class="today-head">
-      <h1>Back up your progress</h1>
-      <p class="note">${Object.keys(state.chars).length} characters, ${daysStudied()} day${daysStudied() === 1 ? "" : "s"} studied,
-        plus every page in your practice diary. Keep the file somewhere safe — clearing your browser data wipes all of it otherwise.</p>
+      <h1>Save your progress to a file</h1>
+      <p class="note">Everything you've done lives in this browser and nowhere else: ${Object.keys(state.chars).length} character${Object.keys(state.chars).length === 1 ? "" : "s"},
+        ${daysStudied()} day${daysStudied() === 1 ? "" : "s"} studied, your streak, and every page in your practice diary.
+        Clearing your browser data, switching browsers or using a private window loses all of it.
+        Saving writes one <code>.json</code> file you can keep anywhere and load back in below.</p>
     </div>
     <div class="sheet block">
-      <div class="block-head"><span class="k">导出</span><span class="t">Save a copy</span></div>
-      <button class="btn btn-block" id="bkExport">Export everything</button>
+      <div class="block-head"><span class="k">导出</span><span class="t">Save a copy</span>
+        <span class="dim" style="margin-left:auto;font-size:.74rem">${last ? `last saved ${esc(last)}` : "never saved"}</span></div>
+      <button class="btn btn-block" id="bkExport">Save progress to a file</button>
       <div id="bkOut"></div>
     </div>
     <div class="sheet block">
@@ -2644,11 +2785,13 @@ function openBackup() {
   $("#bkExport").onclick = async () => {
     const r = await doExport();
     $("#bkOut").innerHTML = r.saved
-      ? `<p class="note">Saved as <b>${esc(r.name)}</b>.</p>`
+      ? `<p class="note">Saved as <b>${esc(r.name)}</b>${r.how === "download" ? " — check your Downloads folder" : ""}.
+         Keep it somewhere that isn't this browser.</p>`
       : `<p class="note">Your browser wouldn't let the page save a file, so here it is to copy — select all and paste it somewhere safe.</p>
          <textarea class="search" rows="5" id="bkText"></textarea>`;
     const ta = $("#bkText");
     if (ta) { ta.value = r.text; ta.focus(); ta.select(); }
+    renderAll();                            /* the top-bar dot can stand down */
   };
 
   const restore = async raw => {
@@ -2660,8 +2803,16 @@ function openBackup() {
         e.wanted = "That doesn't look like a Hanzi Quest backup.";
         throw e;
       }
-      if (!confirm("Replace everything on this device with this backup?")) return;
-      Object.assign(state, blank(), data.progress);
+      if (!await askConfirm({
+        k: "恢复",
+        title: "Restore from this backup?",
+        body: `It holds ${Object.keys(data.progress.chars || {}).length} character`
+            + `${Object.keys(data.progress.chars || {}).length === 1 ? "" : "s"}`
+            + `${data.exported ? `, saved ${new Date(data.exported).toLocaleDateString()}` : ""}. `
+            + "Everything currently on this device is replaced.",
+        yes: "Restore", no: "Cancel", danger: true
+      })) return;
+      state = Object.assign(blank(), data.progress);
       save();
       if (Array.isArray(data.diary)) for (const page of data.diary) await diaryPut(page);
       msg.textContent = "Restored. Reloading…";
@@ -2695,6 +2846,13 @@ function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const t = e.target;
   if (t && t.matches && t.matches("input, textarea, select")) return;
+
+  /* a question is open: Enter takes whichever button has focus (Cancel, by
+     default) and nothing underneath gets to act on the keystroke */
+  if (asking()) {
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); document.activeElement?.click?.(); }
+    return;
+  }
 
   /* the notebook: T for the trackpad */
   if ($("#notebook").classList.contains("on")) {
@@ -2730,6 +2888,50 @@ function onKey(e) {
 }
 
 /* ============================================================
+   Asking before something irreversible
+
+   This used to be window.confirm(). Inside the cross-origin frame an artifact
+   is embedded in there is no `allow-modals`, and a sandbox without it makes
+   confirm() return **false immediately** — no dialog, no error, nothing in the
+   console. Every guard written as `if (!confirm(...)) return;` therefore became
+   `return;`: Reset did nothing at all, Restore did nothing at all, and closing
+   a session part-way through was impossible. A dialog drawn in the page works
+   the same everywhere.
+   ============================================================ */
+
+let askDone = null;
+
+function askConfirm({ k = "确定", title, body, yes = "Confirm", no = "Cancel", danger = false }) {
+  const el = $("#ask");
+  $("#askK").textContent = k;
+  $("#askTitle").textContent = title;
+  $("#askBody").textContent = body;
+  const yesBtn = $("#askYes"), noBtn = $("#askNo");
+  yesBtn.textContent = yes;
+  noBtn.textContent = no;
+  yesBtn.className = "btn btn-sm" + (danger ? " ask-danger" : "");
+  el.classList.add("on");
+  document.body.style.overflow = "hidden";
+  noBtn.focus();                       /* the safe option, for a stray Enter */
+  return new Promise(res => { askDone = res; });
+}
+
+function closeAsk(answer) {
+  if (!askDone) return;
+  const res = askDone;
+  askDone = null;
+  $("#ask").classList.remove("on");
+  /* a sheet or session underneath may still want the scroll locked */
+  if (!$("#charView").classList.contains("on") && !session.active
+      && !$("#flash").classList.contains("on") && !$("#notebook").classList.contains("on")) {
+    document.body.style.overflow = "";
+  }
+  res(answer);
+}
+
+const asking = () => !!askDone;
+
+/* ============================================================
    A short walk round, the first time only
    ============================================================ */
 
@@ -2751,9 +2953,14 @@ const TOUR = [
            (press <kbd class="opt-n">T</kbd>). Or open the 练字 tab for a blank exercise
            book to fill however you like.` },
   { k: "记录", title: "It's all kept here",
-    body: `Progress lives in this browser, so it's waiting when you come back. The gear
-           in the corner holds settings and a backup — worth exporting once you've got
-           a streak worth keeping.` }
+    body: `Progress lives in this browser and nowhere else, so it's waiting when you come
+           back — but clearing your browser data, switching browsers or opening a private
+           window loses the lot.` },
+  { k: "备份", title: "Save it somewhere real",
+    body: `The <kbd class="opt-n">⤓</kbd> button in the top bar writes everything — characters,
+           streak, diary — to one file you can keep. The same screen loads it back, on this
+           computer or another one. Worth doing once you've a streak worth keeping; the button
+           grows a gold dot when you're overdue.` }
 ];
 
 let tourStep = 0;
@@ -2815,6 +3022,13 @@ function renderStreakChip() {
     chip.innerHTML = `🔥 ${s}`;
     chip.title = s ? `${s} day streak · best ${state.streak.best}` : "No streak yet — study today to start one";
   });
+  const stale = backupStale();
+  $$(".save-btn").forEach(b => {
+    b.classList.toggle("nudge", stale);
+    b.title = state.lastBackup
+      ? `Save your progress to a file — last saved ${new Date(state.lastBackup).toLocaleDateString()}`
+      : "Save your progress to a file — you haven't saved a copy yet";
+  });
 }
 
 function initTheme() {
@@ -2834,9 +3048,15 @@ function boot() {
   load();
   initTheme();
   $$("[data-nav]").forEach(b => b.onclick = () => go(b.dataset.nav));
-  $("#sesClose").onclick = () => {
+  $("#sesClose").onclick = async () => {
     if (session.idx > 0 && session.idx < session.queue.length
-        && !confirm("Leave this session? Answers so far are saved.")) return;
+        && !await askConfirm({
+          k: "离开",
+          title: "Leave this session?",
+          body: `${session.idx} of ${session.queue.length} cards answered. Everything you've answered is already saved — `
+              + "the rest go back in the queue.",
+          yes: "Leave", no: "Keep going"
+        })) return;
     endSession();
   };
   $("#svClose").onclick = closeSheet;
@@ -2846,9 +3066,14 @@ function boot() {
     unlockAudio(); primeSpeech(); save(); renderMuted();
     if (lastSaid) setTimeout(() => say(lastSaid, true), 80);
   };
+  $("#askYes").onclick = () => closeAsk(true);
+  $("#askNo").onclick = () => closeAsk(false);
+  /* clicking the dim backdrop is a cancel, like Escape */
+  $("#ask").addEventListener("pointerdown", e => { if (e.target === $("#ask")) closeAsk(false); });
   document.addEventListener("keydown", onKey);
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
+    if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();
     else if ($("#charView").classList.contains("on")) closeSheet();
@@ -2861,10 +3086,15 @@ function boot() {
   $("#flashPrev").onclick = () => flashStep(-1);
   $("#flashNext").onclick = () => flashStep(1);
   $$(".settings-btn").forEach(b => b.onclick = openSettings);
+  $$(".save-btn").forEach(b => b.onclick = openBackup);
   $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };
   $("#tourBack").onclick = () => { if (tourStep > 0) { tourStep--; renderTour(); } };
   $("#tourSkip").onclick = endTour;
   go("today");
+  /* The chip and the save button are painted from state, and nothing else on
+     the first frame does it — without this a six-day streak reads 🔥 0 until
+     the first render triggered by something else. */
+  renderStreakChip();
   renderTracker();
   startTour();
   connectRemote().then(changed => { if (changed) renderAll(); });

@@ -19,6 +19,7 @@
       <button data-nav="record"><span class="nz">记录</span> Record</button>
     </nav>
     <span class="chip chip-streak cold streak-chip">🔥 0</span>
+    <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">⤓</button>
     <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">⚙</button>
     <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">◐</button>
   </header>
@@ -79,6 +80,22 @@
     <div class="flash-foot-inner">
       <button class="btn btn-ghost" id="flashPrev">Back</button>
       <button class="btn" id="flashNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- confirm, in the page: the sandbox an artifact runs in has no allow-modals,
+     so window.confirm() there returns false without ever asking -->
+<div class="ask" id="ask" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+  <div class="ask-card">
+    <div class="ask-body">
+      <span class="ask-k han" id="askK" aria-hidden="true"></span>
+      <h2 id="askTitle"></h2>
+      <p id="askBody"></p>
+    </div>
+    <div class="ask-foot">
+      <button class="btn btn-ghost btn-sm" id="askNo">Cancel</button>
+      <button class="btn btn-sm" id="askYes">Confirm</button>
     </div>
   </div>
 </div>
