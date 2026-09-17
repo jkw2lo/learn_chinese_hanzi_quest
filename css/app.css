@@ -1012,12 +1012,15 @@ code {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .7rem;
   padding: 1.2rem;
 }
-.card-face .big { font-family: var(--f-han); font-size: 7rem; line-height: 1; color: var(--ink); }
+.card-face .big { font-family: var(--f-han); font-size: 7rem; line-height: 1; color: var(--ink); text-align: center; }
 .card-face .hint { font-size: .72rem; color: var(--ink-3); position: absolute; bottom: 1rem; }
 .card-back { transform: rotateY(180deg); }
 .card-back .pin { font-family: var(--f-pin); font-size: 1.7rem; font-weight: 500; }
 .card-back .mean { font-size: 1rem; color: var(--ink-2); text-align: center; }
-.card-back .word { font-family: var(--f-han-ui); font-size: 1rem; color: var(--ink-3); }
+.card-back .word {
+  font-family: var(--f-han-ui); font-size: 1rem; color: var(--ink-3);
+  text-align: center; max-width: 92%; line-height: 1.5;
+}
 .card-back .sm { font-family: var(--f-han); font-size: 2.6rem; color: var(--ink-3); line-height: 1; }
 
 .flash-foot { padding: .9rem 1rem calc(.9rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--rule-2); background: var(--sheet); }
@@ -1236,6 +1239,8 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .deck-cards .dc3 { transform: rotate(-9deg) translate(-3px, 2px); opacity: .55; }
 .deck-cards .dc2 { transform: rotate(5deg) translate(2px, 1px); opacity: .8; }
 .deck-cards .dc1 { border-color: color-mix(in srgb, var(--gold) 55%, transparent); box-shadow: var(--shadow); }
+/* a two-character word has to shrink to sit on the same card face */
+.deck-cards .dc1.dc-word { font-size: .82rem; letter-spacing: -.02em; }
 .deck:hover:not(:disabled) .dc3 { transform: rotate(-15deg) translate(-7px, 1px); }
 .deck:hover:not(:disabled) .dc2 { transform: rotate(9deg) translate(5px, 0); }
 .deck:hover:not(:disabled) .dc1 { transform: translateY(-3px); }
@@ -1364,6 +1369,16 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 }
 .deck-all .dc1 { border-color: color-mix(in srgb, var(--jade) 50%, transparent); }
 .deck-all .deck-go { color: var(--jade); }
+.deck-words {
+  border-color: color-mix(in srgb, var(--seal) 30%, transparent);
+  background: linear-gradient(120deg, var(--seal-wash), transparent 70%), var(--sheet);
+}
+.deck-words .dc1 { border-color: color-mix(in srgb, var(--seal) 48%, transparent); }
+.deck-words .deck-go { color: var(--seal); }
+
+/* a word on a flashcard face: two or three characters where one used to sit */
+.card-face .big.big-wide { font-size: 4.2rem; }
+@media (max-width: 480px) { .card-face .big.big-wide { font-size: 3rem; } }
 
 /* the notebook's finishing line */
 .nb-finish { display: flex; flex-direction: column; gap: .7rem; align-items: stretch; margin-top: .9rem; width: min(26rem, 90vw); }

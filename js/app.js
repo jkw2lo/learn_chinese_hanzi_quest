@@ -540,6 +540,28 @@ function renderZh(text, target) {
 const cjkOf = str => [...str].filter(c => /[\u4e00-\u9fff]/.test(c));
 const canRead = str => { const g = cjkOf(str); return g.length > 0 && g.every(isKnown); };
 
+/* Every multi-character word in the library you can read outright — one whose
+   characters are all already yours.
+
+   Deduplicated, because a word is listed under each character it contains:
+   大人 appears under 大 and again under 人. Ordered by the last character to
+   fall into place, newest first, so the deck opens on the combinations you
+   have only just become able to read rather than on 一个 forever. */
+function knownWords() {
+  const seen = new Map();
+  for (const ch of HQ) {
+    for (const w of ch.words) {
+      if (seen.has(w[0]) || [...w[0]].length < 2 || !canRead(w[0])) continue;
+      seen.set(w[0], w);
+    }
+  }
+  return [...seen.values()].sort((a, b) => unlockedAt(b[0]) - unlockedAt(a[0]));
+}
+
+/* How far into the curriculum you had to get before this word became readable:
+   the position of its latest-taught character. */
+const unlockedAt = w => Math.max(...[...w].filter(c => CHAR_INDEX[c]).map(c => CHAR_INDEX[c].i), 0);
+
 /* The longest thing built from this character that the learner can actually
    read: its example sentence if every glyph is known, otherwise a word, and
    otherwise nothing — in which case the reading drill isn't offered at all. */
@@ -1426,22 +1448,61 @@ function closeFlash() {
   document.body.style.overflow = "";
   renderAll();
 }
+/* The first sense of a meaning, for somewhere there is only room for one.
+
+   Splitting on the first punctuation mark is nearly right, but fourteen
+   characters are pure grammar and are glossed entirely in brackets — 们 is
+   "(plural marker for people)" — which that rule shortens to nothing at all.
+   Where trimming would leave an empty string, the whole gloss is the short
+   form. */
+function shortMeaning(m) {
+  const str = String(m).trim();
+  /* a gloss that opens with a bracket: prefer whatever follows it, and fall
+     back to the bracket's own contents when nothing does */
+  const lead = str.match(/^\(([^)]*)\)\s*(.*)$/);
+  if (lead) {
+    const after = lead[2].replace(/^[;,]\s*/, "").split(/[;,(]/)[0].trim();
+    return after || lead[1].trim();
+  }
+  return str.split(/[;,(]/)[0].trim() || str;
+}
+
+/* A deck entry is either a character (a plain string) or a word (its
+   [hanzi, pinyin, meaning] triple). Both make the same shape of card, so the
+   renderer asks for that shape rather than branching all the way down. */
+function flashFace(entry) {
+  if (typeof entry === "string") {
+    const ch = CHAR_INDEX[entry];
+    return { front: ch.c, pin: ch.p, mean: ch.m, tone: true,
+             foot: `${ch.words[0][0]} · ${ch.words[0][1]}`, speak: ch.c, wide: false };
+  }
+  const [w, pin, mean] = entry;
+  /* the back names the parts, which is the whole point of a combinations deck:
+     seeing that 大人 is big + person is what makes it stick */
+  const parts = [...w].filter(c => CHAR_INDEX[c])
+    .map(c => `${c} ${shortMeaning(CHAR_INDEX[c].m)}`).join("  +  ");
+  /* no tone glyph on a word: the mark draws one contour, and 大人 has two
+     syllables with two different ones. A single shape would be a lie. */
+  return { front: w, pin, mean, tone: false, foot: parts, speak: w, wide: [...w].length > 2 };
+}
+
 function renderFlash() {
-  const c = flash.deck[flash.i], ch = CHAR_INDEX[c];
+  const entry = flash.deck[flash.i];
+  const f = flashFace(entry);
   $("#flashTitle").textContent = flash.title;
   $("#flashCount").textContent = `${flash.i + 1} / ${flash.deck.length}`;
   $("#flashStage").innerHTML = `
     <button class="card3d ${flash.flipped ? "flipped" : ""}" id="card3d" aria-label="Flip card">
       <div class="card3d-inner">
         <div class="card-face">
-          <span class="big">${esc(ch.c)}</span>
+          <span class="big ${f.wide ? "big-wide" : ""}">${esc(f.front)}</span>
           <span class="hint">Tap to flip</span>
         </div>
         <div class="card-face card-back">
-          <span class="sm">${esc(ch.c)}</span>
-          <span class="pin">${esc(ch.p)} ${toneMark(ch.p)}</span>
-          <span class="mean">${esc(ch.m)}</span>
-          <span class="word">${esc(ch.words[0][0])} · ${esc(ch.words[0][1])}</span>
+          <span class="sm">${esc(f.front)}</span>
+          <span class="pin">${esc(f.pin)}${f.tone ? " " + toneMark(f.pin) : ""}</span>
+          <span class="mean">${esc(f.mean)}</span>
+          <span class="word">${esc(f.foot)}</span>
           <span class="hint">Tap to flip back</span>
         </div>
       </div>
@@ -1449,7 +1510,7 @@ function renderFlash() {
   $("#card3d").onclick = () => {
     flash.flipped = !flash.flipped;
     $("#card3d").classList.toggle("flipped", flash.flipped);
-    if (flash.flipped) say(ch.c);
+    if (flash.flipped) sayPhrase(f.speak);
   };
   $("#flashPrev").disabled = flash.i === 0;
   $("#flashNext").textContent = flash.i === flash.deck.length - 1 ? "Done" : "Next";
@@ -2301,16 +2362,16 @@ function renderToday() {
 
   /* ---- both decks, together ---- */
   const all = knownChars();
-  const oneDeck = (id, chars, title, sub, tone) => `
-    <button class="deck deck-${tone} ${chars.length ? "" : "empty"}" id="${id}" ${chars.length ? "" : "disabled"}>
+  const oneDeck = (id, deck, title, sub, tone, face, empty) => `
+    <button class="deck deck-${tone} ${deck.length ? "" : "empty"}" id="${id}" ${deck.length ? "" : "disabled"}>
       <span class="deck-cards" aria-hidden="true">
         <span class="dc dc3"></span>
         <span class="dc dc2"></span>
-        <span class="dc dc1">${chars.length ? esc(chars[chars.length - 1]) : "字"}</span>
+        <span class="dc dc1 ${face && [...face].length > 1 ? "dc-word" : ""}">${deck.length ? esc(face) : "字"}</span>
       </span>
       <span class="deck-text">
         <b>${esc(title)}</b>
-        <small>${esc(chars.length ? sub : "Learn a character to fill this deck")}</small>
+        <small>${esc(deck.length ? sub : (empty || "Learn a character to fill this deck"))}</small>
       </span>
       <span class="deck-go">→</span>
     </button>`;
@@ -2364,12 +2425,20 @@ function renderToday() {
     </div>`;
   })();
 
+  /* Characters are only half of reading: 大 and 人 separately don't get you
+     大人. This deck is every combination in the library whose characters are
+     all already yours — it fills itself as you go, and the back names the
+     parts, because seeing that 大人 is big + person is what makes it stick. */
+  const combos = knownWords();
   const decks = `<div class="sheet decks">
     <span class="eyebrow">Flashcards</span>
     ${oneDeck("deckToday", got, "Today's characters",
-      `${got.length} card${got.length === 1 ? "" : "s"} — tap to flip`, "today")}
+      `${got.length} card${got.length === 1 ? "" : "s"} — tap to flip`, "today", got[got.length - 1])}
     ${oneDeck("deckAll", all, "All characters",
-      `${all.length} card${all.length === 1 ? "" : "s"} you've learned`, "all")}
+      `${all.length} card${all.length === 1 ? "" : "s"} you've learned`, "all", all[all.length - 1])}
+    ${oneDeck("deckWords", combos, "Words you can read",
+      `${combos.length} combination${combos.length === 1 ? "" : "s"} of characters you know`, "words",
+      combos.length ? combos[0][0] : "", "Learn two characters that go together and this fills up")}
   </div>`;
 
   /* ---- the to-do list ----
@@ -2568,6 +2637,7 @@ function renderToday() {
   $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
+  $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
   $("#openMenuFull")?.addEventListener("click", () => openQuest("menu"));
   $("#learnMenu")?.addEventListener("click", () => openMenuLesson(pick2.c));
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));

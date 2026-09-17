@@ -78,8 +78,23 @@ before you can write it from memory.
    optional extra. See **Go deeper, and what "solid" means**.
 4. **Read a Menu** — the side quest.
 
-Both flashcard decks sit together in the right-hand rail on wide screens,
-today's above all characters; they stack under the main column otherwise.
+Three flashcard decks sit together in the right-hand rail on wide screens, and
+stack under the main column otherwise: today's characters, all characters, and
+**Words you can read**.
+
+That third deck exists because characters are only half of reading — knowing 大
+and 人 separately does not get you 大人. It is every multi-character word in the
+library whose characters are *all* already yours, deduplicated (a word is listed
+under each character it contains, so 大人 appears under both) and ordered by the
+last character to fall into place, newest first: it opens on what you have only
+just become able to read rather than on 一个 forever. It fills itself as you go —
+72 characters gives 78 words, 140 gives 212.
+
+The back names the parts (大 big + 人 person), because seeing what a word is made
+of is what makes it stick. Deck entries are a character (a plain string) or a
+word (its `[hanzi, pinyin, meaning]` triple) and `flashFace()` reduces either to
+the same shape, so the renderer never branches. Word cards carry no tone glyph:
+the mark draws one contour and 大人 has two syllables with two different ones.
 Completion always reads green — red is reserved for the seal accent and for
 "this is today's target", never for a tick.
 
