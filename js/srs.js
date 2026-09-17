@@ -172,9 +172,6 @@ function grade(c, correct, skill, opts = {}) {
   r.seen++;
   r.last = dayKey();
   if (skill && r.shown[skill] !== undefined) r.shown[skill]++;
-  /* Either way, it has now been seen: the guess the placement quiz made about
-     this character has been settled one way or the other. */
-  if (r.unchecked) delete r.unchecked;
   if (correct) {
     r.right++;
     if (skill && r.skills[skill] !== undefined) r.skills[skill]++;
@@ -333,125 +330,183 @@ function weekKey(d = new Date()) {
   return `${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
-function wordOfWeek() {
-  const cats = (state.interests || []).filter(k => INTERESTS[k]);
-  if (!cats.length) return null;
-  const wk = weekKey();
+/* The Monday and Sunday bounding a date, so "is the festival this week"
+   has a definite answer. */
+function weekBounds(d = new Date()) {
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() - ((t.getDay() + 6) % 7));           /* back to Monday */
+  const end = new Date(t); end.setDate(end.getDate() + 6);
+  return [t, end];
+}
+
+/* When a festival falls in a given year, or null if we can't say. Fixed-date
+   ones are trivial; the lunar ones are tabled, and a year outside the table
+   simply doesn't fire rather than guessing. */
+function festivalDate(f, year) {
+  if (f.on) {
+    const [m, d] = f.on.split("-").map(Number);
+    return new Date(year, m - 1, d);
+  }
+  if (f.lunar) {
+    const v = f.lunar[year];
+    if (!v) return null;
+    const [m, d] = v.split("-").map(Number);
+    return new Date(year, m - 1, d);
+  }
+  if (f.lunarOffset) {
+    const base = FESTIVALS.find(x => x.key === f.lunarOffset.from);
+    const bd = base && festivalDate(base, year);
+    if (!bd) return null;
+    const out = new Date(bd);
+    out.setDate(out.getDate() + f.lunarOffset.days);
+    return out;
+  }
+  return null;
+}
+
+/* Whichever festival lands inside this week. Checking the neighbouring years
+   too, since the week of 30 December contains 1 January. */
+function festivalThisWeek(d = new Date()) {
+  const [from, to] = weekBounds(d);
+  for (const f of FESTIVALS) {
+    for (const y of [from.getFullYear(), to.getFullYear()]) {
+      const fd = festivalDate(f, y);
+      if (fd && fd >= from && fd <= to) return f;
+    }
+  }
+  return null;
+}
+
+/* What has been shown before, ever. Festival words in particular must not
+   come round again next year, so this history is never wiped — only the
+   interest pool is allowed to cycle once it is exhausted. */
+const wotwSeen = () => new Set(state.wotwPast || []);
+
+function rememberWord(key) {
+  state.wotwPast = [...(state.wotwPast || []), key].slice(-600);
+}
+
+function wordOfWeek(d = new Date()) {
+  const wk = weekKey(d);
   const held = state.wotw;
-  if (held && held.week === wk && INTERESTS[held.cat] && INTERESTS[held.cat].words[held.i]) return held;
+  if (held && held.week === wk) {
+    const src = held.fest ? FESTIVALS.find(f => f.key === held.fest) : INTERESTS[held.cat];
+    if (src && src.words[held.i]) return held;
+  }
 
-  const all = [];
-  cats.forEach(k => INTERESTS[k].words.forEach((_, i) => all.push(`${k}:${i}`)));
-  const seen = new Set(state.wotwPast || []);
-  let fresh = all.filter(x => !seen.has(x));
-  if (!fresh.length) { fresh = all; state.wotwPast = []; }   /* been through them all — go round again */
+  const seen = wotwSeen();
+  let choice = null;
 
-  /* a stable hash of the week, so the pick doesn't wander between reloads */
-  const h = [...wk].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-  const [cat, i] = fresh[h % fresh.length].split(":");
-  state.wotw = { week: wk, cat, i: +i };
-  state.wotwPast = [...(state.wotwPast || []), `${cat}:${i}`].slice(-200);
+  /* a festival in this week wins over anything the interests would offer */
+  const fest = festivalThisWeek(d);
+  if (fest) {
+    const fresh = fest.words.map((_, i) => i).filter(i => !seen.has(`f:${fest.key}:${i}`));
+    /* every one already used — this festival has come round more times than it
+       has words, so start again from the one seen longest ago */
+    const pool = fresh.length ? fresh : fest.words.map((_, i) => i);
+    const idx = fresh.length
+      ? pool[hashOf(wk) % pool.length]
+      : pool.reduce((best, i) => {
+          const at = (state.wotwPast || []).lastIndexOf(`f:${fest.key}:${i}`);
+          return best === null || at < best.at ? { i, at } : best;
+        }, null).i;
+    choice = { week: wk, fest: fest.key, i: idx };
+  } else {
+    const cats = (state.interests || []).filter(k => INTERESTS[k]);
+    if (!cats.length) return null;
+    const all = [];
+    cats.forEach(k => INTERESTS[k].words.forEach((_, i) => all.push(`${k}:${i}`)));
+    let fresh = all.filter(x => !seen.has(x));
+    if (!fresh.length) {
+      /* been through every word in every interest — let them cycle */
+      state.wotwPast = (state.wotwPast || []).filter(x => x.startsWith("f:"));
+      fresh = all;
+    }
+    const [cat, i] = fresh[hashOf(wk) % fresh.length].split(":");
+    choice = { week: wk, cat, i: +i };
+  }
+
+  state.wotw = choice;
+  rememberWord(choice.fest ? `f:${choice.fest}:${choice.i}` : `${choice.cat}:${choice.i}`);
   save();
-  return state.wotw;
+  return choice;
+}
+
+/* a stable hash, so the pick doesn't wander between reloads in the same week */
+const hashOf = str => [...str].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+
+/* Resolve a pick to the thing it points at. */
+function wotwEntry(w) {
+  if (!w) return null;
+  const src = w.fest ? FESTIVALS.find(f => f.key === w.fest) : INTERESTS[w.cat];
+  if (!src || !src.words[w.i]) return null;
+  return { src, word: src.words[w.i], festival: !!w.fest };
 }
 
 /* ---------- placement ----------
 
-   Plenty of people arrive already able to read 人 and 大 and 中国. Making them
-   click through twenty characters they have known for years is the fastest way
-   to lose them, so the quiz walks the curriculum in order and finds the point
-   where recognition starts to fail.
+   The first version sampled — five characters stood for twenty — and credited
+   the whole range. Two things were wrong with that, and the second was worse.
 
-   It probes rather than tests everything: a block of PROBE_SIZE characters
-   sampled evenly across a window of the curriculum. Clear the block and the
-   whole window is credited and the next one begins; miss more than one and the
-   walk stops there. That is the deliberate trade — the quiz stays under a
-   couple of minutes, at the cost of crediting some characters it never showed.
+   It guessed. Most of what it credited was never shown, so "we found your
+   level" really meant "we assumed you knew seventy characters we never asked
+   about".
 
-   So credit is deliberately shallow. A credited character starts at
-   PLACED_LVL rather than "mastered", with its first review spread across the
-   next few days: enough that the app doesn't teach it from scratch, not so
-   much that a wrong guess buries a character the learner never really knew.
-   Anything credited in error surfaces within the week as a normal review. */
+   And it dumped. Everything credited went into the review queue, so being
+   placed at 100 meant opening the app to sixty-two cards on day one, a
+   mixture of characters you knew cold and characters you had never seen. That
+   is the worst possible first session: too long, and too uneven to be either
+   satisfying or useful.
 
-const PROBE_SIZE = 5;          /* characters shown per window */
-const PROBE_WINDOW = 20;       /* curriculum positions each block stands for */
-const PROBE_PASS = 4;          /* of PROBE_SIZE, to credit the window and go on */
-const PLACED_LVL = 2;          /* for a character the quiz actually asked about */
-const PLACED_SPREAD = 5;       /* days to fan those first reviews across */
-const CHECK_SPREAD = 10;       /* and the unasked ones, which come sooner and oftener */
+   So now it walks every character in curriculum order and stops once you have
+   missed more than PLACE_MISS_LIMIT of them. Nothing is inferred: a character
+   is credited if and only if you answered it correctly.
 
-/* The characters a block asks about: evenly spaced across its window, so a
-   block stands a fair chance of catching a gap anywhere inside it. */
-function probeBlock(start) {
-  const end = Math.min(start + PROBE_WINDOW, HQ.length);
-  const span = end - start;
-  if (span <= 0) return [];
-  const take = Math.min(PROBE_SIZE, span);
-  const step = span / take;
-  const out = [];
-  for (let i = 0; i < take; i++) {
-    const at = start + Math.min(span - 1, Math.floor(i * step + step / 2));
-    if (!out.includes(HQ[at].c)) out.push(HQ[at].c);
-  }
-  return out;
-}
+   And credit does not mean homework. A credited character goes into the
+   library as **known** — it counts for tier progress, it turns up in Go deeper,
+   it inks itself in sentences and vocabulary, exactly as if you had learnt it
+   in some earlier session. What it does not do is land in tomorrow's queue.
+   Its first review sits PLACED_REST days out, fanned across PLACED_FAN more,
+   so day one is what it should be for everybody: five new characters. */
 
-/* Credit everything before `upTo`, shallowly and with the reviews fanned out
-   so day one isn't a wall of two hundred cards.
+const PLACE_MISS_LIMIT = 3;    /* stop once misses go past this */
+const PLACED_LVL = 4;
+const PLACED_REST = 12;        /* days before a credited character is first checked */
+const PLACED_FAN = 24;         /* and the spread after that */
 
-   A character already in the record is left strictly alone. Retaking the quiz
-   after a month of study would otherwise knock every one of those characters
-   back to PLACED_LVL and reset its due date — turning a re-place into a
-   silent, partial reset. Placement may only ever add. */
-/* The quiz samples — five characters stand for twenty — so most of what gets
-   credited was never actually shown. Treating those identically to the ones
-   you answered correctly is the one thing placement must not do: it is the
-   difference between "we found your level" and "we assumed you knew 70
-   characters we never asked you about".
+/* The last few before you started missing are the shakiest things you got
+   right — you were at the edge of what you know. They come back within the
+   week rather than in a month: the refresher, without the backlog. */
+const PLACE_TAIL = 12;
+const TAIL_REST = 3;
+const TAIL_FAN = 5;
 
-   So the two are credited differently, and neither is credited as mastery:
-
-   - **Asked and answered** goes in at PLACED_LVL with its first review fanned
-     across PLACED_SPREAD days. There is evidence for it.
-   - **Never asked** goes in at level 0 as an unchecked character, fanned
-     across a wider CHECK_SPREAD. Level 0 is the bottom of the ladder, so the
-     first time one comes up it is an ordinary recognition drill: get it right
-     and it climbs like anything else, get it wrong and it is taught properly
-     from there. Nothing is assumed permanently — it is verified lazily,
-     through the review machinery that already exists, rather than by making
-     someone sit through 348 questions up front.
-
-   The only thing the quiz decides on its own is *where to start*. Everything
-   behind that point still has to earn its place. */
-function placeAt(upTo, verified) {
+/* Credit exactly what was answered correctly, and nothing else. */
+function placeKnown(chars) {
   const k = dayKey();
-  const asked = verified instanceof Set ? verified : new Set(verified || []);
-  let added = 0, checked = 0;
-  HQ.slice(0, upTo).forEach((ch, i) => {
-    if (state.chars[ch.c]) return;
-    const r = ensure(ch.c);
-    r.placed = true;                 /* so the record knows this wasn't taught */
-    if (asked.has(ch.c)) {
-      r.lvl = PLACED_LVL;
-      r.due = addDays(k, 1 + (i % PLACED_SPREAD));
-      checked++;
-    } else {
-      r.lvl = 0;
-      r.unchecked = true;            /* credited on the strength of its neighbours */
-      r.due = addDays(k, 1 + (i % CHECK_SPREAD));
-    }
+  const list = [...chars].filter(c => CHAR_INDEX[c] && !state.chars[c]);
+  let added = 0;
+  list.forEach((c, i) => {
+    const r = ensure(c);
+    const tail = i >= list.length - PLACE_TAIL;
+    r.lvl = tail ? Math.max(1, PLACED_LVL - 2) : PLACED_LVL;
+    r.placed = true;
+    r.seen = 1; r.right = 1;
+    r.skills.r = 1;              /* it was a recognition question, and you got it */
+    r.shown.r = 1;
+    r.due = tail ? addDays(k, TAIL_REST + (i % TAIL_FAN))
+                 : addDays(k, PLACED_REST + (i % PLACED_FAN));
     added++;
   });
-  state.placed = { at: Math.max(upTo, (state.placed && state.placed.at) || 0), on: k,
-                   asked: asked.size, credited: added };
+  const last = list.length ? CHAR_INDEX[list[list.length - 1]].i + 1 : 0;
+  state.placed = {
+    on: k,
+    at: Math.max(last, (state.placed && state.placed.at) || 0),
+    known: ((state.placed && state.placed.known) || 0) + added
+  };
   save();
-  return { added, checked, unchecked: added - checked };
+  return added;
 }
-
-/* A placed character stops being unchecked the moment it is answered right. */
-const isUnchecked = c => { const r = rec(c); return !!r && !!r.unchecked; };
-const uncheckedCount = () => Object.keys(state.chars).filter(c => CHAR_INDEX[c] && state.chars[c].unchecked).length;
 
 const wasPlaced = () => !!state.placed;
 

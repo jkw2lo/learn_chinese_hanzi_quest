@@ -21,9 +21,9 @@ const CONTRACT = [
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay',
-  'probeBlock', 'placeAt', 'wasPlaced', 'PROBE_WINDOW', 'PROBE_SIZE',
+  'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
-  'isUnchecked', 'uncheckedCount', 'CHECK_SPREAD',
+  'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied'
 ];
@@ -207,59 +207,48 @@ console.log('\nwhat a practice round draws');
 }
 
 console.log('\nplacement');
-ok('a probe block samples across its window', (() => {
-  const b = api.probeBlock(0);
-  return b.length === Math.min(api.PROBE_SIZE, api.PROBE_WINDOW) && new Set(b).size === b.length;
-})());
-ok('blocks past the end of the curriculum are empty', api.probeBlock(HQ.length).length === 0);
-ok('the last block is clipped, not overrun',
-   api.probeBlock(HQ.length - 3).every(c => api.CHAR_INDEX ? true : true) && api.probeBlock(HQ.length - 3).length <= 3);
 {
   const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
-    '\nreturn {HQ,state,load,placeAt,wasPlaced,rec,isKnown,dueCount,knownChars,dayKey,isUnchecked,uncheckedCount,grade};')();
+    '\nreturn {HQ,state,load,placeKnown,wasPlaced,rec,isKnown,dueCount,knownChars,dayKey,nextNew,grade,PLACED_REST};')();
   globalThis.localStorage._d = {};
   fresh.load();
   ok('nobody is placed to begin with', !fresh.wasPlaced());
-  /* the quiz samples, so only some of the range was ever actually shown */
-  const asked = new Set(fresh.HQ.slice(0, 100).filter((_, i) => i % 4 === 0).map(ch => ch.c));
-  const out = fresh.placeAt(100, asked);
-  ok('placing credits everything before the stopping point', fresh.knownChars().length === 100);
-  ok('and reports how much of that was actually asked', out.checked === asked.size && out.added === 100);
-  ok('an asked character carries evidence',
-     fresh.HQ.slice(0, 100).filter(ch => asked.has(ch.c)).every(ch => fresh.rec(ch.c).lvl === 2));
-  ok('an unasked one does not',
-     fresh.HQ.slice(0, 100).filter(ch => !asked.has(ch.c)).every(ch => fresh.rec(ch.c).lvl === 0));
-  ok('and is flagged unchecked rather than assumed',
-     fresh.uncheckedCount() === 100 - asked.size);
-  ok('asked characters are never flagged unchecked',
-     [...asked].every(c => !fresh.isUnchecked(c)));
-  ok('all of them are marked as placed rather than taught', Object.values(fresh.state.chars).every(r => r.placed));
-  ok('reviews are fanned out, not dumped on day one', fresh.dueCount() === 0);
-  const days = new Set(Object.values(fresh.state.chars).map(r => r.due));
-  ok('across several days', days.size >= 4, days.size + ' distinct due dates');
-  /* the whole point: an unchecked character settles the first time it is answered */
-  const u = fresh.HQ.slice(0, 100).find(ch => !asked.has(ch.c)).c;
-  ok('an unchecked character starts unchecked', fresh.isUnchecked(u));
-  fresh.grade(u, true, 'r');
-  ok('answering it settles the question', !fresh.isUnchecked(u));
-  const u2 = fresh.HQ.slice(0, 100).filter(ch => !asked.has(ch.c))[1].c;
-  fresh.grade(u2, false, 'r');
-  ok('getting it wrong settles it too — as a character to teach', !fresh.isUnchecked(u2) && fresh.rec(u2).lvl === 0);
-  ok('placing with no evidence at all leaves everything unchecked', (() => {
-    const f2 = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
-      '\nreturn {state,load,placeAt,uncheckedCount};')();
-    globalThis.localStorage._d = {};
-    f2.load();
-    const r = f2.placeAt(20);
-    return r.checked === 0 && f2.uncheckedCount() === 20;
-  })());
-  /* retaking must never undo study */
-  const c = fresh.knownChars()[0];
-  fresh.rec(c).lvl = 8; fresh.rec(c).due = '2099-01-01';
-  const added = fresh.placeAt(40).added;
-  ok('a lower retake adds nothing', added === 0);
-  ok('and leaves studied characters alone', fresh.rec(c).lvl === 8 && fresh.rec(c).due === '2099-01-01');
-  ok('the high-water mark is kept', fresh.state.placed.at === 100);
+
+  /* someone who knew the first 60 apart from three they missed */
+  const missed = new Set([fresh.HQ[7].c, fresh.HQ[22].c, fresh.HQ[51].c]);
+  const got = fresh.HQ.slice(0, 60).map(ch => ch.c).filter(c => !missed.has(c));
+  const added = fresh.placeKnown(got);
+
+  ok('exactly what was answered is credited', added === got.length);
+  ok('and nothing else', fresh.knownChars().length === got.length);
+  ok('a missed character is not credited', [...missed].every(c => !fresh.isKnown(c)));
+  ok('credited characters are marked as placed', got.every(c => fresh.rec(c).placed));
+  ok('they carry the recognition they demonstrated', got.every(c => fresh.rec(c).skills.r === 1));
+
+  /* the whole point of the rework: day one is not a backlog */
+  ok('NOTHING is due today', fresh.dueCount() === 0);
+  const soonest = Math.min(...got.map(c => fresh.rec(c).due).map(d => {
+    const [y, m, dd] = d.split('-').map(Number);
+    const [ty, tm, td] = fresh.dayKey().split('-').map(Number);
+    return Math.round((new Date(y, m - 1, dd) - new Date(ty, tm - 1, td)) / 864e5);
+  }));
+  ok('nothing is due tomorrow either', soonest >= 2, soonest + ' days to the first');
+  const spread = new Set(got.map(c => fresh.rec(c).due));
+  ok('reviews are fanned across weeks', spread.size >= 15, spread.size + ' distinct dates');
+
+  /* and day one is the ordinary first session */
+  const five = fresh.nextNew(5);
+  ok('day one still offers five new characters', five.length === 5);
+  ok('starting at the first one you missed', five[0] === fresh.HQ[7].c, five.join(' '));
+  ok('and never re-offers one you knew', five.every(c => !got.includes(c)));
+
+  /* retaking only adds */
+  const before = fresh.rec(got[0]).due;
+  fresh.rec(got[0]).lvl = 8;
+  const again = fresh.placeKnown([got[0], fresh.HQ[7].c]);
+  ok('a retake credits only what is new', again === 1);
+  ok('and leaves an existing record alone', fresh.rec(got[0]).lvl === 8 && fresh.rec(got[0]).due === before);
+  ok('crediting nothing is harmless', fresh.placeKnown([]) === 0);
 }
 
 console.log('\nword of the week');
@@ -278,10 +267,58 @@ ok('week keys look like ISO weeks', /^\d{4}-W\d{2}$/.test(api.weekKey()));
 ok('and change from week to week',
    api.weekKey(new Date(2026, 0, 5)) !== api.weekKey(new Date(2026, 0, 15)));
 
+console.log('\nseasonal words');
+ok('every festival word is complete', api.FESTIVALS.every(f =>
+  f.words.every(w => w.length === 4 && w.every(part => part && String(part).trim()))));
+ok('every festival has enough words to not repeat for years',
+   api.FESTIVALS.every(f => f.words.length >= 5),
+   api.FESTIVALS.filter(f => f.words.length < 5).map(f => f.key).join(' '));
+ok('a fixed-date festival resolves', !!api.festivalDate(api.FESTIVALS.find(f => f.key === 'christmas'), 2027));
+ok('a lunar one resolves from its table', !!api.festivalDate(api.FESTIVALS.find(f => f.key === 'spring'), 2027));
+ok('and declines to guess outside it', !api.festivalDate(api.FESTIVALS.find(f => f.key === 'spring'), 2099));
+ok('christmas week is detected', api.festivalThisWeek(new Date('2026-12-25T12:00:00'))?.key === 'christmas');
+ok('an ordinary week is not', !api.festivalThisWeek(new Date('2026-05-06T12:00:00')));
+{
+  const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {state,load,wordOfWeek,wotwEntry,FESTIVALS};')();
+  globalThis.localStorage._d = {};
+  fresh.load();
+  fresh.state.interests = ['food'];
+  const picks = [];
+  for (let y = 2026; y <= 2031; y++) {
+    fresh.state.wotw = null;
+    const e = fresh.wotwEntry(fresh.wordOfWeek(new Date(y + '-12-25T12:00:00')));
+    picks.push(e.word[0]);
+    if (!e.festival) picks.push('NOT-A-FESTIVAL-WORD');
+  }
+  ok('christmas week teaches a christmas word', !picks.includes('NOT-A-FESTIVAL-WORD'));
+  ok('and a different one every year', new Set(picks).size === picks.length, picks.join(' '));
+  /* the interest pool may cycle; festival history may not be wiped */
+  const hist = fresh.state.wotwPast.filter(x => x.startsWith('f:'));
+  ok('festival history is kept', hist.length === 6);
+}
+ok('a festival word shows even with no interests picked', (() => {
+  const f2 = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {state,load,wordOfWeek,wotwEntry};')();
+  globalThis.localStorage._d = {};
+  f2.load();
+  f2.state.interests = [];
+  const e = f2.wotwEntry(f2.wordOfWeek(new Date('2026-12-25T12:00:00')));
+  return !!e && e.festival;
+})());
+ok('and no interests in an ordinary week means no word', (() => {
+  const f3 = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {state,load,wordOfWeek};')();
+  globalThis.localStorage._d = {};
+  f3.load();
+  f3.state.interests = [];
+  return f3.wordOfWeek(new Date('2026-05-06T12:00:00')) === null;
+})());
+
 console.log('\ntiers gate the library');
 {
   const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
-    '\nreturn {HQ,TIERS,TIER_UNLOCK,state,load,introduce,tierProgress,tierUnlocked,tierNeeds,unlockedCeiling,isLocked,nextNew,remainingNew,tierFrom,tierChars,tierOf,placeAt};')();
+    '\nreturn {HQ,TIERS,TIER_UNLOCK,state,load,introduce,tierProgress,tierUnlocked,tierNeeds,unlockedCeiling,isLocked,nextNew,remainingNew,tierFrom,tierChars,tierOf,placeKnown};')();
   globalThis.localStorage._d = {};
   fresh.load();
   ok('tiers run to the literacy milestones', fresh.TIERS.map(t => t.to).join() === '200,500,1000');
@@ -312,10 +349,10 @@ console.log('\ntiers gate the library');
 {
   /* placement credits past a gate, and that is what opens it */
   const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
-    '\nreturn {HQ,TIERS,state,load,placeAt,tierUnlocked,unlockedCeiling};')();
+    '\nreturn {HQ,TIERS,state,load,placeKnown,tierUnlocked,unlockedCeiling};')();
   globalThis.localStorage._d = {};
   fresh.load();
-  fresh.placeAt(300);
+  fresh.placeKnown(fresh.HQ.slice(0, 300).map(ch => ch.c));
   ok('a placement past tier 1 opens tier 2', fresh.tierUnlocked(fresh.TIERS[1]));
   ok('and the ceiling follows', fresh.unlockedCeiling() === fresh.HQ.length);
 }

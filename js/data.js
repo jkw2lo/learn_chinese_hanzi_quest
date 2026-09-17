@@ -901,6 +901,96 @@ const INTERESTS = {
 
 const INTEREST_KEYS = Object.keys(INTERESTS);
 
+/* ============================================================
+   Seasonal words — what is actually happening this week
+
+   A word about mooncakes lands differently in the week of the
+   Mid-Autumn Festival than it does in March. When the current week
+   contains a festival, it takes precedence over the interest pool.
+
+   Each festival carries several words so it can teach a different one
+   each year: the history in `wotwPast` is never wiped, so Christmas
+   2027 won't repeat Christmas 2026.
+
+   Fixed-date festivals are "MM-DD". The lunar ones move against the
+   Gregorian calendar, so they are tabled per year — accurate beats
+   clever here, and a year outside the table simply doesn't fire.
+   ============================================================ */
+
+const FESTIVALS = [
+  { key:"newyear", icon:"🎊", name:"New Year's Day", zh:"元旦", on:"01-01", words:[
+    ["新年","xīnnián","new year","New-year. 新年快乐 is the greeting for the Gregorian one; 春节 gets its own."],
+    ["元旦","yuándàn","New Year's Day","First dawn. 元 is the origin or first, 旦 is the sun coming up over the horizon line."],
+    ["计划","jìhuà","plan","Reckon-draw. What everyone makes in the first week and abandons in the third."],
+    ["新开始","xīn kāishǐ","a fresh start","New beginning. 开始 is one of the characters you meet in stage 9."],
+    ["倒数","dàoshǔ","countdown","Counting backwards. What the last ten seconds of the year are for."]
+  ]},
+  { key:"spring", icon:"🧧", name:"Spring Festival", zh:"春节", lunar:{
+      2026:"02-17", 2027:"02-06", 2028:"01-26", 2029:"02-13", 2030:"02-03",
+      2031:"01-23", 2032:"02-11", 2033:"01-31", 2034:"02-19", 2035:"02-08" }, words:[
+    ["春节","chūnjié","Spring Festival","Spring festival. The biggest annual human migration on earth happens around it."],
+    ["红包","hóngbāo","red envelope","Red packet. Cash, given by married people to unmarried ones — and now sent by phone."],
+    ["年夜饭","niányèfàn","New Year's Eve dinner","Year-night-meal. The one meal of the year everyone is expected home for."],
+    ["恭喜发财","gōngxǐ fācái","wishing you prosperity","Respectful-joy, make-wealth. Said with the hands cupped together."],
+    ["春联","chūnlián","spring couplets","The red paper strips pasted either side of a door, written in calligraphy."],
+    ["守岁","shǒusuì","staying up on New Year's Eve","Guarding the year. Staying awake to see it out."]
+  ]},
+  { key:"lantern", icon:"🏮", name:"Lantern Festival", zh:"元宵节", lunarOffset:{ from:"spring", days:14 }, words:[
+    ["元宵","yuánxiāo","sweet rice balls","Also the name of the festival. Glutinous rice, sesame paste, eaten in soup."],
+    ["灯笼","dēnglóng","lantern","Lamp-cage. The red paper ones hung in pairs."],
+    ["猜灯谜","cāi dēngmí","guessing lantern riddles","Riddles written on the lanterns; solving them is the evening's entertainment."],
+    ["团圆","tuányuán","reunion","Round-round. Both characters are circles, which is the whole idea."],
+    ["满月","mǎnyuè","full moon","Full moon. The festival is fixed to the first one of the lunar year."]
+  ]},
+  { key:"qingming", icon:"🌿", name:"Qingming", zh:"清明节", on:"04-04", words:[
+    ["清明","qīngmíng","Clear and Bright","The solar term and the festival. Families sweep ancestral graves and bring food."],
+    ["扫墓","sǎomù","to sweep a grave","Sweep-tomb. The central act of the day."],
+    ["祖先","zǔxiān","ancestors","Forebear-first. Remembered rather than mourned."],
+    ["春雨","chūnyǔ","spring rain","Spring rain. A Tang poem everyone knows opens with rain falling on this exact day."],
+    ["踏青","tàqīng","a spring walk","Treading the green. The other half of the day: the living go walking."]
+  ]},
+  { key:"dragonboat", icon:"🐉", name:"Dragon Boat Festival", zh:"端午节", lunar:{
+      2026:"06-19", 2027:"06-09", 2028:"05-28", 2029:"06-16", 2030:"06-05",
+      2031:"06-24", 2032:"06-12", 2033:"06-01", 2034:"06-20", 2035:"06-10" }, words:[
+    ["端午节","duānwǔjié","Dragon Boat Festival","Upright-noon festival. Held on the fifth day of the fifth lunar month."],
+    ["粽子","zòngzi","sticky rice dumplings","Glutinous rice wrapped in bamboo leaves. The sweet-versus-savoury argument is regional and heated."],
+    ["龙舟","lóngzhōu","dragon boat","Dragon boat. Twenty paddlers, a drummer, and a great deal of shouting."],
+    ["屈原","Qū Yuán","Qu Yuan","The poet the festival commemorates, who drowned himself in 278 BC."],
+    ["划船","huáchuán","to row a boat","Paddle-boat. Also just going out on the water."]
+  ]},
+  { key:"midautumn", icon:"🌕", name:"Mid-Autumn Festival", zh:"中秋节", lunar:{
+      2026:"09-25", 2027:"09-15", 2028:"10-03", 2029:"09-22", 2030:"09-12",
+      2031:"10-01", 2032:"09-19", 2033:"09-08", 2034:"09-27", 2035:"09-16" }, words:[
+    ["中秋节","zhōngqiūjié","Mid-Autumn Festival","Middle-autumn festival. The moon is at its roundest and brightest."],
+    ["月饼","yuèbǐng","mooncake","Moon cake. Dense, sweet, given in ornate boxes, and quietly dreaded by many."],
+    ["赏月","shǎngyuè","moon gazing","Appreciating the moon. A named activity, which tells you something."],
+    ["嫦娥","Cháng'é","Chang'e","The woman who flew to the moon. China's lunar programme is named after her."],
+    ["思乡","sīxiāng","homesickness","Think-hometown. The festival's other register: looking at the same moon from far away."]
+  ]},
+  { key:"national", icon:"🇨🇳", name:"National Day", zh:"国庆节", on:"10-01", words:[
+    ["国庆节","guóqìngjié","National Day","Nation-celebrate festival. The start of a week-long holiday known as 黄金周."],
+    ["黄金周","huángjīnzhōu","Golden Week","Golden week. Everyone travels at once; book early or don't go."],
+    ["旅游","lǚyóu","tourism","Travel-roam. What the entire country does that week."],
+    ["首都","shǒudū","capital city","Head-metropolis. Beijing, 北京, literally northern capital."],
+    ["人民","rénmín","the people","People-folk. 人民币 the people's currency is the official name of the yuan."]
+  ]},
+  { key:"halloween", icon:"🎃", name:"Halloween", zh:"万圣节", on:"10-31", words:[
+    ["万圣节","wànshèngjié","Halloween","Ten-thousand saints festival — a translation of All Hallows."],
+    ["南瓜","nánguā","pumpkin","Southern melon. Most Chinese gourds are named as some variety of 瓜."],
+    ["面具","miànjù","mask","Face-tool. Also used for the painted masks in Chinese opera."],
+    ["吓人","xiàrén","scary","Frighten-person. Compact and useful."],
+    ["糖果","tángguǒ","sweets","Sugar-fruit. What the evening is nominally about."]
+  ]},
+  { key:"christmas", icon:"🎄", name:"Christmas", zh:"圣诞节", on:"12-25", words:[
+    ["圣诞节","shèngdànjié","Christmas","Holy-birth festival. Marked commercially across urban China, rarely religiously."],
+    ["圣诞树","shèngdànshù","Christmas tree","Christmas tree. 树 is one of the characters in stage 8."],
+    ["礼物","lǐwù","present, gift","Ceremony-thing. Also the word for any gift at all."],
+    ["雪人","xuěrén","snowman","Snow person. Both characters are ones you already know."],
+    ["平安夜","píng'ānyè","Christmas Eve","Peaceful night — the Chinese name for Silent Night, and for the evening itself."],
+    ["苹果","píngguǒ","apple","Apples are given on Christmas Eve in China, because 苹 sounds like the 平 in 平安, peace."]
+  ]}
+];
+
 const MENU_TIERS = [
   { n: 1, at: 0,  label: "Dish names only" },
   { n: 2, at: 15, label: "With descriptions" },

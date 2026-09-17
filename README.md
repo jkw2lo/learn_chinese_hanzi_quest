@@ -362,9 +362,9 @@ Two deliberate exemptions:
 - **Placement** credits past the gate, because proving you know 300 characters
   is exactly what should open tier 2. It does, automatically — the unlock is
   computed from what you know, so the quiz result unlocks tiers as a side
-  effect rather than needing a special case. Note that unchecked characters
-  count towards that unlock: the tier opens on the quiz's estimate and the
-  estimate is then checked, rather than the other way round.
+  effect rather than needing a special case. Every character counted towards
+  that unlock was individually answered, so the tier opens on evidence rather
+  than on an estimate.
 - **The word of the week** is drawn from your interests and routinely uses
   characters far beyond your tier. That is the point of it, and it is safe
   because it is not a drill and never enters the review queue.
@@ -375,56 +375,51 @@ straddling stage under both reads as a bug rather than as precision.
 
 ## Placement — finding where to start
 
-Plenty of people arrive already reading 人 and 大 and 中国. Making them click
-through twenty characters they have known for years is the fastest way to lose
-them, so a quiz offered once at the end of the tour walks the curriculum **in
-order** and finds where recognition gives out.
+Plenty of people arrive already reading 人 and 大 and 中国. A quiz offered once
+at the end of the tour walks the curriculum **in order** and stops once you have
+missed more than `PLACE_MISS_LIMIT` (3). Nothing is sampled and nothing is
+inferred: a character is credited **if and only if you answered it correctly**.
 
-It probes rather than tests everything: a block of `PROBE_SIZE` (5) characters
-sampled evenly across `PROBE_WINDOW` (20) curriculum positions. Score
-`PROBE_PASS` (4) or better and the walk moves on; drop below and it stops there.
-Someone who reads the first ~95 characters is placed at 100 after about 30
-questions — roughly two minutes.
+This replaced a sampling version that got two things wrong, and the second was
+worse than the first.
 
-**The quiz decides where to start. It does not decide what you know.** Those are
-different claims and the first version conflated them: it credited all 100
-characters at `PLACED_LVL`, including the 76 it had never actually shown. Five
-characters standing for twenty means most of a credited range is an inference
-from its neighbours, and treating an inference identically to an answered
-question is exactly the thing placement must not do.
+It **guessed** — five characters stood for twenty, so most of a credited range
+was never shown. "We found your level" really meant "we assumed you knew seventy
+characters we never asked about".
 
-So the two are credited differently, and neither as mastery:
+And it **dumped**. Everything credited went into the review queue, so being
+placed at 100 meant opening the app to sixty-odd cards on day one — a mixture of
+characters you knew cold and characters you had never seen. That is the worst
+possible first session: too long, and too uneven to be either satisfying or
+useful.
 
-| | level | first review | flag |
-|---|---|---|---|
-| Asked and answered right | `PLACED_LVL` (2) | fanned over `PLACED_SPREAD` (5) days | — |
-| Never asked | 0 | fanned over `CHECK_SPREAD` (10) days | `unchecked` |
+**Credit is not homework.** A credited character goes into the library as
+*known*: it counts for tier progress, it is drawn by Go deeper, it inks itself
+in sentences and vocabulary, exactly as if you had learnt it in an earlier
+session. What it does not do is land in tomorrow's queue. Its first review sits
+`PLACED_REST` (12) days out, fanned across `PLACED_FAN` (24) more.
 
-Level 0 is the bottom of the ladder, so the first time an unchecked character
-comes up it is an ordinary recognition card: right and it climbs like anything
-else, wrong and it is taught properly from there. `grade()` clears the flag
-either way — the question has been settled. Nothing is assumed permanently; it
-is **verified lazily**, through the review machinery that already exists,
-instead of by making someone sit through 348 questions before they begin.
+The exception is the **tail**: the last `PLACE_TAIL` (12) characters you got
+right before you started missing are the shakiest things you know, because you
+were at the edge of your range. They come back within the week at a lower level.
+That is the refresher, without the backlog.
 
-The count is visible rather than silent: Today carries an **Unchecked** pill
-while any remain, and a character card credited this way says so. In practice
-they clear fast — a single session settled 74 of 76 in testing.
+So day one after placement is the same day one everybody gets: **five new
+characters, zero reviews**, starting at the first character you actually missed.
+A smoke check asserts `dueCount() === 0` immediately after placing, and that the
+first review is at least two days out.
 
-Credit is shallow in both rows for the same reason, and the reviews are fanned
-so 100 characters land as ~15 a day with nothing at all due on day one.
+Questions are **meaning → character**. Recognising 山 among four English words is
+easy to fake by elimination; picking 山 out of four plausible characters is not.
+Distractors come from within 30 curriculum positions, so they are of a piece.
+There is an explicit "I don't know this one", and the screen says outright that
+guessing right means the app skips teaching it.
 
-Questions are **meaning → character**, not the other way round. Recognising 山
-among four English words is easy to fake by elimination; picking 山 out of four
-plausible characters is not. Distractors come from within 30 positions in the
-curriculum, so they are of a piece — a block of easy ones would place everybody
-at the end. There is an explicit "I don't know this one", because the quiz is
-only useful if people answer honestly, and the screen says so.
-
-**`placeAt()` may only ever add.** A character already in the record is left
-strictly alone. Without that, retaking the quiz after a month of study would
-knock every one of those characters back to level 2 and reset its due date — a
-silent, partial reset dressed up as a re-place. A smoke check holds it.
+The walk is exhaustive, which for someone who reads 200 characters is 200-odd
+questions. So **"That's enough — start me here"** appears after
+`MIN_BEFORE_STOP` (12) questions and finishes on the spot, keeping everything
+answered so far. Re-placing from Settings only ever adds; an existing record is
+never touched.
 
 ## Personalisation
 
@@ -447,6 +442,42 @@ makes you want to keep going. The card says as much: *nothing to do here*.
 `wordOfWeek()` seeds the pick from an ISO week key, so it is stable all week and
 survives reloads, and it won't repeat until everything in your chosen interests
 has had a turn.
+
+### Seasonal words
+
+A word about mooncakes lands differently in the week of the Mid-Autumn Festival
+than it does in March. When the current ISO week contains a festival, it takes
+precedence over the interest pool — nine of them, from 春节 to Christmas, each
+carrying five or six words.
+
+Fixed-date festivals are `MM-DD`. The lunar ones move against the Gregorian
+calendar, so they are **tabled per year** rather than computed: accurate beats
+clever, and a year outside the table simply doesn't fire instead of guessing
+wrong. 元宵节 is derived as an offset from 春节, which is how it actually works.
+
+**Festival history is never wiped.** The interest pool is allowed to cycle once
+exhausted, but `f:`-prefixed entries in `wotwPast` survive, so Christmas 2027
+doesn't repeat Christmas 2026. Six words means six years before it has to come
+round again, and even then it picks the one seen longest ago. A smoke check
+walks six consecutive Christmases and asserts all six are different.
+
+A festival word shows even if you have picked no interests at all — the week
+itself is reason enough.
+
+## Finishing something
+
+Two moments get a celebration: the day's list all ticked, and every character
+solid in all three Go deeper modes. Both are latched — the day's one in the day
+record, the Go deeper one in the profile — so a re-render doesn't set them off
+again, and the Go deeper latch clears when a new character makes the library
+incomplete, so it can be earned again.
+
+The sound is **synthesised, not bundled**: five notes of a pentatonic scale,
+which is both the scale that reads as Chinese to most ears and the one where any
+subset is consonant. A stored clip would be another asset to ship and another
+thing to go missing — and `js/audio.js` already proved how that ends. It honours
+the sound setting, and the falling-petal animation honours
+`prefers-reduced-motion` by not rendering the petals at all.
 
 ## Go deeper, and what "solid" means
 

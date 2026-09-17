@@ -1213,12 +1213,6 @@ function openChar(c) {
            <span class="qpill">${st === "due" ? "Due <b>now</b>" : `Next <b>${esc(r.due)}</b>`}</span>`
         : `<span class="qpill">Not started yet</span>`}</div>
       ${charCard(ch, { writerId: wid })}
-      ${r && isUnchecked(c) ? `<div class="gate-note">
-          <span class="gate-k han">待查</span>
-          <span>Credited by the placement quiz, which never actually asked you this one.
-            It's in your rotation as a check rather than a lesson — answer it right once and it climbs like
-            any other character.</span>
-        </div>` : ""}
       ${r ? "" : isLocked(c)
         ? `<div class="gate-note">
              <span class="gate-k han">未开</span>
@@ -2196,7 +2190,6 @@ function renderToday() {
       <div class="queue">
         <span class="qpill new">New <b>${newLeft}</b></span>
         <span class="qpill due">Due <b>${due}</b></span>
-        ${uncheckedCount() ? `<span class="qpill unchecked" title="Credited by the placement quiz but never actually asked. Each one is an ordinary card in your rotation; answering it right settles it.">Unchecked <b>${uncheckedCount()}</b></span>` : ""}
         <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Revised today <b>${revd.length}</b></span>
       </div>
     </div>
@@ -2236,7 +2229,7 @@ function renderToday() {
   /* ---- word of the week: a postcard from further up the road ---- */
   const wk = wordOfWeek();
   const wotw = (() => {
-    if (!wk) {
+    if (!wk || !wotwEntry(wk)) {
       return `<div class="sheet wotw wotw-empty">
         <div class="pr-head"><span class="eyebrow">Word of the week <span class="han">每周一词</span></span></div>
         <p class="note">Tell the app what you're interested in and it'll show you one real word a week from it —
@@ -2244,20 +2237,24 @@ function renderToday() {
         <button class="btn btn-ghost btn-sm btn-block" id="wotwSetup">Pick your interests</button>
       </div>`;
     }
-    const cat = INTERESTS[wk.cat];
-    const [word, pin, mean, note] = cat.words[wk.i];
+    const entry = wotwEntry(wk);
+    if (!entry) return "";
+    const cat = entry.src;
+    const [word, pin, mean, note] = entry.word;
     const glyphs = [...word].filter(c => /[\u4e00-\u9fff]/.test(c));
     const known = glyphs.filter(isKnown).length;
     return `<div class="sheet wotw">
       <div class="pr-head">
         <span class="eyebrow">Word of the week <span class="han">每周一词</span></span>
-        <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}</span>
+        <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}${
+          entry.festival ? ` <span class="han">${esc(cat.zh)}</span>` : ""}</span>
       </div>
       <button class="wotw-word" id="wotwSay" title="Hear it">
         <span class="z">${renderZh(word)}</span>
         <span class="p">${esc(pin)}</span>
         <span class="m">${esc(mean)}</span>
       </button>
+      ${entry.festival ? `<p class="wotw-when">It's ${esc(cat.name)} this week.</p>` : ""}
       <p class="wotw-note">${esc(note)}</p>
       <p class="note dim">${known === glyphs.length
         ? "You can already read every character in it."
@@ -2337,6 +2334,12 @@ function renderToday() {
      much hasn't been touched. Going through the material again and getting it
      right is the thing that makes it stick, so it should be visible. */
   const exToday = extraToday(), exAll = extraTotal(), exBest = extraBestDay();
+  /* "fully completed" = every character solid in every mode it can be asked in */
+  let deepEligible = false;
+  const deepAllSolid = Object.entries(PRACTICE).every(([id, cfg]) => {
+    const chars = practiceChars(id);
+    return chars.length > 0 && skillStanding(cfg.skill, chars).pct >= 1;
+  });
   const deeper = `<section class="deeper">
     <div class="deeper-head">
       <span class="deeper-title">
@@ -2352,6 +2355,7 @@ function renderToday() {
     <div class="pr-grid pr-grid-3">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
         const chars = practiceChars(id);
+        deepEligible = deepEligible || chars.length > 0;
         const n = chars.length;
         const st = skillStanding(cfg.skill, chars);
         const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
@@ -2440,10 +2444,13 @@ function renderToday() {
     </div>
   </div>`;
 
+  /* both answers are already computed above; latch and fire */
+  checkCheers(ready.length > 0 && stepsDone === ready.length, deepAllSolid);
+
   $("#wotwSetup")?.addEventListener("click", () => openProfile(false));
   $("#wotwSay")?.addEventListener("click", () => {
-    const c = INTERESTS[wk.cat].words[wk.i][0];
-    sayPhrase(c, true);
+    const e = wotwEntry(wk);
+    if (e) sayPhrase(e.word[0], true);
   });
   $("#startBtn")?.addEventListener("click", startSession);
   $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
@@ -2875,9 +2882,9 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="profileBtn">Edit</button>
         </div>
         <div class="settings-row">
-          <label>Find my level<small>${state.placed && state.placed.at
-            ? `Placed you at ${state.placed.at} characters on ${esc(new Date(state.placed.on).toLocaleDateString())}. Taking it again only ever adds characters — it never removes progress.`
-            : "A quick check that walks the curriculum in order and credits what you already read."}</small></label>
+          <label>Find my level<small>${state.placed && state.placed.known
+            ? `Credited ${state.placed.known} character${state.placed.known === 1 ? "" : "s"} on ${esc(new Date(state.placed.on).toLocaleDateString())}. Taking it again only ever adds — it never removes progress.`
+            : "Walks the curriculum in order and marks what you already read as known, without putting it in your review queue."}</small></label>
           <button class="btn btn-ghost btn-sm" id="placeBtn">${state.placed ? "Retake" : "Start"}</button>
         </div>
         <div class="settings-row">
@@ -3151,6 +3158,88 @@ function onKey(e) {
 }
 
 /* ============================================================
+   Finishing something
+
+   Two moments worth marking: the day's list all ticked, and every character
+   solid in all three Go deeper modes. Both are rare enough that a bit of
+   noise is earned — the day's list once a day at most, the Go deeper one
+   perhaps twice a year.
+
+   The sound is synthesised rather than bundled: five notes of a pentatonic
+   scale, which is the one that reads as Chinese to most ears and also the one
+   where any subset sounds consonant. A stored clip would be another asset to
+   ship and another thing to go missing.
+   ============================================================ */
+
+const CHEERS = {
+  day:  { seal: "成", zh: "今日功课已毕", en: "Today's page is filled.", notes: [523.25, 587.33, 659.25, 783.99, 880] },
+  deep: { seal: "圆", zh: "圆满", en: "Every character solid, every mode.", notes: [523.25, 659.25, 783.99, 1046.5, 1318.5] }
+};
+
+function cheerSound(notes) {
+  if (!state.audio) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    notes.forEach((f, i) => {
+      const t0 = ctx.currentTime + i * 0.11;
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = f;
+      /* a struck-string shape: immediate, then let it ring out */
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 1);
+    });
+    setTimeout(() => { try { ctx.close(); } catch {} }, 2600);
+  } catch { /* no audio context — the animation still lands */ }
+}
+
+let cheerTimer = null;
+
+function celebrate(kind) {
+  const c = CHEERS[kind];
+  if (!c) return;
+  const el = $("#cheer");
+  if (!el) return;
+  $("#cheerSeal").textContent = c.seal;
+  $("#cheerZh").textContent = c.zh;
+  $("#cheerEn").textContent = c.en;
+
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const bits = $("#cheerBits");
+  bits.innerHTML = calm ? "" : Array.from({ length: 14 }, (_, i) => {
+    const left = 6 + Math.random() * 88;
+    const delay = Math.random() * 0.5;
+    const dur = 1.5 + Math.random() * 1.1;
+    const size = 0.7 + Math.random() * 0.9;
+    const drift = (Math.random() - 0.5) * 120;
+    return `<span class="cheer-bit" style="left:${left}%;animation-delay:${delay}s;animation-duration:${dur}s;font-size:${size}rem;--drift:${drift}px">${i % 2 ? "✦" : "花"}</span>`;
+  }).join("");
+
+  el.classList.add("on");
+  cheerSound(c.notes);
+  clearTimeout(cheerTimer);
+  cheerTimer = setTimeout(() => el.classList.remove("on"), calm ? 1800 : 2600);
+}
+
+/* Fired from renderToday, which is the one place that already knows both
+   answers. Each is latched so a re-render doesn't set it off again — the
+   day's one in the day record, the Go deeper one in the profile, since
+   finishing every mode is a once-in-a-library event. */
+function checkCheers(dayDone, deepDone) {
+  const t = today();
+  if (dayDone && !t.cheered) { t.cheered = true; save(); setTimeout(() => celebrate("day"), 260); }
+  if (deepDone && !state.deepCheered) { state.deepCheered = true; save(); setTimeout(() => celebrate("deep"), dayDone ? 2900 : 260); }
+  /* it can be lost again — a new character makes the library incomplete */
+  if (!deepDone && state.deepCheered) { state.deepCheered = false; save(); }
+}
+
+/* ============================================================
    Profile — a name, and what you care about
 
    Two questions, both skippable. The name is used where the app addresses you
@@ -3226,12 +3315,13 @@ function openProfile(firstRun) {
    alike; a block of easy ones would place everybody at the end.
    ============================================================ */
 
-const place = { start: 0, block: [], idx: 0, right: 0, asked: 0, done: false, got: new Set() };
+const place = { idx: 0, asked: 0, misses: 0, done: false, got: new Set(), result: 0 };
+
+const MIN_BEFORE_STOP = 12;   /* questions before "that's enough" is offered */
 
 function openPlacement() {
-  place.start = 0; place.idx = 0; place.right = 0; place.asked = 0; place.done = false;
-  place.got = new Set();            /* the ones actually answered correctly */
-  place.block = probeBlock(0);
+  place.idx = 0; place.asked = 0; place.misses = 0; place.done = false;
+  place.got = new Set(); place.result = 0;
   $("#place").classList.add("on");
   document.body.style.overflow = "hidden";
   renderPlacement();
@@ -3255,100 +3345,102 @@ function placementOptions(c) {
 }
 
 function renderPlacement() {
-  const total = Math.ceil(HQ.length / PROBE_WINDOW);
-  const doneBlocks = Math.floor(place.start / PROBE_WINDOW);
-  $("#placeProg").style.width = `${Math.min(100, (doneBlocks / total) * 100)}%`;
-  $("#placeCount").textContent = place.done ? "" : `${place.asked} asked`;
-
   if (place.done) return renderPlacementDone();
 
-  const c = place.block[place.idx];
-  const ch = CHAR_INDEX[c];
-  const opts = placementOptions(c);
+  /* walk past anything already known — a retake shouldn't re-ask them */
+  while (place.idx < HQ.length && isKnown(HQ[place.idx].c)) place.idx++;
+  if (place.idx >= HQ.length) return finishPlacement();
+
+  const ch = HQ[place.idx];
+  const opts = placementOptions(ch.c);
+  const stage = STAGES.find(st => ch.i < st.end) || STAGES[0];
+  const left = PLACE_MISS_LIMIT + 1 - place.misses;
+
+  $("#placeProg").style.width = `${((place.idx / HQ.length) * 100).toFixed(1)}%`;
+  $("#placeCount").textContent = `${place.got.size} known`;
 
   $("#placeBody").innerHTML = `<div class="place-inner">
+    <span class="place-where">${esc(stage.icon)} ${esc(stage.name)} · #${ch.i + 1} of ${HQ.length}</span>
     <span class="eyebrow">Which character means</span>
     <h1 class="place-q">${esc(ch.m)}</h1>
     <div class="place-opts">
       ${opts.map(o => `<button class="place-opt" data-c="${esc(o.c)}"><span class="han">${esc(o.c)}</span></button>`).join("")}
     </div>
     <button class="btn btn-ghost btn-sm" id="placeDunno">I don't know this one</button>
-    <p class="note">Answer honestly — guessing right here means the app skips teaching it.</p>
+    <p class="note">Answer honestly. Every one you get right is marked as already known and skipped —
+      ${place.misses
+        ? `${left} more miss${left === 1 ? "" : "es"} and we'll stop here.`
+        : `we stop once you've missed more than ${PLACE_MISS_LIMIT}.`}</p>
+    ${place.asked >= MIN_BEFORE_STOP
+      ? `<button class="btn btn-ghost btn-sm place-stop" id="placeEnough">That's enough — start me here</button>` : ""}
   </div>`;
 
-  $$("#placeBody .place-opt").forEach(b => b.onclick = () => placementAnswer(b.dataset.c === c, b));
-  $("#placeDunno").onclick = () => placementAnswer(false, null);
+  $$("#placeBody .place-opt").forEach(b => b.onclick = () => placementAnswer(b.dataset.c === ch.c, b, ch.c));
+  $("#placeDunno").onclick = () => placementAnswer(false, null, ch.c);
+  $("#placeEnough")?.addEventListener("click", finishPlacement);
 }
 
-function placementAnswer(ok, btn) {
+function placementAnswer(ok, btn, c) {
   place.asked++;
-  if (ok) { place.right++; place.got.add(place.block[place.idx]); }
+  if (ok) place.got.add(c); else place.misses++;
   $$("#placeBody .place-opt").forEach(b => {
     b.disabled = true;
-    if (b.dataset.c === place.block[place.idx]) b.classList.add("right");
+    if (b.dataset.c === c) b.classList.add("right");
   });
   if (btn && !ok) btn.classList.add("wrong");
-  say(place.block[place.idx]);
-  setTimeout(placementNext, ok ? 340 : 900);
+  say(c);
+  setTimeout(() => {
+    place.idx++;
+    if (place.misses > PLACE_MISS_LIMIT) return finishPlacement();
+    renderPlacement();
+  }, ok ? 320 : 900);
 }
 
-function placementNext() {
-  place.idx++;
-  if (place.idx < place.block.length) return renderPlacement();
-
-  /* block finished: passed it, or this is where the walk stops */
-  const passed = place.right >= Math.min(PROBE_PASS, place.block.length);
-  const nextStart = place.start + PROBE_WINDOW;
-  if (passed && nextStart < HQ.length) {
-    place.start = nextStart;
-    place.block = probeBlock(place.start);
-    place.idx = 0; place.right = 0;
-    return renderPlacement();
-  }
-  place.result = passed ? HQ.length : place.start;
+function finishPlacement() {
+  place.result = place.got.size;
   place.done = true;
   renderPlacement();
 }
 
 function renderPlacementDone() {
-  const at = place.result;
-  const fresh = HQ.slice(0, at).filter(ch => !isKnown(ch.c));
-  const confirmed = fresh.filter(ch => place.got.has(ch.c)).length;
-  const unchecked = fresh.length - confirmed;
-  const stage = at >= HQ.length ? STAGES[STAGES.length - 1] : (STAGES.find(s => at < s.end) || STAGES[0]);
+  const n = place.got.size;
+  const reached = place.idx;
+  const stage = n ? (STAGES.find(st => reached < st.end) || STAGES[STAGES.length - 1]) : STAGES[0];
+  const firstGap = HQ.find(ch => !place.got.has(ch.c) && !isKnown(ch.c));
   $("#placeProg").style.width = "100%";
   $("#placeBody").innerHTML = `<div class="place-inner">
-    <span class="place-seal">${at ? esc(stage.icon) : "🌱"}</span>
-    <h1>${at ? `Your starting point is about ${at} characters in.` : "We'll start at the beginning."}</h1>
-    <p class="note">${at
-      ? `That puts you in <b>${esc(stage.name)} ${esc(stage.zh)}</b>. Nothing you've already studied is touched.`
-      : `Nothing to skip, which is the easiest place to start from. ${HQ.length} characters, in an order where each one makes the next easier.`}</p>
+    <span class="place-seal">${n ? esc(stage.icon) : "🌱"}</span>
+    <h1>${n ? `You already know ${n} character${n === 1 ? "" : "s"}.` : "We'll start at the beginning."}</h1>
+    <p class="note">${n
+      ? `Every one of those was asked and answered — nothing here is guessed. They go into your library as known,
+         which means they'll show up in reading, writing and pronunciation practice, and they'll be inked in
+         sentences, exactly as if you'd learnt them in an earlier session.`
+      : `Nothing to skip, which is the easiest place to start from. ${HQ.length} characters, in an order where
+         each one makes the next easier.`}</p>
 
-    ${at ? `<div class="place-ledger">
+    ${n ? `<div class="place-ledger">
       <div class="pl-row">
-        <span class="pl-n">${place.asked}</span>
-        <span class="pl-t"><b>asked</b><small>${confirmed} of them right — those go in at a level that reflects it</small></span>
+        <span class="pl-n">0</span>
+        <span class="pl-t"><b>reviews tomorrow</b><small>Known characters don't land in your queue. The first few
+          come back within the week as a refresher; the rest are a fortnight out or more.</small></span>
       </div>
       <div class="pl-row">
-        <span class="pl-n">${unchecked}</span>
-        <span class="pl-t"><b>not asked</b><small>The quiz samples, so most of the range was never shown. These go in
-          <b>unchecked</b>, at the bottom of the ladder, and come up as ordinary recognition cards over the next
-          fortnight. Get one right and it climbs; get it wrong and it's taught properly from there.</small></span>
+        <span class="pl-n">5</span>
+        <span class="pl-t"><b>new characters on day one</b><small>The same first session everybody gets —
+          starting at ${firstGap ? `<b class="han">${esc(firstGap.c)}</b> ${esc(firstGap.p)}, the first one you didn't know` : "the beginning"}.</small></span>
       </div>
-    </div>
-    <p class="note">In other words the quiz only decides <b>where to start</b>. It doesn't decide what you know —
-      everything behind that point still has to earn its place.</p>` : ""}
+    </div>` : ""}
 
     <div class="place-foot">
       <button class="btn btn-ghost" id="placeRedo">Take it again</button>
-      <button class="btn btn-seal" id="placeGo">${at ? "Start here" : "Start from the beginning"}</button>
+      <button class="btn btn-seal" id="placeGo">${n ? "Start here" : "Start from the beginning"}</button>
     </div>
-    <p class="note dim">You can reset and re-place from Settings at any time.</p>
+    <p class="note dim">You can re-place from Settings at any time. It only ever adds.</p>
   </div>`;
   $("#placeRedo").onclick = openPlacement;
   $("#placeGo").onclick = () => {
-    if (at) placeAt(at, place.got);
-    else { state.placed = { at: 0, on: dayKey() }; save(); }
+    if (n) placeKnown(place.got);
+    else { state.placed = { on: dayKey(), at: 0, known: 0 }; save(); }
     closePlacement();
   };
 }

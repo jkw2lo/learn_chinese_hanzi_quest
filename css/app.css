@@ -87,7 +87,12 @@ body {
   overflow-x: hidden;
 }
 
-button { font: inherit; color: inherit; cursor: pointer; }
+/* `background: none` matters as much as the colour here. Without it a button
+   that sets no background of its own keeps the user agent's light grey, which
+   is invisible under light text in dark mode — that is what hid the
+   unhighlighted half of every word in "Words you'll meet it in". Every button
+   in the app that wants a background sets one. */
+button { font: inherit; color: inherit; cursor: pointer; background: none; }
 :focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -303,7 +308,6 @@ p { margin: 0; }
 .qpill b { font-weight: 600; color: var(--ink); }
 .qpill.new b { color: var(--jade); }
 .qpill.due b { color: var(--gold); }
-.qpill.unchecked b { color: var(--ink-3); }
 
 /* ---------- stage ladder ---------- */
 
@@ -423,7 +427,10 @@ code {
   align-items: baseline;
 }
 .word:last-child { border-bottom: 0; }
-.word-zh { font-family: var(--f-han-ui); font-size: 1.12rem; grid-row: span 2; align-self: center; }
+.word-zh {
+  font-family: var(--f-han-ui); font-size: 1.12rem; grid-row: span 2; align-self: center;
+  color: var(--ink); border: 0; padding: 0; text-align: left;
+}
 .word-zh mark { background: var(--seal-wash); color: var(--seal); border-radius: 3px; padding: 0 .06em; }
 .word-pin { font-family: var(--f-pin); font-size: .78rem; color: var(--ink-3); }
 .word-en { font-size: .85rem; color: var(--ink-2); }
@@ -1511,6 +1518,53 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 
 /* ---------- first-run tour ---------- */
 
+/* ---------- finishing something ---------- */
+
+.cheer {
+  position: fixed; inset: 0; z-index: 95; display: none;
+  align-items: center; justify-content: center; pointer-events: none;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  backdrop-filter: blur(2px);
+}
+.cheer.on { display: flex; animation: cheerFade .35s ease both; }
+@keyframes cheerFade { from { opacity: 0 } to { opacity: 1 } }
+
+.cheer-card {
+  display: flex; flex-direction: column; align-items: center; gap: .5rem;
+  padding: 1.6rem 2.2rem; border-radius: 16px;
+  background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  animation: cheerPop .5s cubic-bezier(.22,1.4,.4,1) both;
+}
+@keyframes cheerPop {
+  from { transform: scale(.72) translateY(14px); opacity: 0 }
+  to   { transform: scale(1) translateY(0); opacity: 1 }
+}
+.cheer-seal {
+  font-family: var(--f-han); font-size: 2.6rem; line-height: 1; color: #fff;
+  background: var(--seal); border-radius: 10px; padding: .3rem .5rem .38rem;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--seal) 40%, transparent);
+  animation: sealStamp .55s cubic-bezier(.3,1.6,.5,1) .1s both;
+}
+@keyframes sealStamp {
+  from { transform: scale(1.7) rotate(-9deg); opacity: 0 }
+  60%  { transform: scale(.94) rotate(2deg); opacity: 1 }
+  to   { transform: scale(1) rotate(0); opacity: 1 }
+}
+.cheer-zh { font-family: var(--f-han); font-size: 1.15rem; color: var(--ink); letter-spacing: .08em; }
+.cheer-en { font-size: .82rem; color: var(--ink-3); }
+
+.cheer-bits { position: absolute; inset: 0; overflow: hidden; }
+.cheer-bit {
+  position: absolute; top: -2rem; font-family: var(--f-han);
+  color: var(--gold); opacity: 0;
+  animation-name: cheerFall; animation-timing-function: cubic-bezier(.35,.2,.6,1); animation-fill-mode: both;
+}
+@keyframes cheerFall {
+  0%   { transform: translate(0, -10vh) rotate(0); opacity: 0 }
+  12%  { opacity: .95 }
+  100% { transform: translate(var(--drift), 108vh) rotate(260deg); opacity: 0 }
+}
+
 /* ---------- tiers ---------- */
 
 .tier { margin-bottom: .7rem; }
@@ -1588,6 +1642,7 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .wotw-word .z { font-family: var(--f-han); font-size: 1.9rem; line-height: 1.15; color: var(--ink); }
 .wotw-word .p { font-family: var(--f-pin); font-size: .84rem; color: var(--jade); }
 .wotw-word .m { font-size: .8rem; color: var(--ink-2); }
+.wotw-when { font-size: .74rem; color: var(--seal); font-weight: 600; }
 .wotw-note { font-size: .78rem; line-height: 1.55; color: var(--ink-2); }
 .wotw .note.dim { font-size: .7rem; color: var(--ink-3); }
 .wotw-empty .note { font-size: .78rem; }
@@ -1624,6 +1679,9 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .place-opt.right { border-color: var(--jade); background: var(--jade-wash); }
 .place-opt.wrong { border-color: var(--seal); background: var(--seal-wash); }
 .place-seal { font-size: 2.6rem; line-height: 1; }
+.place-where { font-size: .72rem; color: var(--ink-3); letter-spacing: .04em; }
+.place-stop { margin-top: .2rem; opacity: .75; }
+.place-stop:hover { opacity: 1; }
 .place-ledger {
   width: 100%; display: flex; flex-direction: column; gap: .1rem;
   background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r);
