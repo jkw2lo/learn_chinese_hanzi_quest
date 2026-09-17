@@ -28,7 +28,7 @@ const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m] : (RADICAL
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
-const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+/* shuffle lives in data.js — srs.js needs it as well */
 const pick = (arr, n) => shuffle([...arr]).slice(0, n);
 const one = arr => arr[(Math.random() * arr.length) | 0];
 
@@ -328,9 +328,20 @@ function writerBox(char, id) {
 const PAD_SENSITIVITY = 0.55;   /* trackpad travel : ink travel */
 
 const pad = { active: false, svg: null, box: null, lockEl: null, dot: null, hint: null,
-              x: 0, y: 0, ink: false, onEnd: null, onDraw: null };
+              x: 0, y: 0, ink: false, onEnd: null, onDraw: null, quiet: false };
 
 const padSupported = () => !!document.body.requestPointerLock && !!window.MouseEvent;
+
+/* Arm the trackpad on a writing box the learner didn't explicitly ask to arm.
+
+   Pointer lock normally wants a user gesture, and a drill card that arrives on
+   the auto-advance timer hasn't got one — so this is a request that is allowed
+   to be turned down. It fails silently and leaves the manual button exactly
+   where it was, which is why `quiet` exists. */
+function padAuto(box, mount, onEnd, onDraw, lockEl) {
+  if (!state.padAuto || pad.active || !padSupported()) return false;
+  return padStart(box, mount, onEnd, onDraw, lockEl, true);
+}
 
 /* Two sinks: a hanzi-writer quiz, fed mouse events it will believe, or a
    free page that just wants the brush position. */
@@ -442,11 +453,12 @@ function padArm() {
   document.addEventListener("keyup", padKey);
 }
 
-function padStart(box, mount, onEnd, onDraw, lockEl) {
+function padStart(box, mount, onEnd, onDraw, lockEl, quiet) {
   const svg = mount ? mount.querySelector("svg") : null;
   if ((!svg && !onDraw) || !padSupported() || pad.active) return false;
   pad.svg = svg; pad.box = box; pad.onEnd = onEnd; pad.onDraw = onDraw || null;
   pad.lockEl = lockEl || box;
+  pad.quiet = !!quiet;
 
   document.addEventListener("pointerlockchange", padLockChange);
   document.addEventListener("pointerlockerror", padRefused);
@@ -460,7 +472,12 @@ function padStart(box, mount, onEnd, onDraw, lockEl) {
 /* Pointer lock can be refused — notably inside an embedded frame that wasn't
    granted it. Say so plainly rather than leaving a dead button. */
 function padRefused() {
+  const quiet = pad.quiet;
   padStop();
+  /* An automatic attempt that the browser turns down is not an error the
+     learner needs to read about — the button is still right there. Only an
+     attempt they actually asked for gets an explanation. */
+  if (quiet) return;
   const box = pad.box || $(".tian");
   if (!box || box.querySelector(".pad-note")) return;
   const note = document.createElement("span");
@@ -485,6 +502,7 @@ function padStop() {
   pad.box?.classList.remove("padding-on");
   pad.dot = pad.hint = pad.svg = pad.box = pad.lockEl = null;
   pad.onDraw = null;
+  pad.quiet = false;
   const cb = pad.onEnd; pad.onEnd = null;
   cb?.();
 }
@@ -655,18 +673,19 @@ function practiceChars(mode) {
   return mode === "write" ? all.filter(c => window.STROKE_DATA[c]) : all;
 }
 
-/* The shakiest slice of that, which is what a round actually draws from. */
-function practiceAvailable(mode) {
-  let pool = practicePool(PRACTICE[mode].skill, 60);
-  if (mode === "write") pool = pool.filter(c => window.STROKE_DATA[c]);
-  return pool;
-}
+/* The characters one round draws, chosen by practicePool's 70/30 recency
+   split and least-shown-first rotation. The eligible set is passed in rather
+   than filtered out afterwards: filtering a ready-made pool down to the
+   writable ones used to hand a short round back, and quietly broke the split
+   it had just been at pains to get right. */
+const ROUND = 10;
+const practiceRound = mode => practicePool(PRACTICE[mode].skill, ROUND, practiceChars(mode));
 
 function startPractice(mode) {
   const cfg = PRACTICE[mode];
-  const pool = practiceAvailable(mode);
+  const pool = practiceRound(mode);
   if (!pool.length) return;
-  session.queue = pool.slice(0, 10).map(c => ({ t: "drill", c, kind: one(cfg.kinds) }));
+  session.queue = pool.map(c => ({ t: "drill", c, kind: one(cfg.kinds) }));
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
   session.combo = session.bestCombo = 0;
@@ -867,6 +886,11 @@ function renderDrill(item, ch, body, foot) {
       if (!padStart($(".tian", body), $("#" + wid, body), () => { btn.disabled = false; })) btn.disabled = false;
     });
 
+    /* with the setting on, the box arms itself as it appears */
+    const autoPad = () => padAuto($(".tian", body), $("#" + wid, body), () => {
+      const btn = $("#padW"); if (btn) btn.disabled = false;
+    });
+
     /* Looking at the strokes shouldn't end the question — that's the moment
        you most want to try it. So the hint offers a way back into writing. */
     const showStrokes = () => {
@@ -893,6 +917,7 @@ function renderDrill(item, ch, body, foot) {
         <button class="btn btn-ghost btn-sm" id="skipW">${peeked ? "Show me again" : "Show me the strokes"}</button>`;
       bindPad();
       $("#skipW").onclick = showStrokes;
+      autoPad();
       w.quiz({
         showHintAfterMisses: 2,
         onMistake: () => missed++,
@@ -1040,6 +1065,8 @@ function settle(item, ch, ok, foot, extra, slips) {
   session.qStart = 0;
   grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice, gentle: writing });
   if (!item.fresh) { tally("rev", ch.c); session.reviewed++; }
+  /* a rep in Go deeper, as opposed to a row on today's list */
+  if (session.practice && !session.todo) tallyExtra();
   if (ok) {
     session.right++; session.combo++;
     session.bestCombo = Math.max(session.bestCombo, session.combo);
@@ -1186,7 +1213,21 @@ function openChar(c) {
            <span class="qpill">${st === "due" ? "Due <b>now</b>" : `Next <b>${esc(r.due)}</b>`}</span>`
         : `<span class="qpill">Not started yet</span>`}</div>
       ${charCard(ch, { writerId: wid })}
-      ${r ? "" : `<button class="btn btn-block" id="learnNow">Learn this one now</button>`}
+      ${r && isUnchecked(c) ? `<div class="gate-note">
+          <span class="gate-k han">待查</span>
+          <span>Credited by the placement quiz, which never actually asked you this one.
+            It's in your rotation as a check rather than a lesson — answer it right once and it climbs like
+            any other character.</span>
+        </div>` : ""}
+      ${r ? "" : isLocked(c)
+        ? `<div class="gate-note">
+             <span class="gate-k han">未开</span>
+             <span>This one is in <b>${esc(tierOf(ch.i).name)} ${esc(tierOf(ch.i).zh)}</b>, which hasn't opened yet.
+               ${(() => { const nd = tierNeeds(tierOf(ch.i));
+                  return nd ? `Learn ${nd.more} more from ${esc(nd.tier.name)} and it unlocks.` : ""; })()}
+               You can read about it here — it just isn't one to start on yet.</span>
+           </div>`
+        : `<button class="btn btn-block" id="learnNow">Learn this one now</button>`}
     </div></div>`);
   bindCard($("#svBody"), ch, wid);
   const ln = $("#learnNow");
@@ -1509,6 +1550,7 @@ function renderNotebook() {
     nbFollow();
   }));
   renderNotebookPadState();
+  nbAutoPad();
 }
 
 /* Keep the brush on whichever square is live, without disturbing the lock. */
@@ -1572,6 +1614,17 @@ function startSquare(i) {
 }
 
 const byWordLabel = () => nb.word ? esc(nb.word[0]) : "Today's characters";
+
+/* The notebook moves between squares without tearing the lock down, so this
+   only ever has to fire for the first square of an exercise. */
+function nbAutoPad() {
+  const sq = $(`#nbStage .nb-sq[data-sq="${nb.idx}"]`);
+  const mount = $("#nbw" + nb.idx);
+  if (!sq || !mount || !mount.querySelector("svg")) return;
+  if (padAuto($(".tian", sq), mount, renderNotebookPadState, null, $("#nbStage"))) {
+    setTimeout(renderNotebookPadState, 60);
+  }
+}
 
 function nbPad() {
   if (pad.active) { padStop(); renderNotebookPadState(); return; }
@@ -1675,6 +1728,7 @@ function buildWritePage() {
   wpControls();
   wpSizePage();
   wpBindInk();
+  wpAutoPad();
 
   $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
   $("#wpClear").onclick = () => wpClear();
@@ -1918,6 +1972,10 @@ function wpPad() {
   if (padStart($("#wpPage"), null, wpControls, wpDraw)) setTimeout(wpControls, 50);
 }
 
+function wpAutoPad() {
+  if (padAuto($("#wpPage"), null, wpControls, wpDraw)) setTimeout(wpControls, 50);
+}
+
 async function wpSave() {
   if (!wp.strokes.length) return;
   const page = $("#wpPage");
@@ -2001,6 +2059,46 @@ function renderTracker() {
       ${s ? `🔥 ${s}` : "🔥 0"}<span class="sep">·</span>${total} day${total === 1 ? "" : "s"} studied</span>`;
 }
 
+/* ---------- 正 as a counting mark ----------
+
+   Five strokes, drawn in order — the tally that's kept across China and Japan,
+   the five-bar gate with the gate made out of a character. It earns its place
+   here over stars or a growing tree for two reasons: it's the genuine article
+   rather than decoration, and the seedling-to-tree metaphor is already taken
+   by the stage ladder (🌱 Seed → 🌿 Sprout → 🍃 Branch), where it means
+   something different. Reusing it for reps would blur both.
+
+   One rep of extra practice draws one stroke, so a finished 正 is five reps
+   and a row of them is the day's work, countable at a glance. */
+
+const ZHENG = [
+  "M14 21 H86",     /* 1  the lid */
+  "M39 21 V80",     /* 2  the long vertical */
+  "M39 50 H81",     /* 3  the arm */
+  "M17 50 V80",     /* 4  the short leg */
+  "M11 80 H89"      /* 5  the base */
+];
+
+function tallyMark(strokes) {
+  return `<svg class="tally" viewBox="0 0 100 100" aria-hidden="true">${
+    ZHENG.map((d, i) => `<path d="${d}" class="${i < strokes ? "on" : "off"}"/>`).join("")
+  }</svg>`;
+}
+
+/* A row of them, with the last one part-drawn. Past `max` the row would stop
+   being countable, so it becomes a multiplier instead. */
+function tallyRow(n, max = 6) {
+  if (!n) return `<span class="tally-none">${tallyMark(0)}<span>no reps yet today</span></span>`;
+  const full = Math.floor(n / 5), rest = n % 5;
+  if (full > max) {
+    return `<span class="tally-row">${tallyMark(5)}<span class="tally-x">× ${full}${rest ? ` + ${rest}` : ""}</span></span>`;
+  }
+  const marks = [];
+  for (let i = 0; i < full; i++) marks.push(tallyMark(5));
+  if (rest) marks.push(tallyMark(rest));
+  return `<span class="tally-row">${marks.join("")}</span>`;
+}
+
 /* ---------- today ---------- */
 
 function learnedToday() {
@@ -2063,7 +2161,8 @@ function renderToday() {
   const clear = newLeft === 0 && due === 0;
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
-  const headline = clear ? "You're clear for today." : done > 0 ? "Keep going." : "Ready when you are.";
+  const who = state.name ? `, ${state.name}` : "";
+  const headline = clear ? `You're clear for today${who}.` : done > 0 ? `Keep going${who}.` : `Ready when you are${who}.`;
   const sub = clear
     ? (remainingNew() ? "Nothing is due. You can study ahead whenever you like."
        : "Every character in the library is in your review rotation.")
@@ -2097,6 +2196,7 @@ function renderToday() {
       <div class="queue">
         <span class="qpill new">New <b>${newLeft}</b></span>
         <span class="qpill due">Due <b>${due}</b></span>
+        ${uncheckedCount() ? `<span class="qpill unchecked" title="Credited by the placement quiz but never actually asked. Each one is an ordinary card in your rotation; answering it right settles it.">Unchecked <b>${uncheckedCount()}</b></span>` : ""}
         <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Revised today <b>${revd.length}</b></span>
       </div>
     </div>
@@ -2132,6 +2232,38 @@ function renderToday() {
       </span>
       <span class="deck-go">→</span>
     </button>`;
+
+  /* ---- word of the week: a postcard from further up the road ---- */
+  const wk = wordOfWeek();
+  const wotw = (() => {
+    if (!wk) {
+      return `<div class="sheet wotw wotw-empty">
+        <div class="pr-head"><span class="eyebrow">Word of the week <span class="han">每周一词</span></span></div>
+        <p class="note">Tell the app what you're interested in and it'll show you one real word a week from it —
+          usually made of characters well past where you've got to.</p>
+        <button class="btn btn-ghost btn-sm btn-block" id="wotwSetup">Pick your interests</button>
+      </div>`;
+    }
+    const cat = INTERESTS[wk.cat];
+    const [word, pin, mean, note] = cat.words[wk.i];
+    const glyphs = [...word].filter(c => /[\u4e00-\u9fff]/.test(c));
+    const known = glyphs.filter(isKnown).length;
+    return `<div class="sheet wotw">
+      <div class="pr-head">
+        <span class="eyebrow">Word of the week <span class="han">每周一词</span></span>
+        <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}</span>
+      </div>
+      <button class="wotw-word" id="wotwSay" title="Hear it">
+        <span class="z">${renderZh(word)}</span>
+        <span class="p">${esc(pin)}</span>
+        <span class="m">${esc(mean)}</span>
+      </button>
+      <p class="wotw-note">${esc(note)}</p>
+      <p class="note dim">${known === glyphs.length
+        ? "You can already read every character in it."
+        : `${known} of ${glyphs.length} character${glyphs.length === 1 ? "" : "s"} are ones you know — the rest are ahead of you. Nothing to do here; it isn't a drill.`}</p>
+    </div>`;
+  })();
 
   const decks = `<div class="sheet decks">
     <span class="eyebrow">Flashcards</span>
@@ -2204,15 +2336,23 @@ function renderToday() {
      of it — how much is solid, how much has been round once or twice, how
      much hasn't been touched. Going through the material again and getting it
      right is the thing that makes it stick, so it should be visible. */
-  const deeper = `<div class="sheet practice">
-    <div class="pr-head">
-      <span class="eyebrow">Go deeper</span>
-      <span class="dim" style="font-size:.76rem">Shakiest first · ${PASSES_FOR_SOLID} clean passes makes a character solid</span>
+  const exToday = extraToday(), exAll = extraTotal(), exBest = extraBestDay();
+  const deeper = `<section class="deeper">
+    <div class="deeper-head">
+      <span class="deeper-title">
+        <span class="eyebrow">Go deeper <span class="han">加练</span></span>
+        <p class="deeper-sub">Reps past today's list. None of it is required and none of it can be finished —
+          that's what makes it the part that compounds.</p>
+      </span>
+      <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark">
+        ${tallyRow(exToday)}
+        <span class="deeper-n"><b>${exToday}</b> rep${exToday === 1 ? "" : "s"} today</span>
+      </span>
     </div>
     <div class="pr-grid pr-grid-3">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
         const chars = practiceChars(id);
-        const n = practiceAvailable(id).length;
+        const n = chars.length;
         const st = skillStanding(cfg.skill, chars);
         const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
         const seg = (cls, count) => count
@@ -2239,7 +2379,13 @@ function renderToday() {
         </button>`;
       }).join("")}
     </div>
-  </div>`;
+    <div class="deeper-foot">
+      <span>${PASSES_FOR_SOLID} clean passes makes a character solid · shakiest first</span>
+      <span class="deeper-life">${exAll
+        ? `${exAll.toLocaleString()} rep${exAll === 1 ? "" : "s"} all told${exBest > 4 ? ` · best day ${exBest}` : ""}`
+        : "Your first rep starts the count"}</span>
+    </div>
+  </section>`;
 
   /* ---- the side quest ---- */
   const mp = menuProgress();
@@ -2290,10 +2436,15 @@ function renderToday() {
   $("#viewToday").innerHTML = `<div class="wrap">
     <div class="cols">
       <div class="section">${hero}${todoBlock}${deeper}${sideQuest}</div>
-      <div class="col-side">${decks}</div>
+      <div class="col-side">${decks}${wotw}</div>
     </div>
   </div>`;
 
+  $("#wotwSetup")?.addEventListener("click", () => openProfile(false));
+  $("#wotwSay")?.addEventListener("click", () => {
+    const c = INTERESTS[wk.cat].words[wk.i][0];
+    sayPhrase(c, true);
+  });
   $("#startBtn")?.addEventListener("click", startSession);
   $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
@@ -2330,6 +2481,25 @@ function calendar(days) {
 
 let libFilter = "all", libSearch = "";
 
+/* Which tiers the learner has opened or shut by hand this session. */
+const libOpenTiers = {};
+
+/* What is actually standing between you and this tier.
+
+   tierNeeds() returns the *first* unfinished tier, which is the right gate but
+   the wrong sentence: telling someone on tier 1 that ninety more characters
+   opens Fluent is a promise the third door won't keep. When the blocker isn't
+   the tier immediately before this one, say so. */
+function tierGateNote(t) {
+  const needs = tierNeeds(t);
+  if (!needs) return `Open to you — ${tierPlanned(t)} characters, not written yet.`;
+  const justBefore = TIERS[t.n - 2];
+  const line = `Learn ${needs.more} more character${needs.more === 1 ? "" : "s"} from <b>${esc(needs.tier.name)} ${esc(needs.tier.zh)}</b>`;
+  return needs.tier.n === justBefore.n
+    ? `${line} and this opens.`
+    : `${line} to open <b>${esc(TIERS[needs.tier.n].name)}</b>. This one comes after <b>${esc(justBefore.name)} ${esc(justBefore.zh)}</b>.`;
+}
+
 function renderLibrary() {
   const chars = HQ.filter(ch => {
     const st = strength(ch.c);
@@ -2346,17 +2516,71 @@ function renderLibrary() {
   const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"],
     ...STAGES.map(s => ["s" + s.n, `${s.icon} ${s.name}`])];
 
+  /* Grouped by tier rather than laid out in one sheet of 348. A beginner
+     scrolling past three hundred characters they can't start on is the
+     overwhelm this is meant to remove; a locked tier collapses to a single
+     card, and the tier you are actually in is the one left open. */
+  const ceiling = unlockedCeiling();
+  const openTier = TIERS.find(t => tierUnlocked(t) && tierProgress(t).known < tierProgress(t).built) || TIERS[0];
+  const tile = ch => `<button class="gc ${strength(ch.c)} ${isLocked(ch.c) ? "gc-locked" : ""}" data-c="${esc(ch.c)}">
+      <span class="z">${esc(ch.c)}</span><span class="p">${esc(ch.p)}</span></button>`;
+
+  const sections = TIERS.map(t => {
+    const mine = chars.filter(ch => ch.i >= tierFrom(t) && ch.i < t.to);
+    const prog = tierProgress(t);
+    const unlocked = tierUnlocked(t);
+    const unwritten = prog.planned - prog.built;
+
+    if (!unlocked) {
+      return `<div class="tier tier-shut">
+        <div class="tier-head">
+          <span class="tier-icon">${esc(t.icon)}</span>
+          <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+            <small>${esc(t.blurb)}</small></span>
+          <span class="tier-lock">🔒 to ${t.to}</span>
+        </div>
+        <p class="note">${tierGateNote(t)}</p>
+      </div>`;
+    }
+    if (!prog.built) {
+      return `<div class="tier tier-shut">
+        <div class="tier-head">
+          <span class="tier-icon">${esc(t.icon)}</span>
+          <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+            <small>${esc(t.blurb)}</small></span>
+          <span class="tier-lock">to ${t.to}</span>
+        </div>
+        <p class="note">Open to you, but not written yet — the library stops at ${HQ.length} for now.</p>
+      </div>`;
+    }
+    const isOpen = libOpenTiers[t.n] !== undefined ? libOpenTiers[t.n]
+                 : (t.n === openTier.n || !!libSearch || libFilter !== "all");
+    return `<div class="tier ${isOpen ? "on" : ""}">
+      <button class="tier-head tier-toggle" data-tier="${t.n}" aria-expanded="${isOpen}">
+        <span class="tier-icon">${esc(t.icon)}</span>
+        <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+          <small>${prog.known} of ${prog.built} learned${unwritten > 0 ? ` · ${unwritten} more to come` : ""}</small></span>
+        <span class="tier-bar"><i style="width:${(prog.pct * 100).toFixed(1)}%"></i></span>
+        <span class="tier-caret">${isOpen ? "▾" : "▸"}</span>
+      </button>
+      ${isOpen ? (mine.length
+        ? `<div class="grid-chars">${mine.map(tile).join("")}</div>`
+        : `<p class="note" style="padding:0 .2rem .6rem">Nothing here matches that filter.</p>`) : ""}
+    </div>`;
+  }).join("");
+
   $("#viewLibrary").innerHTML = `<div class="wrap">
     <div class="today-head">
       <h1>The library</h1>
-      <p class="note">${HQ.length} characters, taught in the order that makes each one easier than the last.</p>
+      <p class="note">${HQ.length} characters in three tiers, taught in the order that makes each one easier
+        than the last. ${ceiling < HQ.length
+          ? `You've opened the first ${ceiling} — the rest stay shut until the tier before them is ${Math.round(TIER_UNLOCK * 100)}% learned, so there's no way to get ahead of yourself by accident.`
+          : "Every tier is open to you."}</p>
     </div>
     <input class="search" id="libQ" type="search" placeholder="Search a character, pinyin or meaning…" value="${esc(libSearch)}">
     <div class="filters">${filters.map(([k, l]) =>
       `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}</div>
-    ${chars.length ? `<div class="grid-chars">${chars.map(ch =>
-      `<button class="gc ${strength(ch.c)}" data-c="${esc(ch.c)}">
-        <span class="z">${esc(ch.c)}</span><span class="p">${esc(ch.p)}</span></button>`).join("")}</div>`
+    ${chars.length ? sections
       : `<div class="empty"><span class="z">空</span><p>Nothing here yet. Try another filter.</p></div>`}
     <div class="legend">
       <span><i style="background:var(--seal)"></i>Due now</span>
@@ -2367,6 +2591,12 @@ function renderLibrary() {
   </div>`;
 
   $$("#viewLibrary .filt").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $$("#viewLibrary .tier-toggle").forEach(b => b.onclick = () => {
+    const n = +b.dataset.tier;
+    const cur = b.getAttribute("aria-expanded") === "true";
+    libOpenTiers[n] = !cur;
+    renderLibrary();
+  });
   $$("#viewLibrary .gc").forEach(b => b.onclick = () => openChar(b.dataset.c));
   const qEl = $("#libQ");
   qEl.oninput = () => {
@@ -2468,22 +2698,42 @@ function renderRecord() {
         </div>
 
         <div class="sec-head" style="margin-top:.4rem"><h2>The climb</h2>
-          <span class="dim" style="font-size:.78rem">${known} of ${HQ.length} built</span></div>
-        <div class="sheet" style="padding:.3rem 1rem">
-          <div class="ladder">
-            ${STAGES.map(s => {
-              const p = stageProgress(s.n);
-              return `<div class="rung ${p.known > 0 ? "reached" : ""} ${s.n === cur.n ? "current" : ""}">
-                <span class="rung-icon">${esc(s.icon)}</span>
-                <span class="rung-body">
-                  <b>${esc(s.name)} <span class="han dim" style="font-weight:400;font-size:.78rem">${esc(s.zh)}</span>${s.core ? "" : ` <span class="dim" style="font-weight:400;font-size:.72rem">· topic pack</span>`}</b>
-                  <small>${esc(s.blurb)}</small>
-                </span>
-                <span class="rung-n">${p.known}/${p.total}</span>
-              </div>`;
-            }).join("")}
-          </div>
-        </div>
+          <span class="dim" style="font-size:.78rem">${known} of ${HQ.length} learned</span></div>
+        ${TIERS.map(t => {
+          const prog = tierProgress(t);
+          const unlocked = tierUnlocked(t);
+          /* A stage belongs to whichever tier its midpoint falls in. The two
+             were never going to line up — tiers are literacy milestones, stages
+             are a teaching order — and stage 7 does straddle 200. Listing a
+             straddling stage under both tiers reads as a bug rather than as
+             precision, so each one is filed once, where most of it lives. */
+          const inTier = STAGES.filter(st => {
+            const from = st.n === 1 ? 0 : STAGES[st.n - 2].end;
+            return tierOf((from + st.end - 1) >> 1).n === t.n;
+          });
+          return `<div class="sheet tier-block ${unlocked ? "" : "shut"}">
+            <div class="tier-head">
+              <span class="tier-icon">${esc(t.icon)}</span>
+              <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+                <small>${esc(t.blurb)}</small></span>
+              <span class="tier-lock">${unlocked ? `${prog.known}/${prog.built || prog.planned}` : `🔒 to ${t.to}`}</span>
+            </div>
+            ${unlocked && prog.built ? `<div class="bar ${prog.pct >= 1 ? "gold" : ""}"><i style="width:${(prog.pct * 100).toFixed(1)}%"></i></div>
+            <div class="ladder">
+              ${inTier.map(s => {
+                const p = stageProgress(s.n);
+                return `<div class="rung ${p.known > 0 ? "reached" : ""} ${s.n === cur.n ? "current" : ""}">
+                  <span class="rung-icon">${esc(s.icon)}</span>
+                  <span class="rung-body">
+                    <b>${esc(s.name)} <span class="han dim" style="font-weight:400;font-size:.78rem">${esc(s.zh)}</span>${s.core ? "" : ` <span class="dim" style="font-weight:400;font-size:.72rem">· topic pack</span>`}</b>
+                    <small>${esc(s.blurb)}</small>
+                  </span>
+                  <span class="rung-n">${p.known}/${p.total}</span>
+                </div>`;
+              }).join("")}
+            </div>` : `<p class="note">${tierGateNote(t)}</p>`}
+          </div>`;
+        }).join("")}
 
         ${(() => {
           const stuck = leeches();
@@ -2499,16 +2749,8 @@ function renderRecord() {
           </div>`;
         })()}
 
-        <div class="section" style="gap:.5rem">
-          ${LOCKED_STAGES.map(s => `<div class="sheet locked-card">
-            <span class="li">${esc(s.icon)}</span>
-            <span class="lb">
-              <b>${esc(s.name)} <span class="han">${esc(s.zh)}</span> <span class="lk">🔒 ${s.target} characters</span></b>
-              <small>${esc(s.blurb)}</small>
-            </span>
-          </div>`).join("")}
-          <p class="note">The library stops at ${HQ.length} characters for now. These modules are the road out to 1,000 — the point where roughly nine in ten characters on a page are ones you know.</p>
-        </div>
+        <p class="note">The library stops at ${HQ.length} characters for now. The tiers above are the road out
+          to 1,000 — the point where roughly nine characters in ten on an ordinary page are ones you know.</p>
       </div>
 
       <div class="col-side">
@@ -2578,6 +2820,12 @@ function openSettings() {
           <label>Include writing drills<small>Trace from memory once a character is solid.</small></label>
           <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
         </div>
+        <div class="settings-row">
+          <label>Start the trackpad automatically<small>${padSupported()
+            ? "Every writing box arms itself for trackpad writing, instead of waiting for the 触控 button or <kbd class=\"opt-n\">T</kbd>. Esc drops out of it. Some browsers only allow this straight after a click — where one refuses, the button is still there."
+            : "This browser has no pointer lock, so trackpad writing isn't available here."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="padTgl" ${padSupported() ? "" : "disabled"}>${state.padAuto ? "On" : "Off"}</button>
+        </div>
       </div>
     </div>
 
@@ -2621,6 +2869,18 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="backupBtn">Save</button>
         </div>
         <div class="settings-row">
+          <label>About you<small>${state.name ? `Called ${esc(state.name)}. ` : ""}${(state.interests || []).length
+            ? `${state.interests.length} interest${state.interests.length === 1 ? "" : "s"} picked — they set the word of the week.`
+            : "Set a name and pick interests for the word of the week."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="profileBtn">Edit</button>
+        </div>
+        <div class="settings-row">
+          <label>Find my level<small>${state.placed && state.placed.at
+            ? `Placed you at ${state.placed.at} characters on ${esc(new Date(state.placed.on).toLocaleDateString())}. Taking it again only ever adds characters — it never removes progress.`
+            : "A quick check that walks the curriculum in order and credits what you already read."}</small></label>
+          <button class="btn btn-ghost btn-sm" id="placeBtn">${state.placed ? "Retake" : "Start"}</button>
+        </div>
+        <div class="settings-row">
           <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
           <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
         </div>
@@ -2638,8 +2898,11 @@ function openSettings() {
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $("#padTgl").onclick = () => { state.padAuto = !state.padAuto; save(); openSettings(); };
   $("#audioTgl").onclick = () => { state.audio = !state.audio; save(); openSettings(); };
   $("#backupBtn").onclick = openBackup;
+  $("#profileBtn").onclick = () => openProfile(false);
+  $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
   $("#tourBtn").onclick = () => { closeSheet(); setTimeout(() => startTour(true), 250); };
   $("#resetBtn").onclick = async () => {
     const pages = (await diaryAll()).length;
@@ -2888,6 +3151,209 @@ function onKey(e) {
 }
 
 /* ============================================================
+   Profile — a name, and what you care about
+
+   Two questions, both skippable. The name is used where the app addresses you
+   directly and nowhere else. The interests feed the word of the week and
+   nothing else — in particular they do NOT reorder the curriculum, because the
+   teaching order is load-bearing: 马 has to arrive before 妈 and 吗 whatever
+   you happen to be interested in.
+   ============================================================ */
+
+function openProfile(firstRun) {
+  const chosen = new Set(state.interests || []);
+  openSheet(`<span class="han">关于你</span> About you`, `<div class="wrap"><div class="section">
+    <div class="today-head">
+      <h1>${firstRun ? "Two quick questions." : "About you"}</h1>
+      <p class="note">Both optional, and both changeable later. Your name is only ever used to address you.
+        Your interests pick the word of the week — they don't change the order characters are taught in,
+        because that order is what makes each character easier than the last.</p>
+    </div>
+
+    <div class="sheet block">
+      <div class="block-head"><span class="k">名字</span><span class="t">What should we call you?</span></div>
+      <input type="text" id="pfName" class="search" maxlength="40" placeholder="Your name"
+        value="${esc(state.name || "")}" autocomplete="given-name">
+    </div>
+
+    <div class="sheet block">
+      <div class="block-head"><span class="k">兴趣</span><span class="t">What are you into?</span></div>
+      <p class="note">Pick any number. Each week you'll get one real word from them — usually built from
+        characters well past where you've got to, which is the point of it.</p>
+      <div class="int-grid">
+        ${INTEREST_KEYS.map(k => {
+          const it = INTERESTS[k];
+          return `<button class="int ${chosen.has(k) ? "on" : ""}" data-int="${esc(k)}" aria-pressed="${chosen.has(k)}">
+            <span class="int-icon">${esc(it.icon)}</span>
+            <span class="int-body"><b>${esc(it.name)}</b><span class="han">${esc(it.zh)}</span></span>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="split">
+      <button class="btn btn-ghost" id="pfSkip">${firstRun ? "Skip for now" : "Cancel"}</button>
+      <button class="btn btn-seal" id="pfSave">Save</button>
+    </div>
+  </div></div>`);
+
+  $$("#svBody .int").forEach(b => b.onclick = () => {
+    const k = b.dataset.int;
+    if (chosen.has(k)) chosen.delete(k); else chosen.add(k);
+    b.classList.toggle("on", chosen.has(k));
+    b.setAttribute("aria-pressed", chosen.has(k));
+  });
+  $("#pfSkip").onclick = () => { state.profiled = true; save(); closeSheet(); };
+  $("#pfSave").onclick = () => {
+    state.name = $("#pfName").value.trim().slice(0, 40);
+    const next = [...chosen];
+    /* a changed interest set invalidates a pick that may no longer be in it */
+    if ((state.interests || []).join() !== next.join()) state.wotw = null;
+    state.interests = next;
+    state.profiled = true;
+    save();
+    closeSheet();
+  };
+}
+
+/* ============================================================
+   Placement — finding where to start
+
+   Four options, meaning to character. Meaning-to-character rather than the
+   other way round because recognising 山 among four English words is easy to
+   fake by elimination, while picking 山 out of four plausible characters is
+   not. The distractors are drawn from nearby in the curriculum so they look
+   alike; a block of easy ones would place everybody at the end.
+   ============================================================ */
+
+const place = { start: 0, block: [], idx: 0, right: 0, asked: 0, done: false, got: new Set() };
+
+function openPlacement() {
+  place.start = 0; place.idx = 0; place.right = 0; place.asked = 0; place.done = false;
+  place.got = new Set();            /* the ones actually answered correctly */
+  place.block = probeBlock(0);
+  $("#place").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderPlacement();
+}
+
+function closePlacement() {
+  $("#place").classList.remove("on");
+  document.body.style.overflow = "";
+  renderAll();
+  maybeOfferProfile();
+}
+
+function placementOptions(c) {
+  const ch = CHAR_INDEX[c];
+  /* neighbours in the curriculum: same era, similar difficulty, genuinely
+     confusable — rather than three characters from four stages away */
+  const near = HQ
+    .filter(x => x.c !== c && Math.abs(x.i - ch.i) <= 30)
+    .sort((a, b) => Math.abs(a.i - ch.i) - Math.abs(b.i - ch.i));
+  return shuffle([ch, ...pick(near.slice(0, 18), 3)]);
+}
+
+function renderPlacement() {
+  const total = Math.ceil(HQ.length / PROBE_WINDOW);
+  const doneBlocks = Math.floor(place.start / PROBE_WINDOW);
+  $("#placeProg").style.width = `${Math.min(100, (doneBlocks / total) * 100)}%`;
+  $("#placeCount").textContent = place.done ? "" : `${place.asked} asked`;
+
+  if (place.done) return renderPlacementDone();
+
+  const c = place.block[place.idx];
+  const ch = CHAR_INDEX[c];
+  const opts = placementOptions(c);
+
+  $("#placeBody").innerHTML = `<div class="place-inner">
+    <span class="eyebrow">Which character means</span>
+    <h1 class="place-q">${esc(ch.m)}</h1>
+    <div class="place-opts">
+      ${opts.map(o => `<button class="place-opt" data-c="${esc(o.c)}"><span class="han">${esc(o.c)}</span></button>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-sm" id="placeDunno">I don't know this one</button>
+    <p class="note">Answer honestly — guessing right here means the app skips teaching it.</p>
+  </div>`;
+
+  $$("#placeBody .place-opt").forEach(b => b.onclick = () => placementAnswer(b.dataset.c === c, b));
+  $("#placeDunno").onclick = () => placementAnswer(false, null);
+}
+
+function placementAnswer(ok, btn) {
+  place.asked++;
+  if (ok) { place.right++; place.got.add(place.block[place.idx]); }
+  $$("#placeBody .place-opt").forEach(b => {
+    b.disabled = true;
+    if (b.dataset.c === place.block[place.idx]) b.classList.add("right");
+  });
+  if (btn && !ok) btn.classList.add("wrong");
+  say(place.block[place.idx]);
+  setTimeout(placementNext, ok ? 340 : 900);
+}
+
+function placementNext() {
+  place.idx++;
+  if (place.idx < place.block.length) return renderPlacement();
+
+  /* block finished: passed it, or this is where the walk stops */
+  const passed = place.right >= Math.min(PROBE_PASS, place.block.length);
+  const nextStart = place.start + PROBE_WINDOW;
+  if (passed && nextStart < HQ.length) {
+    place.start = nextStart;
+    place.block = probeBlock(place.start);
+    place.idx = 0; place.right = 0;
+    return renderPlacement();
+  }
+  place.result = passed ? HQ.length : place.start;
+  place.done = true;
+  renderPlacement();
+}
+
+function renderPlacementDone() {
+  const at = place.result;
+  const fresh = HQ.slice(0, at).filter(ch => !isKnown(ch.c));
+  const confirmed = fresh.filter(ch => place.got.has(ch.c)).length;
+  const unchecked = fresh.length - confirmed;
+  const stage = at >= HQ.length ? STAGES[STAGES.length - 1] : (STAGES.find(s => at < s.end) || STAGES[0]);
+  $("#placeProg").style.width = "100%";
+  $("#placeBody").innerHTML = `<div class="place-inner">
+    <span class="place-seal">${at ? esc(stage.icon) : "🌱"}</span>
+    <h1>${at ? `Your starting point is about ${at} characters in.` : "We'll start at the beginning."}</h1>
+    <p class="note">${at
+      ? `That puts you in <b>${esc(stage.name)} ${esc(stage.zh)}</b>. Nothing you've already studied is touched.`
+      : `Nothing to skip, which is the easiest place to start from. ${HQ.length} characters, in an order where each one makes the next easier.`}</p>
+
+    ${at ? `<div class="place-ledger">
+      <div class="pl-row">
+        <span class="pl-n">${place.asked}</span>
+        <span class="pl-t"><b>asked</b><small>${confirmed} of them right — those go in at a level that reflects it</small></span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-n">${unchecked}</span>
+        <span class="pl-t"><b>not asked</b><small>The quiz samples, so most of the range was never shown. These go in
+          <b>unchecked</b>, at the bottom of the ladder, and come up as ordinary recognition cards over the next
+          fortnight. Get one right and it climbs; get it wrong and it's taught properly from there.</small></span>
+      </div>
+    </div>
+    <p class="note">In other words the quiz only decides <b>where to start</b>. It doesn't decide what you know —
+      everything behind that point still has to earn its place.</p>` : ""}
+
+    <div class="place-foot">
+      <button class="btn btn-ghost" id="placeRedo">Take it again</button>
+      <button class="btn btn-seal" id="placeGo">${at ? "Start here" : "Start from the beginning"}</button>
+    </div>
+    <p class="note dim">You can reset and re-place from Settings at any time.</p>
+  </div>`;
+  $("#placeRedo").onclick = openPlacement;
+  $("#placeGo").onclick = () => {
+    if (at) placeAt(at, place.got);
+    else { state.placed = { at: 0, on: dayKey() }; save(); }
+    closePlacement();
+  };
+}
+
+/* ============================================================
    Asking before something irreversible
 
    This used to be window.confirm(). Inside the cross-origin frame an artifact
@@ -2937,7 +3403,7 @@ const asking = () => !!askDone;
 
 const TOUR = [
   { k: "汉", title: "Welcome",
-    body: `302 characters, taught in an order where each one makes the next easier —
+    body: `${HQ.length} characters, taught in an order where each one makes the next easier —
            you'll meet 马 just before 妈 and 吗, so by then you already own both halves.
            Nothing here needs to be finished in a sitting.` },
   { k: "今天", title: "Today is a short list",
@@ -2957,7 +3423,7 @@ const TOUR = [
            back — but clearing your browser data, switching browsers or opening a private
            window loses the lot.` },
   { k: "备份", title: "Save it somewhere real",
-    body: `The <kbd class="opt-n">⤓</kbd> button in the top bar writes everything — characters,
+    body: `The <kbd class="opt-n">💾</kbd> button in the top bar writes everything — characters,
            streak, diary — to one file you can keep. The same screen loads it back, on this
            computer or another one. Worth doing once you've a streak worth keeping; the button
            grows a gold dot when you're overdue.` }
@@ -2977,6 +3443,29 @@ function endTour() {
   state.tour = true; save();
   $("#tour").classList.remove("on");
   document.body.style.overflow = "";
+  maybeOfferPlacement();
+}
+
+/* Offered once, at the end of the tour, and only to a genuinely empty record —
+   asking someone mid-streak where they'd like to start would be alarming. */
+async function maybeOfferPlacement() {
+  if (wasPlaced() || Object.keys(state.chars).length) return;
+  const yes = await askConfirm({
+    k: "定位",
+    title: "Do you already read some Chinese?",
+    body: `A quick check walks the ${HQ.length} characters in order and finds where your recognition starts to give out, `
+        + "so you don't spend a fortnight on characters you have known for years. Under two minutes.",
+    yes: "Find my level", no: "Start from scratch"
+  });
+  if (yes) openPlacement();
+  else { state.placed = { at: 0, on: dayKey() }; save(); maybeOfferProfile(); }
+}
+
+/* Asked once, after placement is settled, so the first run is two short
+   questions rather than a gauntlet of dialogs. */
+function maybeOfferProfile() {
+  if (state.profiled) return;
+  setTimeout(() => { if (!state.profiled) openProfile(true); }, 400);
 }
 
 function renderTour() {
@@ -3074,6 +3563,7 @@ function boot() {
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
+    if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();
     else if ($("#charView").classList.contains("on")) closeSheet();
@@ -3081,6 +3571,7 @@ function boot() {
   });
   initTips();
   $("#flashClose").onclick = closeFlash;
+  $("#placeClose").onclick = closePlacement;
   $("#nbClose").onclick = closeNotebook;
   /* #nbPad lives inside the notebook stage now, and is bound when it renders */
   $("#flashPrev").onclick = () => flashStep(-1);

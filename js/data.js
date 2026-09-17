@@ -1,6 +1,10 @@
 /* Hanzi Quest — curriculum data.
    Each entry: c=character, p=pinyin, m=meaning, comp=components,
    story=mnemonic, words=[[word,pinyin,meaning]], sent=[zh,pinyin,en] */
+/* Lives here rather than in app.js because srs.js needs it too, and srs.js is
+   loaded without app.js by the smoke harness. One binding, one owner. */
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
 const HQ = [];
 HQ.push(
 {c:"一",p:"yī",m:"one",comp:[],story:"One finger, laid flat. The simplest character in the language — and your first.",words:[["一个","yí gè","one (of something)"],["第一","dì yī","first"],["一天","yì tiān","one day"]],sent:["我有一个哥哥。","Wǒ yǒu yí gè gēge.","I have one older brother."]},
@@ -327,6 +331,60 @@ HQ.push(
 {c:"药",p:"yào",m:"medicine",comp:[],pos:["n"],story:"The grass radical 艹 — medicine was herbs first. 中药 is traditional Chinese medicine.",o:"Simplified from 藥: grass (艸) over 樂 (music), because herbs were held to bring the body back into harmony.",words:[["中药","zhōngyào","Chinese medicine"],["吃药","chīyào","take medicine"]],sent:["请按时吃药。","Qǐng ànshí chīyào.","Please take your medicine on time."]},
 );
 
+/* ---------- Stage 9 · 交流 Connect ----------
+   Language, study, screens and the vocabulary of thinking. Everything here is
+   built on stages 1-8: 视 comes from 见 taught four entries earlier, 意 from
+   音, 息 from 自, 记 from 己. The cluster is ordered so no character needs a
+   part you have not already met. */
+HQ.push(
+{c:"见",p:"jiàn",m:"to see; to meet",comp:[],pos:["v"],story:"An eye on a pair of legs — a person who has gone to look. Walking eyes. It hides inside 视 and 觉 later in this stage.",o:"Oracle bones draw a kneeling figure with an oversized eye. The eye is the whole point of the drawing: this is a person in the act of seeing.",words:[["看见","kànjiàn","to see"],["再见","zàijiàn","goodbye"],["见面","jiànmiàn","to meet up"]],sent:["明天见！","Míngtiān jiàn!","See you tomorrow!"]},
+{c:"谢",p:"xiè",m:"to thank",comp:["讠","身"],pos:["v"],story:"Words (讠) beside a body drawing a bow — thanks offered and then withdrawn. Doubled, it is the first phrase anyone learns: 谢谢.",o:"Speech plus 射 to shoot. The original sense was to decline or take one's leave — words that release you from an obligation. Gratitude came afterwards.",words:[["谢谢","xièxie","thank you"],["感谢","gǎnxiè","to be grateful"],["不谢","bú xiè","don't mention it"]],sent:["我要谢谢你。","Wǒ yào xièxie nǐ.","I want to thank you."]},
+{c:"您",p:"nín",m:"you (polite)",comp:["你","心"],pos:["pron"],story:"你 with a heart (心) set underneath — the same you, said with the heart behind it. For teachers, elders, and anyone you would rather not offend.",o:"A northern politeness that stuck: 你 with 心 added beneath. The heart is the courtesy.",words:[["您好","nín hǎo","hello (polite)"],["请问您","qǐng wèn nín","may I ask you (polite)"]],sent:["您好，老师。","Nín hǎo, lǎoshī.","Hello, teacher."]},
+{c:"认",p:"rèn",m:"to recognise",comp:["讠","人"],pos:["v"],story:"Words (讠) and a person (人) — putting a name to a face. 认识 is knowing a person, not knowing a fact.",o:"Speech beside 人. To acknowledge someone aloud, to own that you know them.",words:[["认识","rènshi","to know (a person)"],["认为","rènwéi","to think, to reckon"],["认真","rènzhēn","conscientious"]],sent:["很高兴认识你。","Hěn gāoxìng rènshi nǐ.","Pleased to meet you."]},
+{c:"识",p:"shí",m:"to know",comp:["讠","口"],pos:["v"],story:"Words (讠) once more, this time with 只 — knowledge you can put into speech. It travels almost everywhere with 认.",o:"The full form 識 has 戠 for sound beside 言. The simplified 只 is a sound borrowing, carrying no meaning of its own.",words:[["认识","rènshi","to know; to recognise"],["知识","zhīshi","knowledge"]],sent:["这个字我不认识。","Zhège zì wǒ bú rènshi.","I don't know this character."]},
+{c:"自",p:"zì",m:"self; from",comp:["目"],pos:["pron","cov"],story:"A nose, drawn straight on. Chinese speakers point at their own nose to mean me — so the nose became the word for self.",o:"A pictograph of a nose. It was borrowed for self so completely that 鼻 had to be invented to mean nose again.",words:[["自己","zìjǐ","oneself"],["自行车","zìxíngchē","bicycle"],["来自","láizì","to come from"]],sent:["我自己做饭。","Wǒ zìjǐ zuò fàn.","I cook for myself."]},
+{c:"己",p:"jǐ",m:"oneself",comp:[],pos:["pron"],story:"A bent cord, borrowed long ago for self. You will meet it almost only in 自己 — and inside 记, three entries along.",o:"Originally knotted cord used for keeping records. The self meaning is a sound borrowing that never let go.",words:[["自己","zìjǐ","oneself"],["知己","zhījǐ","a close friend"]],sent:["这是我自己的。","Zhè shì wǒ zìjǐ de.","This is my own."]},
+{c:"思",p:"sī",m:"to think",comp:["田","心"],pos:["v","n"],story:"A field (田) over a heart (心) — the mind laid out in rows and worked over. The 田 was originally 囟, the crown of the skull.",o:"Skull above heart. Old Chinese located thinking in both: the head to hold it, the heart to feel it.",words:[["意思","yìsi","meaning"],["思想","sīxiǎng","thought"],["思考","sīkǎo","to think over"]],sent:["这是什么意思？","Zhè shì shénme yìsi?","What does this mean?"]},
+{c:"忘",p:"wàng",m:"to forget",comp:["心"],pos:["v"],story:"亡 lost, over 心 heart — something has gone missing from the heart. That is forgetting.",o:"亡 to perish or be lost, above 心. What the heart has mislaid.",words:[["忘记","wàngjì","to forget"],["别忘了","bié wàng le","don't forget"]],sent:["我忘了他的名字。","Wǒ wàng le tā de míngzi.","I forgot his name."]},
+{c:"记",p:"jì",m:"to record; to remember",comp:["讠","己"],pos:["v"],story:"Words (讠) tied to a cord (己) — speech knotted so it can be found again. Writing something down so it keeps.",o:"Speech beside 己, the knotted cord once used for records. To fix words so they hold.",words:[["忘记","wàngjì","to forget"],["记得","jìde","to remember"],["日记","rìjì","diary"]],sent:["我记得那个地方。","Wǒ jìde nàge dìfang.","I remember that place."]},
+{c:"息",p:"xī",m:"breath; to rest",comp:["自","心"],pos:["n","v"],story:"A nose (自) over a heart (心) — breath. Rest is what happens when you let the breath settle.",o:"Nose above heart: breathing. From breath came pause, and from pause came rest.",words:[["休息","xiūxi","to rest"],["消息","xiāoxi","news"]],sent:["我们休息一下。","Wǒmen xiūxi yíxià.","Let's rest for a bit."]},
+{c:"休",p:"xiū",m:"to rest",comp:["人","木"],pos:["v"],story:"A person (亻) leaning on a tree (木). The whole idea, in six strokes.",o:"One of the clearest compound ideographs in the language: a man against a tree, resting in the shade.",words:[["休息","xiūxi","to rest"],["休假","xiūjià","to take leave"]],sent:["星期天我在家休息。","Xīngqītiān wǒ zài jiā xiūxi.","On Sunday I rest at home."]},
+{c:"音",p:"yīn",m:"sound",comp:["立","日"],pos:["n"],story:"言 speech, with one extra stroke through the mouth — a sound made, but not yet a word.",o:"言 with a line added in the mouth. The two were once a single character; the stroke split sound off from speech.",words:[["声音","shēngyīn","sound, voice"],["音乐","yīnyuè","music"],["发音","fāyīn","pronunciation"]],sent:["这个音很难。","Zhège yīn hěn nán.","This sound is difficult."]},
+{c:"意",p:"yì",m:"meaning; intention",comp:["音","心"],pos:["n"],story:"Sound (音) over heart (心) — what the heart meant by the noise it made. 意思 pairs it with 思 so both halves of thinking are present.",o:"Sound above heart: the intent behind an utterance, as opposed to the utterance itself.",words:[["意思","yìsi","meaning"],["愿意","yuànyì","to be willing"],["注意","zhùyì","to pay attention"]],sent:["我不明白你的意思。","Wǒ bù míngbai nǐ de yìsi.","I don't understand what you mean."]},
+{c:"觉",p:"jué",m:"to feel; (jiào) sleep",comp:["小","见"],pos:["v","n"],story:"见 see, with a lid over it — perception turned inward. Read jué it is feeling; read jiào it is the sleep you 睡.",o:"學 and 覺 share a top element; beneath it sits 見. To perceive — which in the second reading slid into the state where perceiving stops.",words:[["觉得","juéde","to feel, to think"],["睡觉","shuìjiào","to sleep"],["感觉","gǎnjué","a feeling"]],sent:["我觉得很累。","Wǒ juéde hěn lèi.","I feel very tired."]},
+{c:"书",p:"shū",m:"book",comp:[],pos:["n"],story:"A hand gripping a brush over a page — the full form 書 shows it plainly. The simplified one keeps the sweep of the stroke.",o:"聿, a hand holding a brush, over 者 for sound. First the act of writing, then the thing written.",words:[["书店","shūdiàn","bookshop"],["读书","dúshū","to read; to study"],["看书","kànshū","to read"]],sent:["我在看一本书。","Wǒ zài kàn yì běn shū.","I'm reading a book."]},
+{c:"文",p:"wén",m:"writing; culture",comp:[],pos:["n"],story:"A person with marks across the chest — tattooed lines. The oldest meaning is pattern, and writing is the pattern we kept.",o:"A standing figure with crossed markings on the chest. From decorative pattern to script, and from script to culture itself.",words:[["中文","zhōngwén","Chinese (language)"],["英文","yīngwén","English (written)"],["文字","wénzì","writing, script"]],sent:["我在学中文。","Wǒ zài xué zhōngwén.","I'm learning Chinese."]},
+{c:"汉",p:"hàn",m:"Han; Chinese",comp:["水","又"],pos:["n"],story:"Water (氵) and a hand (又) — the Han River. The dynasty took its name from the river, the people from the dynasty, and the script from the people: 汉字.",o:"氵 for the Han River with a phonetic beside it. The name travelled from water to dynasty to ethnicity to writing system.",words:[["汉字","hànzì","Chinese character"],["汉语","hànyǔ","Chinese language"],["汉人","hànrén","Han Chinese"]],sent:["汉字很有意思。","Hànzì hěn yǒu yìsi.","Chinese characters are very interesting."]},
+{c:"语",p:"yǔ",m:"language",comp:["讠","五","口"],pos:["n"],story:"Words (讠) with 吾 I — speech that has a speaker behind it. Language, as opposed to noise.",o:"The speech radical with 吾 for sound. Language in the sense of a tongue that people share.",words:[["汉语","hànyǔ","Chinese language"],["英语","yīngyǔ","English language"],["语言","yǔyán","language"]],sent:["你会说几种语言？","Nǐ huì shuō jǐ zhǒng yǔyán?","How many languages do you speak?"]},
+{c:"英",p:"yīng",m:"outstanding; England",comp:["大"],pos:["n","adj"],story:"Grass (艹) over 央 centre — the flower at the top of the stalk. The best of the crop; and by sound alone, England.",o:"艸 plant over 央 for sound. The blossom, hence excellence. Its use for Britain is purely phonetic.",words:[["英语","yīngyǔ","English language"],["英国","yīngguó","Britain"],["英文","yīngwén","English (written)"]],sent:["她的英语很好。","Tā de yīngyǔ hěn hǎo.","Her English is very good."]},
+{c:"美",p:"měi",m:"beautiful; America",comp:["羊","大"],pos:["adj","n"],story:"A big (大) sheep (羊) — a fat ram was the finest thing a herder could show you. Beauty, measured in livestock.",o:"羊 over 大. A large sheep: good to eat, good to own, and so fine in general.",words:[["美国","měiguó","the United States"],["美食","měishí","fine food"],["很美","hěn měi","very beautiful"]],sent:["这个地方很美。","Zhège dìfang hěn měi.","This place is beautiful."]},
+{c:"笔",p:"bǐ",m:"pen; brush",comp:[],pos:["n"],story:"Bamboo (⺮) over hair (毛) — a tuft of hair bound into a bamboo tube. That is exactly what a writing brush is.",o:"The simplified form spells out the object: bamboo shaft, hair tip. The full form 筆 uses 聿, the hand-and-brush, instead.",words:[["铅笔","qiānbǐ","pencil"],["毛笔","máobǐ","writing brush"],["笔记","bǐjì","notes"]],sent:["这是我的笔。","Zhè shì wǒ de bǐ.","This is my pen."]},
+{c:"纸",p:"zhǐ",m:"paper",comp:["纟"],pos:["n"],story:"Silk (纟) beside 氏 — the first paper was rag and plant fibre beaten flat. The thread radical remembers the rags.",o:"糸 silk with 氏 for sound. Paper was invented in Han China from bark, hemp and worn-out cloth.",words:[["报纸","bàozhǐ","newspaper"],["白纸","báizhǐ","blank paper"]],sent:["请给我一张纸。","Qǐng gěi wǒ yì zhāng zhǐ.","Please give me a sheet of paper."]},
+{c:"考",p:"kǎo",m:"to test; to examine",comp:[],pos:["v"],story:"老 old, bent over a stick — the elder who tests you. 考试 is the exam; 思考 is thinking hard about anything.",o:"老 abbreviated over a phonetic. It once meant a deceased father, then to investigate thoroughly, then to examine.",words:[["考试","kǎoshì","exam"],["高考","gāokǎo","university entrance exam"],["思考","sīkǎo","to think over"]],sent:["明天有考试。","Míngtiān yǒu kǎoshì.","There's an exam tomorrow."]},
+{c:"试",p:"shì",m:"to try; to test",comp:["讠","工"],pos:["v"],story:"Words (讠) with 式 form — holding something up to the standard to see if it fits. Try it.",o:"Speech plus 式 pattern or model. To measure a thing against the model: to test.",words:[["考试","kǎoshì","exam"],["试试","shìshi","to give it a try"]],sent:["你试试这个。","Nǐ shìshi zhège.","Give this a try."]},
+{c:"懂",p:"dǒng",m:"to understand",comp:["心","里"],pos:["v"],story:"Heart (忄) beside 董 — understanding kept in the heart rather than the head. 听懂 is hearing and getting it; 看懂 is reading and getting it.",o:"忄 heart with 董 for sound. A late character for a very old idea.",words:[["听懂","tīngdǒng","to understand by hearing"],["看懂","kàndǒng","to understand by reading"],["懂了","dǒng le","got it"]],sent:["我听不懂。","Wǒ tīng bu dǒng.","I can't understand what I'm hearing."]},
+{c:"电",p:"diàn",m:"electricity",comp:[],pos:["n"],story:"Rain with a lightning bolt beneath it — the full form 電 keeps the rain. What survives is the strike itself.",o:"雨 rain over 申, a drawing of forked lightning. Simplification dropped the cloud and kept the bolt.",words:[["电话","diànhuà","telephone"],["电影","diànyǐng","film"],["电脑","diànnǎo","computer"]],sent:["电话在那里。","Diànhuà zài nàli.","The phone is over there."]},
+{c:"话",p:"huà",m:"speech; words",comp:["讠","口"],pos:["n"],story:"Words (讠) and a tongue (舌) — speech as the thing a tongue makes. 说话 is to talk; 电话 is electric talk.",o:"The speech radical with 舌 tongue. Talk, and then any stretch of it: a language, a remark, a story.",words:[["电话","diànhuà","telephone"],["说话","shuōhuà","to speak"],["中国话","zhōngguóhuà","spoken Chinese"]],sent:["我想给他打电话。","Wǒ xiǎng gěi tā dǎ diànhuà.","I want to call him."]},
+{c:"视",p:"shì",m:"to look at; to regard",comp:["见"],pos:["v"],story:"An altar (礻) beside 见 see — looking with attention, the way you would look at something sacred. 电视 is electric looking.",o:"示 altar or to show, with 見. To regard or inspect: a more deliberate word than 看.",words:[["电视","diànshì","television"],["视力","shìlì","eyesight"]],sent:["他在看电视。","Tā zài kàn diànshì.","He's watching television."]},
+{c:"影",p:"yǐng",m:"shadow; film",comp:["日"],pos:["n"],story:"景 a bright view, with three strokes of light beside it — the marks a lit scene throws. A shadow, and then a moving picture.",o:"景 bright scenery plus 彡, the mark of pattern or light. Shadow, reflection, and finally cinema.",words:[["电影","diànyǐng","film, movie"],["影子","yǐngzi","a shadow"]],sent:["我喜欢看电影。","Wǒ xǐhuan kàn diànyǐng.","I like watching films."]},
+{c:"脑",p:"nǎo",m:"brain",comp:["肉"],pos:["n"],story:"Flesh (⺼) beside a skull with hair on top — the meat inside your head. 电脑 is an electric one.",o:"⺼ flesh with an element depicting skull and hair. The organ, then the mind, then the computer.",words:[["电脑","diànnǎo","computer"],["头脑","tóunǎo","brains, mind"]],sent:["我的电脑很旧。","Wǒ de diànnǎo hěn jiù.","My computer is very old."]},
+{c:"机",p:"jī",m:"machine; opportunity",comp:["木","几"],pos:["n"],story:"Wood (木) beside 几 a low table — the wooden frame of a loom. Every machine since has inherited the word.",o:"木 with 几 for sound. Originally the loom, the most intricate wooden device there was; now any machine, and by extension the moment a mechanism turns: opportunity.",words:[["手机","shǒujī","mobile phone"],["飞机","fēijī","aeroplane"],["机会","jīhuì","opportunity"]],sent:["这是我的手机。","Zhè shì wǒ de shǒujī.","This is my mobile phone."]},
+{c:"网",p:"wǎng",m:"net; the internet",comp:[],pos:["n"],story:"A net drawn as a net — the frame, and the mesh stretched inside it. Three thousand years on, it means the internet.",o:"A pictograph of a hunting net on its frame. One of the few characters whose modern meaning needed no new character at all.",words:[["上网","shàngwǎng","to go online"],["网上","wǎngshàng","online"],["网站","wǎngzhàn","website"]],sent:["我在网上买东西。","Wǒ zài wǎngshàng mǎi dōngxi.","I buy things online."]},
+{c:"乐",p:"lè",m:"happy; (yuè) music",comp:["小"],pos:["adj","n"],story:"The full form 樂 draws silk strings over a wooden stand — an instrument. Music, and the mood music is for.",o:"Strings on a wooden frame. Read yuè it is music; read lè it is the joy that music exists to produce.",words:[["快乐","kuàilè","happy"],["音乐","yīnyuè","music"],["乐意","lèyì","glad to"]],sent:["生日快乐！","Shēngrì kuàilè!","Happy birthday!"]},
+{c:"班",p:"bān",m:"class; work shift",comp:["王","刀"],pos:["n"],story:"Two pieces of jade (王王) with a knife (刂) between them — something precious divided into shares. From shares came groups: a class, a shift, a squad.",o:"Two 玉 jade split by 刀. To divide something valuable into portions, hence any group formed by that division.",words:[["上班","shàngbān","to go to work"],["下班","xiàbān","to finish work"],["班上","bānshàng","in class"]],sent:["我八点上班。","Wǒ bā diǎn shàngbān.","I start work at eight."]},
+{c:"司",p:"sī",m:"to manage; office",comp:["口"],pos:["v","n"],story:"A mouth (口) under a bent frame — an official issuing orders. 公司 is a public office: a company.",o:"A hand-and-mouth figure, mirrored from 后. One who gives commands; hence to administer, and the body that does the administering.",words:[["公司","gōngsī","company"],["司机","sījī","driver"]],sent:["他在一家公司工作。","Tā zài yì jiā gōngsī gōngzuò.","He works at a company."]},
+{c:"经",p:"jīng",m:"to pass through; already",comp:["纟","工"],pos:["v","adv"],story:"Silk (纟) with the warp of a loom — the long threads everything else crosses. What runs through: experience, scripture, and 已经 already.",o:"糸 with 巠 an underground watercourse. The warp of a fabric, then anything running lengthwise through: a classic text, a meridian, a life.",words:[["已经","yǐjīng","already"],["经常","jīngcháng","often"],["经过","jīngguò","to pass by"]],sent:["我已经吃了。","Wǒ yǐjīng chī le.","I've already eaten."]},
+{c:"常",p:"cháng",m:"often; usual",comp:["小","口"],pos:["adv","adj"],story:"尚 over 巾 cloth — a long banner, always hanging there. From permanence came what is ordinary.",o:"巾 cloth with 尚 for sound. Originally a long skirt or banner; the constancy of the thing gave ordinary and constant.",words:[["经常","jīngcháng","often"],["非常","fēicháng","extremely"],["常常","chángcháng","frequently"]],sent:["我常常来这里。","Wǒ chángcháng lái zhèli.","I come here often."]},
+{c:"非",p:"fēi",m:"not; non-",comp:[],pos:["adv"],story:"Two wings beating away from each other — going apart. From opposition came negation: not this, non-that.",o:"A pictograph of a bird's wings facing opposite ways. Divergence, then wrongness, then plain negation.",words:[["非常","fēicháng","extremely"],["是非","shìfēi","right and wrong"]],sent:["这个菜非常好吃。","Zhège cài fēicháng hǎochī.","This dish is extremely tasty."]},
+{c:"完",p:"wán",m:"to finish; complete",comp:["二"],pos:["v","adj"],story:"A roof (宀) over 元 the whole — a house with everything under it. Complete.",o:"宀 roof with 元 for sound. Intact and entire; then the act of bringing something to that state.",words:[["完成","wánchéng","to complete"],["吃完","chīwán","to finish eating"],["做完","zuòwán","to finish doing"]],sent:["我做完了。","Wǒ zuò wán le.","I've finished."]},
+{c:"始",p:"shǐ",m:"to begin",comp:["女","口"],pos:["v"],story:"A woman (女) with 台 — birth as the model for every beginning. 开始 is the one you will actually use.",o:"女 with 台 for sound. The earliest sense is the origin or first cause; to begin follows straight from it.",words:[["开始","kāishǐ","to begin"],["始终","shǐzhōng","from start to finish"]],sent:["电影开始了。","Diànyǐng kāishǐ le.","The film has started."]},
+{c:"动",p:"dòng",m:"to move",comp:["云","力"],pos:["v"],story:"云 beside 力 strength — force applied. Anything that strength makes shift.",o:"The full form 動 is 力 strength with 重 heavy for sound. Simplified to 云 plus 力, which reads almost as well: effort putting something in motion.",words:[["运动","yùndòng","sport, exercise"],["动物","dòngwù","animal"],["不动","bú dòng","motionless"]],sent:["别动！","Bié dòng!","Don't move!"]},
+{c:"活",p:"huó",m:"to live; alive",comp:["水","口"],pos:["v","adj"],story:"Water (氵) beside a tongue (舌) — a tongue wet enough to speak with. That is what being alive looks like.",o:"氵 with 舌. The original sense is the gurgle of running water; flowing, and so living.",words:[["生活","shēnghuó","life; to live"],["活动","huódòng","an activity"],["生活费","shēnghuófèi","living costs"]],sent:["他的生活很忙。","Tā de shēnghuó hěn máng.","His life is very busy."]},
+{c:"飞",p:"fēi",m:"to fly",comp:[],pos:["v"],story:"A wing and the line of a body, going up. The simplified form keeps one wing and all of the lift.",o:"A pictograph of a bird rising with its wings spread. The full form 飛 shows both wings; the simplification kept the motion.",words:[["飞机","fēijī","aeroplane"],["飞快","fēikuài","at great speed"]],sent:["飞机很快。","Fēijī hěn kuài.","Planes are fast."]},
+{c:"票",p:"piào",m:"ticket",comp:[],pos:["n"],story:"Fire over an altar in the oldest form — sparks going up. Light, floating things; and then the slip of paper that stands in for money.",o:"Originally fire and sparks rising, hence light and to float. Borrowed for the paper slip: a ticket, a banknote, a vote.",words:[["车票","chēpiào","travel ticket"],["电影票","diànyǐngpiào","cinema ticket"],["买票","mǎi piào","to buy a ticket"]],sent:["我要两张车票。","Wǒ yào liǎng zhāng chēpiào.","I want two tickets."]},
+{c:"兴",p:"xìng",m:"interest; (xīng) to thrive",comp:["小","八"],pos:["n","v"],story:"Four hands lifting something between them in the full form 興 — a thing raised up. Read xīng it is prospering; read xìng it is the lift you feel in 高兴.",o:"Hands at all four corners of an object, raising it together. To rise and flourish; and in the fourth tone, elevated spirits.",words:[["高兴","gāoxìng","happy, pleased"],["兴趣","xìngqù","interest"],["高兴地","gāoxìng de","happily"]],sent:["我很高兴。","Wǒ hěn gāoxìng.","I'm very happy."]}
+);
+
 const META = {};
 Object.assign(META, {
 "一":{pos:["num"],o:"One stroke for one thing. The oracle-bone form 3,000 years ago is identical to the one you write today — it has never needed to change."},
@@ -519,14 +577,38 @@ const STAGES = [
   {n:5, icon:"🥈", name:"Everyday", zh:"日常", end:151, core:true,  blurb:"People, time, feelings."},
   {n:6, icon:"🍜", name:"Kitchen",  zh:"厨房", end:178, core:false, blurb:"Food, drink and everything on a menu."},
   {n:7, icon:"📖", name:"Reader",   zh:"阅读", end:241, core:true,  blurb:"Numbers, connectives and the grammar that joins characters into sentences."},
-  {n:8, icon:"🏙️", name:"The World", zh:"世界", end:302, core:true,  blurb:"The body, colours, weather, buildings — the physical world you read about."}
+  {n:8, icon:"🏙️", name:"The World", zh:"世界", end:302, core:true,  blurb:"The body, colours, weather, buildings — the physical world you read about."},
+  {n:9, icon:"💬", name:"Connect",  zh:"交流", end:348, core:true,  blurb:"Language, study, screens, and the words for thinking and remembering."}
 ];
 
-/* Modules not built yet — shown so the road ahead is visible. */
-const LOCKED_STAGES = [
-  {icon:"📚", name:"Independent",zh:"自读", target:500,  blurb:"Messages, product labels, social posts."},
-  {icon:"🎓", name:"Fluent",     zh:"流利", target:1000, blurb:"News snippets and articles. ~89% of everyday text."}
+/* ============================================================
+   Tiers — the gates on the library
+
+   The nine stages are a teaching order; these are three doors across it. The
+   Library used to lay all of the characters out at once, which made a beginner
+   scroll past hundreds they had no business opening yet — and let them open
+   one anyway, out of order, without any of the parts it is built from.
+
+   The splits are the conventional literacy milestones: 200 gets you signs,
+   prices and the shape of a sentence; 500 gets you most everyday writing; 1000
+   covers roughly nine characters in ten on an ordinary page. A tier opens when
+   you know TIER_UNLOCK of the one before it, so the road ahead stays visible
+   without being walkable.
+   ============================================================ */
+
+const TIERS = [
+  {n:1, icon:"🏮", name:"Foundation",  zh:"基础", to:200,
+   blurb:"The characters everything else is built from. Signs, prices, menus, and the shape of a sentence."},
+  {n:2, icon:"📚", name:"Independent", zh:"自读", to:500,
+   blurb:"Messages, product labels, social posts — reading without a dictionary at your elbow."},
+  {n:3, icon:"🎓", name:"Fluent",      zh:"流利", to:1000,
+   blurb:"News snippets and articles. Around nine characters in ten on an ordinary page."}
 ];
+
+/* Share of a tier you need before the next one opens. High enough that you
+   can't skim the foundation and jump, low enough that a handful of stubborn
+   characters can't hold the whole door shut. */
+const TIER_UNLOCK = 0.8;
 
 HQ.forEach((ch, i) => {
   ch.i = i;
@@ -697,6 +779,128 @@ const MENU_CHARS = (() => {
 
 /* The menu grows up as you do: names first, then descriptions, then a
    specials board with longer dish names and a line from the kitchen. */
+/* ============================================================
+   Interests — what the word of the week is drawn from
+
+   The curriculum order is fixed and it is not going to be about your
+   hobbies: you get 一 and 人 and 是 whether or not you care about them,
+   because they are what everything else is built on. That is correct and
+   also a bit joyless.
+
+   So this runs alongside rather than through it. Pick a few interests and
+   the app shows one real word a week from them — often using characters
+   well past where you have got to, which is the point. It is a postcard
+   from further up the road, not a drill: nothing here is scheduled, graded
+   or counted, and no word of the week ever enters your review queue.
+
+   Each word: [hanzi, pinyin, meaning, a line worth knowing about it].
+   ============================================================ */
+
+const INTERESTS = {
+  food:   { icon: "🍜", name: "Food & cooking", zh: "美食", words: [
+    ["火锅","huǒguō","hotpot","Literally fire pot. In Chongqing the broth is half chilli oil, and the pot is often split down the middle so the faint-hearted have somewhere to go."],
+    ["小笼包","xiǎolóngbāo","soup dumplings","Little basket bun. The soup gets inside by folding chilled aspic into the filling — it melts as it steams."],
+    ["麻辣","málà","numbing-spicy","Two different sensations: 麻 is the buzz of Sichuan pepper, 辣 is chilli heat. Sichuan cooking is built on holding both at once."],
+    ["下厨","xiàchú","to cook","To go down to the kitchen. Used of someone who does not usually cook doing it anyway."],
+    ["夜市","yèshì","night market","Night market. The 市 is the same one in 超市 supermarket and 城市 city — a place of trade."],
+    ["家常菜","jiācháng cài","home cooking","Home-ordinary dishes. The highest praise a Chinese restaurant meal can get is that it tastes like this."],
+    ["回锅肉","huíguōròu","twice-cooked pork","Returned-to-the-pot meat. Boiled, sliced, then fried again — the classic test of a Sichuan cook."],
+    ["好吃","hǎochī","tasty","Good-eat. The parallel 好看 good-look and 好听 good-listen work exactly the same way."]
+  ]},
+  travel: { icon: "✈️", name: "Travel", zh: "旅行", words: [
+    ["旅行","lǚxíng","to travel","Travel-go. 旅 once meant a company of soldiers on the march."],
+    ["高铁","gāotiě","high-speed rail","High iron. China laid more of it in fifteen years than the rest of the world combined."],
+    ["长城","chángchéng","the Great Wall","Long wall. Not one wall but many, built and rebuilt over roughly two thousand years."],
+    ["护照","hùzhào","passport","Protect-certificate. 照 is the same character as in photograph."],
+    ["古镇","gǔzhèn","old town","Ancient town. What the tourist signs point at when the old quarter has survived."],
+    ["山水","shānshuǐ","landscape","Mountains-water. Also the name of the entire tradition of Chinese landscape painting."],
+    ["迷路","mílù","to get lost","Confused-road. A useful thing to be able to say."],
+    ["一路平安","yílù píng'ān","safe journey","May the whole road be peaceful. What you say to someone leaving."]
+  ]},
+  music:  { icon: "🎵", name: "Music", zh: "音乐", words: [
+    ["音乐","yīnyuè","music","Sound-joy. 乐 is read yuè here and lè when it means happy — the same character, because music was what joy was made of."],
+    ["唱歌","chànggē","to sing","Sing-song. Chinese often pairs a verb with its own object like this."],
+    ["古筝","gǔzhēng","guzheng","An ancient zither, twenty-one strings over movable bridges. Older than the guitar by a couple of thousand years."],
+    ["摇滚","yáogǔn","rock music","Shake-roll. A direct calque of rock and roll, and a good one."],
+    ["民谣","mínyáo","folk music","People-ballad. The genre most Chinese singer-songwriters come out of."],
+    ["节奏","jiézòu","rhythm","Joint-play. 节 is the node on a bamboo stalk — the regular break in something continuous."],
+    ["听众","tīngzhòng","audience","Listening-crowd. 众 is three people stacked up: a crowd, drawn as one."],
+    ["好听","hǎotīng","lovely to hear","Good-listen. The exact parallel of 好吃 tasty."]
+  ]},
+  film:   { icon: "🎬", name: "Film & TV", zh: "电影", words: [
+    ["电影","diànyǐng","film","Electric shadow. One of the best coinages in the language."],
+    ["导演","dǎoyǎn","director","Guide-perform. Also the verb: to direct."],
+    ["武侠","wǔxiá","martial chivalry","The genre of wandering swordsmen. 侠 is a person who rights wrongs outside the law."],
+    ["字幕","zìmù","subtitles","Character-curtain. Chinese broadcasts are subtitled even in Mandarin, because the dialects differ so much."],
+    ["剧情","jùqíng","plot","Drama-circumstance. 情 covers feeling, situation and the facts of a case."],
+    ["演员","yǎnyuán","actor","Performing-member. The 员 is the same one in 服务员 waiter."],
+    ["票房","piàofáng","box office","Ticket-room. Literally the booth; now the takings."],
+    ["看完","kànwán","to finish watching","Watch-complete. 完 after a verb is how Chinese says all the way through."]
+  ]},
+  sport:  { icon: "⚽", name: "Sport & fitness", zh: "运动", words: [
+    ["运动","yùndòng","exercise, sport","Move-motion. Also used for a political movement."],
+    ["跑步","pǎobù","running","Run-step. The 步 is a picture of two footprints, one after the other."],
+    ["太极","tàijí","tai chi","Supreme ultimate. The slow form is a martial art practised at walking pace."],
+    ["乒乓球","pīngpāngqiú","table tennis","Ping-pong ball — the first two characters are the sound of the ball, which is where the English got it too."],
+    ["加油","jiāyóu","go on, keep going","Add oil. Shouted at athletes, students and anyone having a bad week."],
+    ["比赛","bǐsài","match, competition","Compare-contest. 比 is two people side by side, being measured against each other."],
+    ["队友","duìyǒu","teammate","Team-friend. The 友 is the same one in 朋友."],
+    ["出汗","chūhàn","to sweat","Out-sweat. What the exercise is for."]
+  ]},
+  books:  { icon: "📚", name: "Books & writing", zh: "读书", words: [
+    ["书法","shūfǎ","calligraphy","Writing-method. Treated as a fine art on the level of painting, and judged on the movement of the brush."],
+    ["小说","xiǎoshuō","novel","Small talk. Fiction was once thought the lesser form; the name stuck after it stopped being true."],
+    ["诗","shī","poetry","The Tang dynasty produced so much of it that 唐诗 is its own category of thing."],
+    ["成语","chéngyǔ","idiom","Set phrase. Almost always four characters, almost always compressing a whole story into them."],
+    ["笔画","bǐhuà","stroke","Brush-stroke. Every character has a fixed number and a fixed order, which is why the writing drills insist."],
+    ["作家","zuòjiā","writer","Make-expert. The 家 suffix turns a craft into the person who practises it."],
+    ["读者","dúzhě","reader","Reading-one. 者 makes a doer out of a verb, like -er in English."],
+    ["翻译","fānyì","to translate","Turn-over and interpret. Also the noun: a translator."]
+  ]},
+  nature: { icon: "🌿", name: "Nature & outdoors", zh: "自然", words: [
+    ["自然","zìrán","nature; natural","Self-so. That which is the way it is of its own accord — a Daoist idea before it was a word for the outdoors."],
+    ["爬山","páshān","to hike","Climb-mountain. Used for anything from a stroll up a hill to a serious ascent."],
+    ["日出","rìchū","sunrise","Sun-out. 日落 sunset is sun-fall."],
+    ["樱花","yīnghuā","cherry blossom","Cherry flower. 花 is both the flower and the verb to spend — money, and time."],
+    ["竹子","zhúzi","bamboo","The 竹 radical sits on top of dozens of characters, 笔 pen among them."],
+    ["下雪","xiàxuě","to snow","Down-snow. Weather in Chinese falls: 下雨 rain, 下雪 snow."],
+    ["星空","xīngkōng","starry sky","Star-emptiness. 空 is both empty and sky, which is a reasonable thing to notice."],
+    ["空气","kōngqì","air","Empty-vapour. 气 is one of the oldest ideas in the language: breath, steam, energy, mood."]
+  ]},
+  tech:   { icon: "💻", name: "Technology", zh: "科技", words: [
+    ["电脑","diànnǎo","computer","Electric brain. The Taiwanese coinage that beat the mainland's 计算机 calculating machine in ordinary speech."],
+    ["手机","shǒujī","mobile phone","Hand machine. 机 was originally a loom."],
+    ["上网","shàngwǎng","to go online","Up-net. 网 is a picture of a net, and needed no new character for the internet."],
+    ["软件","ruǎnjiàn","software","Soft-piece. 硬件 hardware is hard-piece."],
+    ["密码","mìmǎ","password","Secret code. Also the PIN for your card."],
+    ["人工智能","réngōng zhìnéng","artificial intelligence","Human-made wisdom-ability. Usually shortened to 人工智能 in full or AI in speech."],
+    ["搜索","sōusuǒ","to search","Seek-and-seek. Two near-synonyms doubled up, which Chinese does often."],
+    ["死机","sǐjī","to crash","Dead machine. Blunt and perfect."]
+  ]},
+  art:    { icon: "🎨", name: "Art & design", zh: "艺术", words: [
+    ["艺术","yìshù","art","Skill-technique. Both halves once meant a practical craft."],
+    ["国画","guóhuà","Chinese painting","National painting. Ink on paper or silk, named to distinguish it from oils."],
+    ["水墨","shuǐmò","ink wash","Water-ink. The whole tradition rests on how much water is in the brush."],
+    ["颜色","yánsè","colour","Face-colour. 颜 is the complexion of a face; the word widened from there."],
+    ["设计","shèjì","design","Set out a plan. Also the noun, and the verb to design."],
+    ["印章","yìnzhāng","seal, chop","The red stamp on a painting. The 汉 in this app's own header is set in one."],
+    ["对称","duìchèn","symmetry","Facing-balance. The organising principle of most Chinese characters."],
+    ["留白","liúbái","negative space","Leave white. In painting, the unpainted part is considered part of the composition."]
+  ]},
+  business:{ icon: "💼", name: "Work & business", zh: "工作", words: [
+    ["公司","gōngsī","company","Public office. 上班 is to go to work; 下班 is to leave."],
+    ["同事","tóngshì","colleague","Same-matter. The person you share the work with."],
+    ["开会","kāihuì","to hold a meeting","Open-meet. 会 is both the meeting and the verb can."],
+    ["加班","jiābān","to work overtime","Add-shift. The 996 debate — nine to nine, six days — is about this word."],
+    ["工资","gōngzī","wages","Work-resources. 资 is capital or funds."],
+    ["老板","lǎobǎn","boss","Old board. Originally the shopkeeper behind the counter."],
+    ["合作","hézuò","to cooperate","Join-make. Also partnership."],
+    ["面试","miànshì","job interview","Face-test. The 试 is the same one in 考试 exam."]
+  ]}
+};
+
+const INTEREST_KEYS = Object.keys(INTERESTS);
+
 const MENU_TIERS = [
   { n: 1, at: 0,  label: "Dish names only" },
   { n: 2, at: 15, label: "With descriptions" },

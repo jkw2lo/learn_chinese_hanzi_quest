@@ -19,7 +19,7 @@
       <button data-nav="record"><span class="nz">记录</span> Record</button>
     </nav>
     <span class="chip chip-streak cold streak-chip">🔥 0</span>
-    <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">⤓</button>
+    <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">💾</button>
     <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">⚙</button>
     <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">◐</button>
   </header>
@@ -82,6 +82,16 @@
       <button class="btn" id="flashNext">Next</button>
     </div>
   </div>
+</div>
+
+<!-- placement quiz -->
+<div class="place" id="place" role="dialog" aria-label="Where to start">
+  <div class="place-bar">
+    <button class="icon-btn" id="placeClose" aria-label="Close">✕</button>
+    <span class="place-prog"><i id="placeProg"></i></span>
+    <span class="place-count" id="placeCount"></span>
+  </div>
+  <div class="place-body" id="placeBody"></div>
 </div>
 
 <!-- confirm, in the page: the sandbox an artifact runs in has no allow-modals,

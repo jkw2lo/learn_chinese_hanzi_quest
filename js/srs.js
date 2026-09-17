@@ -56,6 +56,10 @@ const blank = () => ({
   timer: true,
   tour: false,
   writeDrills: true,
+  padAuto: false,
+  name: "",
+  interests: [],
+  profiled: false,
   updated: Date.now()
 });
 
@@ -132,12 +136,24 @@ function ensure(c) {
   if (!state.chars[c]) {
     state.chars[c] = {
       lvl: 0, due: dayKey(), seen: 0, right: 0, wrong: 0,
-      skills: { r: 0, p: 0, c: 0, w: 0 },  /* recognise, pinyin, recall, write */
+      skills: { r: 0, p: 0, c: 0, w: 0 },  /* clean answers: recognise, pinyin, recall, write */
+      shown: { r: 0, p: 0, c: 0, w: 0 },   /* times asked at all, right or wrong */
       first: dayKey(), last: dayKey()
     };
   }
+  /* records written before `shown` existed */
+  if (!state.chars[c].shown) state.chars[c].shown = { r: 0, p: 0, c: 0, w: 0 };
   return state.chars[c];
 }
+
+/* How many times this character has come up in this mode, however it went.
+   `skills` counts only the clean answers, which is the wrong measure for
+   deciding what to show next: a character you keep getting wrong would stay
+   at the front of the queue forever. */
+const shownIn = (c, skill) => {
+  const r = rec(c);
+  return (r && r.shown && r.shown[skill]) || 0;
+};
 
 const isKnown  = c => !!state.chars[c];
 const isDue    = c => { const r = rec(c); return r && r.due <= dayKey(); };
@@ -155,6 +171,10 @@ function grade(c, correct, skill, opts = {}) {
   const r = ensure(c);
   r.seen++;
   r.last = dayKey();
+  if (skill && r.shown[skill] !== undefined) r.shown[skill]++;
+  /* Either way, it has now been seen: the guess the placement quiz made about
+     this character has been settled one way or the other. */
+  if (r.unchecked) delete r.unchecked;
   if (correct) {
     r.right++;
     if (skill && r.skills[skill] !== undefined) r.skills[skill]++;
@@ -212,6 +232,25 @@ function tally(kind, ch) {
 
 const reviewedToday = () => Object.keys((state.days[dayKey()] || {}).revC || {});
 
+/* ---------- extra practice: reps, counted like reps ----------
+
+   Today's list is a finishable checklist and closes. Go deeper is the
+   opposite — unbounded, never "done", and the place where repetition actually
+   happens. A checklist tick is the wrong reward for that: you want to see the
+   pile grow. So extra reps are counted separately from everything else and
+   never touch the day's completion. */
+function tallyExtra() {
+  const t = today();
+  t.extra = (t.extra || 0) + 1;
+  touchStreak();
+  save();
+}
+
+const extraToday = () => (state.days[dayKey()] || {}).extra || 0;
+const extraTotal = () => Object.values(state.days).reduce((a, d) => a + (d.extra || 0), 0);
+const extraBestDay = () => Object.values(state.days).reduce((a, d) => Math.max(a, d.extra || 0), 0);
+const extraDays = () => Object.values(state.days).filter(d => d.extra > 0).length;
+
 function touchStreak() {
   const k = dayKey();
   const s = state.streak;
@@ -258,13 +297,163 @@ const dueCount = () => dueList().length;
    The menu side quest runs on its own daily thread and never reorders this. */
 function nextNew(n) {
   const out = [];
+  const ceiling = unlockedCeiling();
   for (const ch of HQ) {
     if (out.length >= n) break;
+    if (ch.i >= ceiling) break;              /* the tier gate, not just an ordering */
     if (!state.chars[ch.c]) out.push(ch.c);
   }
   return out;
 }
-const remainingNew = () => HQ.length - Object.keys(state.chars).length;
+/* What is left that you're actually allowed to start on. Counting the whole
+   library here would promise "study ahead" sessions the gate then refuses. */
+const remainingNew = () => HQ.slice(0, unlockedCeiling()).filter(ch => !state.chars[ch.c]).length;
+
+/* ---------- word of the week ----------
+
+   The curriculum order is fixed and impersonal by design — you learn 的 and 是
+   before anything you would have chosen, because everything else is built on
+   them. This runs beside it rather than through it: one real word a week from
+   whatever you said you cared about, usually made of characters well past where
+   you have reached.
+
+   It is deliberately not a drill. Nothing here is scheduled, graded, counted,
+   or added to the review queue — the moment it becomes homework it stops being
+   the thing that makes you want to keep going.
+
+   The pick is stable for the whole week (an ISO week key seeds it) and won't
+   repeat until everything in your chosen interests has had a turn. */
+
+function weekKey(d = new Date()) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);          /* to the Thursday of this week */
+  const jan1 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((t - jan1) / 864e5 + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function wordOfWeek() {
+  const cats = (state.interests || []).filter(k => INTERESTS[k]);
+  if (!cats.length) return null;
+  const wk = weekKey();
+  const held = state.wotw;
+  if (held && held.week === wk && INTERESTS[held.cat] && INTERESTS[held.cat].words[held.i]) return held;
+
+  const all = [];
+  cats.forEach(k => INTERESTS[k].words.forEach((_, i) => all.push(`${k}:${i}`)));
+  const seen = new Set(state.wotwPast || []);
+  let fresh = all.filter(x => !seen.has(x));
+  if (!fresh.length) { fresh = all; state.wotwPast = []; }   /* been through them all — go round again */
+
+  /* a stable hash of the week, so the pick doesn't wander between reloads */
+  const h = [...wk].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const [cat, i] = fresh[h % fresh.length].split(":");
+  state.wotw = { week: wk, cat, i: +i };
+  state.wotwPast = [...(state.wotwPast || []), `${cat}:${i}`].slice(-200);
+  save();
+  return state.wotw;
+}
+
+/* ---------- placement ----------
+
+   Plenty of people arrive already able to read 人 and 大 and 中国. Making them
+   click through twenty characters they have known for years is the fastest way
+   to lose them, so the quiz walks the curriculum in order and finds the point
+   where recognition starts to fail.
+
+   It probes rather than tests everything: a block of PROBE_SIZE characters
+   sampled evenly across a window of the curriculum. Clear the block and the
+   whole window is credited and the next one begins; miss more than one and the
+   walk stops there. That is the deliberate trade — the quiz stays under a
+   couple of minutes, at the cost of crediting some characters it never showed.
+
+   So credit is deliberately shallow. A credited character starts at
+   PLACED_LVL rather than "mastered", with its first review spread across the
+   next few days: enough that the app doesn't teach it from scratch, not so
+   much that a wrong guess buries a character the learner never really knew.
+   Anything credited in error surfaces within the week as a normal review. */
+
+const PROBE_SIZE = 5;          /* characters shown per window */
+const PROBE_WINDOW = 20;       /* curriculum positions each block stands for */
+const PROBE_PASS = 4;          /* of PROBE_SIZE, to credit the window and go on */
+const PLACED_LVL = 2;          /* for a character the quiz actually asked about */
+const PLACED_SPREAD = 5;       /* days to fan those first reviews across */
+const CHECK_SPREAD = 10;       /* and the unasked ones, which come sooner and oftener */
+
+/* The characters a block asks about: evenly spaced across its window, so a
+   block stands a fair chance of catching a gap anywhere inside it. */
+function probeBlock(start) {
+  const end = Math.min(start + PROBE_WINDOW, HQ.length);
+  const span = end - start;
+  if (span <= 0) return [];
+  const take = Math.min(PROBE_SIZE, span);
+  const step = span / take;
+  const out = [];
+  for (let i = 0; i < take; i++) {
+    const at = start + Math.min(span - 1, Math.floor(i * step + step / 2));
+    if (!out.includes(HQ[at].c)) out.push(HQ[at].c);
+  }
+  return out;
+}
+
+/* Credit everything before `upTo`, shallowly and with the reviews fanned out
+   so day one isn't a wall of two hundred cards.
+
+   A character already in the record is left strictly alone. Retaking the quiz
+   after a month of study would otherwise knock every one of those characters
+   back to PLACED_LVL and reset its due date — turning a re-place into a
+   silent, partial reset. Placement may only ever add. */
+/* The quiz samples — five characters stand for twenty — so most of what gets
+   credited was never actually shown. Treating those identically to the ones
+   you answered correctly is the one thing placement must not do: it is the
+   difference between "we found your level" and "we assumed you knew 70
+   characters we never asked you about".
+
+   So the two are credited differently, and neither is credited as mastery:
+
+   - **Asked and answered** goes in at PLACED_LVL with its first review fanned
+     across PLACED_SPREAD days. There is evidence for it.
+   - **Never asked** goes in at level 0 as an unchecked character, fanned
+     across a wider CHECK_SPREAD. Level 0 is the bottom of the ladder, so the
+     first time one comes up it is an ordinary recognition drill: get it right
+     and it climbs like anything else, get it wrong and it is taught properly
+     from there. Nothing is assumed permanently — it is verified lazily,
+     through the review machinery that already exists, rather than by making
+     someone sit through 348 questions up front.
+
+   The only thing the quiz decides on its own is *where to start*. Everything
+   behind that point still has to earn its place. */
+function placeAt(upTo, verified) {
+  const k = dayKey();
+  const asked = verified instanceof Set ? verified : new Set(verified || []);
+  let added = 0, checked = 0;
+  HQ.slice(0, upTo).forEach((ch, i) => {
+    if (state.chars[ch.c]) return;
+    const r = ensure(ch.c);
+    r.placed = true;                 /* so the record knows this wasn't taught */
+    if (asked.has(ch.c)) {
+      r.lvl = PLACED_LVL;
+      r.due = addDays(k, 1 + (i % PLACED_SPREAD));
+      checked++;
+    } else {
+      r.lvl = 0;
+      r.unchecked = true;            /* credited on the strength of its neighbours */
+      r.due = addDays(k, 1 + (i % CHECK_SPREAD));
+    }
+    added++;
+  });
+  state.placed = { at: Math.max(upTo, (state.placed && state.placed.at) || 0), on: k,
+                   asked: asked.size, credited: added };
+  save();
+  return { added, checked, unchecked: added - checked };
+}
+
+/* A placed character stops being unchecked the moment it is answered right. */
+const isUnchecked = c => { const r = rec(c); return !!r && !!r.unchecked; };
+const uncheckedCount = () => Object.keys(state.chars).filter(c => CHAR_INDEX[c] && state.chars[c].unchecked).length;
+
+const wasPlaced = () => !!state.placed;
 
 /* ---------- sticking points ----------
    A character you keep missing isn't going to yield to another repetition of
@@ -282,14 +471,72 @@ const leeches = () => Object.keys(state.chars)
 
 /* ---------- practice: extra reps, weakest first ---------- */
 
-/* Characters you already know, ordered by how shaky they are in this skill. */
-function practicePool(skill, n) {
-  return Object.keys(state.chars)
-    .filter(c => CHAR_INDEX[c])
-    .sort((a, b) => (state.chars[a].skills[skill] || 0) - (state.chars[b].skills[skill] || 0)
-                 || state.chars[a].lvl - state.chars[b].lvl
-                 || Math.random() - 0.5)
-    .slice(0, n);
+/* ---------- what a round of extra practice draws on ----------
+
+   Sorting the whole library by weakness and taking the top N stopped working
+   once the library got big: the same forty characters were always the weakest,
+   so the same forty came round every time, and the hundred behind them were
+   never seen again.
+
+   Two rules fix it.
+
+   Most of a round is what you have learned recently, because that is what is
+   actually at risk of slipping — RECENT_SHARE of it, drawn from the last
+   RECENT_WINDOW characters you were introduced to. The rest reaches back into
+   everything older, so the early stages don't rot.
+
+   And within either group, what comes up is what has come up *least* — by
+   `shown`, the count of times a character has been asked in this mode at all.
+   Weakness breaks the tie, not the other way round: ordering by weakness alone
+   pins a character you keep missing to the front of the queue permanently,
+   which is how you end up seeing 难 six times an evening. */
+
+const RECENT_SHARE = 0.7;
+const RECENT_WINDOW = 40;
+
+/* Newest first: by the day it was introduced, then by curriculum position for
+   everything introduced on the same day (a placement quiz credits hundreds at
+   once, and they all share a date). */
+function byRecency(chars) {
+  return [...chars].sort((a, b) => {
+    const ra = rec(a), rb = rec(b);
+    return (rb.first || "").localeCompare(ra.first || "") || CHAR_INDEX[b].i - CHAR_INDEX[a].i;
+  });
+}
+
+/* Least-asked first, weakest as the tie-break, then a coin toss so equal
+   characters don't always come out in the same order. */
+function byNeed(skill) {
+  return (a, b) => shownIn(a, skill) - shownIn(b, skill)
+                || (rec(a).skills[skill] || 0) - (rec(b).skills[skill] || 0)
+                || rec(a).lvl - rec(b).lvl
+                || Math.random() - 0.5;
+}
+
+function practicePool(skill, n, pool) {
+  const all = (pool || knownChars());
+  if (all.length <= n) return [...all].sort(byNeed(skill));
+
+  const ranked = byRecency(all);
+  const recent = ranked.slice(0, RECENT_WINDOW);
+  const older = ranked.slice(RECENT_WINDOW);
+
+  const wantRecent = Math.min(recent.length, Math.round(n * RECENT_SHARE));
+  const wantOlder = Math.min(older.length, n - wantRecent);
+
+  const picked = [
+    ...[...recent].sort(byNeed(skill)).slice(0, wantRecent),
+    ...[...older].sort(byNeed(skill)).slice(0, wantOlder)
+  ];
+
+  /* If one side couldn't fill its share — a new learner has no `older` at all
+     — take the shortfall from whatever is left rather than serving a short
+     round. */
+  if (picked.length < n) {
+    const have = new Set(picked);
+    picked.push(...ranked.filter(c => !have.has(c)).sort(byNeed(skill)).slice(0, n - picked.length));
+  }
+  return shuffle(picked);
 }
 
 const knownChars = () => Object.keys(state.chars).filter(c => CHAR_INDEX[c]);
@@ -334,6 +581,64 @@ function stageProgress(stageNo) {
   const known = inStage.filter(c => isKnown(c.c)).length;
   return { known, total: inStage.length, pct: inStage.length ? known / inStage.length : 0 };
 }
+
+/* ---------- tiers ----------
+
+   `to` is the milestone the tier stands for, not how many characters are
+   written yet: tier 2 runs to 500 but the library currently stops at 348, so
+   `tierChars` returns what actually exists and `tierPlanned` says what it is
+   aiming at. Keeping those apart is what lets the Library show an honest
+   "148 of 300 written" instead of pretending the rest are missing. */
+
+const tierFrom = t => t.n === 1 ? 0 : TIERS[t.n - 2].to;
+const tierChars = t => HQ.slice(tierFrom(t), t.to);
+const tierPlanned = t => t.to - tierFrom(t);
+const tierOf = i => TIERS.find(t => i < t.to) || TIERS[TIERS.length - 1];
+
+function tierProgress(t) {
+  const inTier = tierChars(t);
+  const known = inTier.filter(ch => isKnown(ch.c)).length;
+  return { known, built: inTier.length, planned: tierPlanned(t),
+           pct: inTier.length ? known / inTier.length : 0 };
+}
+
+/* Tier 1 is always open. After that you need TIER_UNLOCK of the previous
+   tier's *written* characters — and every tier before that too, so a gap
+   early on can't be stepped over. */
+function tierUnlocked(t) {
+  for (let i = 0; i < t.n - 1; i++) {
+    const p = tierProgress(TIERS[i]);
+    if (!p.built || p.pct < TIER_UNLOCK) return false;
+  }
+  return true;
+}
+
+/* How many more of the blocking tier are needed to open this one. */
+function tierNeeds(t) {
+  for (let i = 0; i < t.n - 1; i++) {
+    const prev = TIERS[i], p = tierProgress(prev);
+    if (!p.built || p.pct < TIER_UNLOCK) {
+      return { tier: prev, more: Math.max(1, Math.ceil(p.built * TIER_UNLOCK) - p.known) };
+    }
+  }
+  return null;
+}
+
+/* The curriculum position past which nothing may be studied yet. Everything
+   the daily session and the Library hand out is checked against this. */
+function unlockedCeiling() {
+  let ceiling = 0;
+  for (const t of TIERS) {
+    if (!tierUnlocked(t)) break;
+    ceiling = Math.min(t.to, HQ.length);
+  }
+  return ceiling;
+}
+
+const isLocked = c => {
+  const ch = CHAR_INDEX[c];
+  return !!ch && !isKnown(c) && ch.i >= unlockedCeiling();
+};
 
 function currentStage() {
   for (const s of STAGES) {

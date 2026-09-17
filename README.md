@@ -1,7 +1,7 @@
 # Hanzi Quest
 
-A practice notebook for learning to read Chinese characters. 302 characters
-across seven core stages plus a kitchen topic pack, taught in an order where
+A practice notebook for learning to read Chinese characters. 348 characters
+across eight core stages plus a kitchen topic pack, taught in an order where
 each one makes the next easier.
 
 ## Picking this up again
@@ -46,7 +46,8 @@ either. See **Audio** below.
 
 - **今天 Today** — the day's session, what you've learned today, and the
   menu side quest.
-- **字库 Library** — every character, filterable; tap any to study or restudy.
+- **字库 Library** — every character, grouped into three tiers and filterable;
+  tap any to study or restudy. Tiers past the one you're in stay shut.
 - **部首 Radicals** — 27 radicals taught properly, each with the characters
   in your library that use it.
 - **记录 Record** — the full calendar, the stage ladder, per-skill mastery,
@@ -198,6 +199,18 @@ can never leave the writer deaf to a real hand. Pointer lock is commonly
 refused inside an embedded frame that wasn't granted it — the page says so and
 suggests opening in its own tab.
 
+**Settings → Start the trackpad automatically** arms every writing box as it
+appears, instead of waiting for the 触控 button or `T`. It is off by default,
+because pointer lock hides the cursor and doing that unasked is startling.
+
+Auto-arming goes through `padAuto()`, which is allowed to fail. Pointer lock
+generally wants a user gesture and a drill card that arrives on the auto-advance
+timer hasn't got one, so a refusal here is expected rather than exceptional: it
+sets `pad.quiet`, which suppresses the "your browser blocked pointer lock"
+note. An automatic attempt the browser turns down is not an error the learner
+needs to read about — the manual button is still exactly where it was. Only an
+attempt they actually asked for gets an explanation.
+
 ## Audio
 
 **Characters play bundled clips, not synthesised speech.** `speechSynthesis`
@@ -208,8 +221,8 @@ silence where `say -v Tingting` produces 0.84s. In both cases `speak()`
 queues, `speaking` goes true, and `start` never fires, with no error. Four
 attempts at fixing the engine failed because the engine was never the fix.
 
-So `tools/make-audio.mjs` records all 302 characters with macOS `say` and
-bundles them as base64 AAC in `js/audio.js` (1.6 MB of audio, 2.1 MB encoded).
+So `tools/make-audio.mjs` records all 348 characters with macOS `say` and
+bundles them as base64 AAC in `js/audio.js` (1.8 MB of audio, 2.4 MB encoded).
 They play through one shared `<audio>` element, unlocked with a muted play on
 the first real click so later programmatic plays are allowed. **That file is
 committed**, because the app is only as good as its sound and a clone without
@@ -267,7 +280,7 @@ ignored while the trackpad holds it for inking.
 
 ## Backup
 
-The **⤓ button in the top bar** saves progress *and* the practice diary as one
+The **💾 button in the top bar** saves progress *and* the practice diary as one
 JSON file, and loads one back. See **Progress storage** for why it's in the top
 bar and how the three save paths differ.
 
@@ -295,6 +308,146 @@ page argue with itself, so three things changed:
   shown with a lock and a reason, and reported separately (`2 of 4 done · 1
   locked`) instead of shrinking the denominator until the list looks finished.
 
+## Go deeper is not part of the list
+
+Today's practice is a checklist: scoped to today's characters, finishable, and
+it ticks. Go deeper is the opposite — the whole library, unbounded, and it can
+never be completed. Rewarding both the same way was the mistake: a fraction
+that never reaches its denominator reads as failure rather than as work done.
+
+So Go deeper is no longer a `.sheet` at all. It is an inked band with no tick
+boxes, and its reward is a **count that only goes up**: reps, tallied in 正.
+
+正 has five strokes and is the tally mark used across China and Japan — the
+five-bar gate with the gate made out of a character. One rep of extra practice
+draws one stroke, so a finished 正 is five reps and a row of them is the day's
+work, countable at a glance. It earns its place over stars or a growing tree
+for two reasons: it is the genuine article rather than decoration, and the
+seedling-to-tree metaphor is already taken by the stage ladder (🌱 Seed →
+🌿 Sprout → 🍃 Branch), where it means something else entirely. Reusing it
+would have blurred both.
+
+Reps are counted in `days[k].extra` and are deliberately sealed off from
+everything else: `tallyExtra()` fires only when `session.practice` is set and
+`session.todo` is not, so a row from today's list never inflates them, and a
+rep never counts as a character revised or ticks anything off. A smoke check
+holds both directions.
+
+## Tiers — the gates on the library
+
+The nine stages are a teaching order. The three **tiers** are doors across it,
+at the conventional literacy milestones: **200** gets you signs, prices and the
+shape of a sentence; **500** gets you most everyday writing; **1000** covers
+roughly nine characters in ten on an ordinary page.
+
+The Library used to lay all 348 out at once, which did two bad things: it made
+a beginner scroll past hundreds they had no business opening yet, and it let
+them open one anyway — out of order, without any of the parts it is built from.
+Now it groups by tier, each tier collapsible, with the one you are actually in
+left open and the rest shut. A locked tier collapses to a single card saying
+what would open it, instead of 150 grey squares.
+
+A tier opens at `TIER_UNLOCK` (80%) of the tier before it — and of every tier
+before that, so a gap early on can't be stepped over. `unlockedCeiling()` is the
+curriculum position past which nothing may be studied, and it gates three
+things: `nextNew()` (so a session never deals a locked character),
+`remainingNew()` (so "study ahead" doesn't promise characters the gate then
+refuses), and the **Learn this one now** button on a character card, which is
+replaced by an explanation of which tier it is in and what opens it. The card
+itself still reads — the etymology, the components, the stroke order are all
+still there. It just isn't one to start on yet.
+
+Two deliberate exemptions:
+
+- **Placement** credits past the gate, because proving you know 300 characters
+  is exactly what should open tier 2. It does, automatically — the unlock is
+  computed from what you know, so the quiz result unlocks tiers as a side
+  effect rather than needing a special case. Note that unchecked characters
+  count towards that unlock: the tier opens on the quiz's estimate and the
+  estimate is then checked, rather than the other way round.
+- **The word of the week** is drawn from your interests and routinely uses
+  characters far beyond your tier. That is the point of it, and it is safe
+  because it is not a drill and never enters the review queue.
+
+Tiers and stages don't line up — stage 7 straddles 200 — so for display each
+stage is filed under whichever tier its **midpoint** falls in. Listing a
+straddling stage under both reads as a bug rather than as precision.
+
+## Placement — finding where to start
+
+Plenty of people arrive already reading 人 and 大 and 中国. Making them click
+through twenty characters they have known for years is the fastest way to lose
+them, so a quiz offered once at the end of the tour walks the curriculum **in
+order** and finds where recognition gives out.
+
+It probes rather than tests everything: a block of `PROBE_SIZE` (5) characters
+sampled evenly across `PROBE_WINDOW` (20) curriculum positions. Score
+`PROBE_PASS` (4) or better and the walk moves on; drop below and it stops there.
+Someone who reads the first ~95 characters is placed at 100 after about 30
+questions — roughly two minutes.
+
+**The quiz decides where to start. It does not decide what you know.** Those are
+different claims and the first version conflated them: it credited all 100
+characters at `PLACED_LVL`, including the 76 it had never actually shown. Five
+characters standing for twenty means most of a credited range is an inference
+from its neighbours, and treating an inference identically to an answered
+question is exactly the thing placement must not do.
+
+So the two are credited differently, and neither as mastery:
+
+| | level | first review | flag |
+|---|---|---|---|
+| Asked and answered right | `PLACED_LVL` (2) | fanned over `PLACED_SPREAD` (5) days | — |
+| Never asked | 0 | fanned over `CHECK_SPREAD` (10) days | `unchecked` |
+
+Level 0 is the bottom of the ladder, so the first time an unchecked character
+comes up it is an ordinary recognition card: right and it climbs like anything
+else, wrong and it is taught properly from there. `grade()` clears the flag
+either way — the question has been settled. Nothing is assumed permanently; it
+is **verified lazily**, through the review machinery that already exists,
+instead of by making someone sit through 348 questions before they begin.
+
+The count is visible rather than silent: Today carries an **Unchecked** pill
+while any remain, and a character card credited this way says so. In practice
+they clear fast — a single session settled 74 of 76 in testing.
+
+Credit is shallow in both rows for the same reason, and the reviews are fanned
+so 100 characters land as ~15 a day with nothing at all due on day one.
+
+Questions are **meaning → character**, not the other way round. Recognising 山
+among four English words is easy to fake by elimination; picking 山 out of four
+plausible characters is not. Distractors come from within 30 positions in the
+curriculum, so they are of a piece — a block of easy ones would place everybody
+at the end. There is an explicit "I don't know this one", because the quiz is
+only useful if people answer honestly, and the screen says so.
+
+**`placeAt()` may only ever add.** A character already in the record is left
+strictly alone. Without that, retaking the quiz after a month of study would
+knock every one of those characters back to level 2 and reset its due date — a
+silent, partial reset dressed up as a re-place. A smoke check holds it.
+
+## Personalisation
+
+Two optional questions, asked once after placement: a name, and any number of
+interests from `INTERESTS` in `js/data.js` (10 categories, 8 words each).
+
+The name is used where the app addresses you and nowhere else. The interests
+feed **one thing**: the word of the week. They explicitly do *not* reorder the
+curriculum — that order is load-bearing, 马 has to arrive before 妈 and 吗
+whatever you happen to be interested in, and letting a preference reshuffle it
+would quietly break the thing that makes each character easier than the last.
+
+So the word of the week runs *beside* the curriculum rather than through it:
+one real word from what you said you cared about, usually built from characters
+well past where you have reached, with a line about where it comes from. It is
+deliberately not a drill — never scheduled, graded, counted, or added to the
+review queue. The moment it becomes homework it stops being the thing that
+makes you want to keep going. The card says as much: *nothing to do here*.
+
+`wordOfWeek()` seeds the pick from an ISO week key, so it is stable all week and
+survives reloads, and it won't repeat until everything in your chosen interests
+has had a turn.
+
 ## Go deeper, and what "solid" means
 
 A character is **solid** in a skill after `PASSES_FOR_SOLID` (3) clean answers
@@ -316,7 +469,7 @@ Under each tile is a bar split by how many passes each character has had —
 solid, two, one, untouched. Two passes on everything looks different from three
 on half of it, and both look different from nothing; a single fraction showed
 all three as the same. Record's Skills panel uses the same maths, over the
-characters you know rather than the whole 302-character library — a bar reading
+characters you know rather than the whole 348-character library — a bar reading
 3% when everything you've met is solid is describing the syllabus, not you.
 
 ## Asking before something irreversible
@@ -357,6 +510,34 @@ Three things live outside `state` and have to be cleared by hand:
 The theme is deliberately *not* reset: it's a display preference in its own
 localStorage key, not progress.
 
+## What a practice round draws on
+
+Sorting the whole library by weakness and taking the top N stopped working once
+the library got big: the same forty characters were always the weakest, so the
+same forty came round every time and the hundred behind them were never seen
+again.
+
+Two rules in `practicePool()` fix it.
+
+**70/30 by recency.** `RECENT_SHARE` of a round comes from the last
+`RECENT_WINDOW` (40) characters introduced, because those are what is actually
+at risk of slipping. The remaining 30% reaches back into everything older, so
+the early stages don't rot. A new learner with nothing older just gets a full
+round of recent ones.
+
+**Least-shown first.** Each character record now carries `shown` alongside
+`skills`: `skills` counts clean answers, `shown` counts times *asked at all*.
+Ordering by `shown` is what rotates the pool. Weakness is only the tie-break —
+ordering by weakness first pins a character you keep missing to the front of the
+queue permanently, which is how you end up seeing 难 six times in an evening.
+
+Over 40 simulated rounds against a 200-character library the split holds at
+exactly 70%, 160 distinct characters come up, and no older character is asked
+more than three times. The eligible set is passed *into* `practicePool` rather
+than filtered afterwards — filtering a ready-made pool down to the writable ones
+used to hand back a short round and quietly break the split it had just
+computed.
+
 ## Sticking points
 
 A character missed five or more times, and more often than it's been right,
@@ -369,11 +550,13 @@ identical repetition.
 Settings used to sit at the bottom of the Record tab, where nobody would look
 for them. They're now their own sheet behind the **gear in the top bar**,
 grouped as Studying / Sound / Your data, and reachable from any tab. Record is
-progress only. Saving progress has its own button (⤓) beside the gear, because
+progress only. Saving progress has its own button (💾) beside the gear, because
 it's the one thing worth doing before you know you needed it.
 
-A six-step tour runs on the first visit (`state.tour`) and can be replayed
-from Settings. The last step is about saving to a file, because that's the one
+A six-step tour runs on the first visit (`state.tour`), then the placement offer,
+then the two profile questions — in that order, each waiting for the last, so
+the first run is a short sequence rather than a pile of dialogs. All three can
+be replayed from Settings. The last step is about saving to a file, because that's the one
 thing the app can't do for you and the one thing you only miss once it's gone.
 
 ## A note on the streak
@@ -386,7 +569,7 @@ resets. The tracker also shows total days studied, which never resets.
 
     index.html        page shell
     css/app.css       the whole design system
-    js/data.js        curriculum, radicals, the menu — all the content
+    js/data.js        curriculum, radicals, the menu, interests — all the content
     js/strokes.js     bundled stroke-order data (generated, do not hand-edit)
     js/audio.js       bundled spoken clips (generated, do not hand-edit)
     js/srs.js         scheduling, streaks, the menu day-pick, storage
@@ -413,7 +596,7 @@ character, and that scheduling and the side quest behave.
 own graphics file — stroke count, each path, and in sequence. Because stroke
 *order* is simply the array order, matching the source is what makes the order
 right; it also catches a corrupted download and any character whose strokes
-and medians disagree. All 302 currently match exactly.
+and medians disagree. All 348 currently match exactly.
 
 `check-components.mjs` verifies every "Built from" claim against Make Me a
 Hanzi's decomposition dictionary. Hand-written decompositions drift in two
@@ -428,11 +611,33 @@ indices fall inside a stage. Each entry needs `c p m comp story o pos words
 sent`. Then regenerate the stroke bundle:
 
     node tools/fetch-strokes.mjs
+    node tools/make-audio.mjs     # new characters are silent until you do
 
 Radical families, the trees, quest coverage and the progress maths all derive
 from the data, so nothing else needs touching. Editing `MENU` likewise
 re-derives the quest — but re-check that every glyph you add is a character
 the library actually teaches.
+
+**Order the new block so nothing needs a part it hasn't met.** `comp` drives
+both the "Built from" panel and the `FAMILIES` trees, so a character whose
+components arrive later in the array teaches backwards. Stage 9 is arranged
+this way on purpose: 见 comes first and 视 and 觉 are built on it, 音 precedes
+意, 自 precedes 息, 己 precedes 记.
+
+`tools/check-components.mjs` will tell you which `comp` claims are legal — it
+validates against Make Me a Hanzi's recursive decompositions, with squeezed
+radicals normalised to their free-standing forms (讠→言, 氵→水, ⺼→肉). If a
+character has no taught part worth naming, `comp:[]` is the honest answer;
+several of the best-known characters in the library have it.
+
+### Stage 9 · 交流 Connect
+
+46 characters covering what stages 1-8 left out: the courtesy words (见 谢 您),
+the vocabulary of thinking and remembering (思 意 觉 懂 记 忘), language and
+study (书 文 汉 语 英 美 考 试), screens (电 话 视 影 脑 机 网), and the shape
+of a working week (班 司 经 常 完 始 动 活). It closes some conspicuous gaps —
+谢谢 and 再见 were not previously writable — and it lets the app finally teach
+its own name: 汉字.
 
 ## Progress storage
 
@@ -443,7 +648,7 @@ the viewer's private store, so one streak follows you between devices.
 `localStorage` is not a safe place to keep months of work: clearing browser
 data, switching browsers or studying in a private window loses all of it, and
 the app can't recover it afterwards. So saving a copy is a **top-bar button**
-(⤓, next to the gear), not a setting three screens down — it was buried under
+(💾, next to the gear), not a setting three screens down — it was buried under
 Settings → Your data → Backup before, where nobody would find it before they
 needed it. It grows a gold dot once there are five characters' worth of
 progress and no saved copy, or when the last one is a fortnight old.
