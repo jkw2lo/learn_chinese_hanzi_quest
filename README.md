@@ -362,7 +362,9 @@ Two deliberate exemptions:
 - **Placement** credits past the gate, because proving you know 300 characters
   is exactly what should open tier 2. It does, automatically — the unlock is
   computed from what you know, so the quiz result unlocks tiers as a side
-  effect rather than needing a special case.
+  effect rather than needing a special case. Note that unchecked characters
+  count towards that unlock: the tier opens on the quiz's estimate and the
+  estimate is then checked, rather than the other way round.
 - **The word of the week** is drawn from your interests and routinely uses
   characters far beyond your tier. That is the point of it, and it is safe
   because it is not a drill and never enters the review queue.
@@ -380,11 +382,37 @@ order** and finds where recognition gives out.
 
 It probes rather than tests everything: a block of `PROBE_SIZE` (5) characters
 sampled evenly across `PROBE_WINDOW` (20) curriculum positions. Score
-`PROBE_PASS` (4) or better and the whole window is credited and the next block
-starts; drop below and the walk stops there. Someone who reads the first ~95
-characters is placed at 100 after about 30 questions — roughly two minutes.
-That is the deliberate trade: the quiz stays short, at the cost of crediting
-characters it never actually showed.
+`PROBE_PASS` (4) or better and the walk moves on; drop below and it stops there.
+Someone who reads the first ~95 characters is placed at 100 after about 30
+questions — roughly two minutes.
+
+**The quiz decides where to start. It does not decide what you know.** Those are
+different claims and the first version conflated them: it credited all 100
+characters at `PLACED_LVL`, including the 76 it had never actually shown. Five
+characters standing for twenty means most of a credited range is an inference
+from its neighbours, and treating an inference identically to an answered
+question is exactly the thing placement must not do.
+
+So the two are credited differently, and neither as mastery:
+
+| | level | first review | flag |
+|---|---|---|---|
+| Asked and answered right | `PLACED_LVL` (2) | fanned over `PLACED_SPREAD` (5) days | — |
+| Never asked | 0 | fanned over `CHECK_SPREAD` (10) days | `unchecked` |
+
+Level 0 is the bottom of the ladder, so the first time an unchecked character
+comes up it is an ordinary recognition card: right and it climbs like anything
+else, wrong and it is taught properly from there. `grade()` clears the flag
+either way — the question has been settled. Nothing is assumed permanently; it
+is **verified lazily**, through the review machinery that already exists,
+instead of by making someone sit through 348 questions before they begin.
+
+The count is visible rather than silent: Today carries an **Unchecked** pill
+while any remain, and a character card credited this way says so. In practice
+they clear fast — a single session settled 74 of 76 in testing.
+
+Credit is shallow in both rows for the same reason, and the reviews are fanned
+so 100 characters land as ~15 a day with nothing at all due on day one.
 
 Questions are **meaning → character**, not the other way round. Recognising 山
 among four English words is easy to fake by elimination; picking 山 out of four
@@ -392,12 +420,6 @@ plausible characters is not. Distractors come from within 30 positions in the
 curriculum, so they are of a piece — a block of easy ones would place everybody
 at the end. There is an explicit "I don't know this one", because the quiz is
 only useful if people answer honestly, and the screen says so.
-
-Credit is deliberately shallow, for the same reason. A credited character
-starts at `PLACED_LVL` (2), flagged `placed: true`, with its first review fanned
-across the next `PLACED_SPREAD` (5) days — 100 characters land as 20 reviews a
-day, not a wall of 100, and nothing is due on day one at all. Anything credited
-in error surfaces within the week as an ordinary review.
 
 **`placeAt()` may only ever add.** A character already in the record is left
 strictly alone. Without that, retaking the quiz after a month of study would

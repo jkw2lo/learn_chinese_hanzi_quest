@@ -172,6 +172,9 @@ function grade(c, correct, skill, opts = {}) {
   r.seen++;
   r.last = dayKey();
   if (skill && r.shown[skill] !== undefined) r.shown[skill]++;
+  /* Either way, it has now been seen: the guess the placement quiz made about
+     this character has been settled one way or the other. */
+  if (r.unchecked) delete r.unchecked;
   if (correct) {
     r.right++;
     if (skill && r.skills[skill] !== undefined) r.skills[skill]++;
@@ -374,8 +377,9 @@ function wordOfWeek() {
 const PROBE_SIZE = 5;          /* characters shown per window */
 const PROBE_WINDOW = 20;       /* curriculum positions each block stands for */
 const PROBE_PASS = 4;          /* of PROBE_SIZE, to credit the window and go on */
-const PLACED_LVL = 2;
-const PLACED_SPREAD = 5;       /* days to fan the first reviews across */
+const PLACED_LVL = 2;          /* for a character the quiz actually asked about */
+const PLACED_SPREAD = 5;       /* days to fan those first reviews across */
+const CHECK_SPREAD = 10;       /* and the unasked ones, which come sooner and oftener */
 
 /* The characters a block asks about: evenly spaced across its window, so a
    block stands a fair chance of catching a gap anywhere inside it. */
@@ -400,21 +404,54 @@ function probeBlock(start) {
    after a month of study would otherwise knock every one of those characters
    back to PLACED_LVL and reset its due date — turning a re-place into a
    silent, partial reset. Placement may only ever add. */
-function placeAt(upTo) {
+/* The quiz samples — five characters stand for twenty — so most of what gets
+   credited was never actually shown. Treating those identically to the ones
+   you answered correctly is the one thing placement must not do: it is the
+   difference between "we found your level" and "we assumed you knew 70
+   characters we never asked you about".
+
+   So the two are credited differently, and neither is credited as mastery:
+
+   - **Asked and answered** goes in at PLACED_LVL with its first review fanned
+     across PLACED_SPREAD days. There is evidence for it.
+   - **Never asked** goes in at level 0 as an unchecked character, fanned
+     across a wider CHECK_SPREAD. Level 0 is the bottom of the ladder, so the
+     first time one comes up it is an ordinary recognition drill: get it right
+     and it climbs like anything else, get it wrong and it is taught properly
+     from there. Nothing is assumed permanently — it is verified lazily,
+     through the review machinery that already exists, rather than by making
+     someone sit through 348 questions up front.
+
+   The only thing the quiz decides on its own is *where to start*. Everything
+   behind that point still has to earn its place. */
+function placeAt(upTo, verified) {
   const k = dayKey();
-  let added = 0;
+  const asked = verified instanceof Set ? verified : new Set(verified || []);
+  let added = 0, checked = 0;
   HQ.slice(0, upTo).forEach((ch, i) => {
     if (state.chars[ch.c]) return;
     const r = ensure(ch.c);
-    r.lvl = PLACED_LVL;
     r.placed = true;                 /* so the record knows this wasn't taught */
-    r.due = addDays(k, 1 + (i % PLACED_SPREAD));
+    if (asked.has(ch.c)) {
+      r.lvl = PLACED_LVL;
+      r.due = addDays(k, 1 + (i % PLACED_SPREAD));
+      checked++;
+    } else {
+      r.lvl = 0;
+      r.unchecked = true;            /* credited on the strength of its neighbours */
+      r.due = addDays(k, 1 + (i % CHECK_SPREAD));
+    }
     added++;
   });
-  state.placed = { at: Math.max(upTo, (state.placed && state.placed.at) || 0), on: k };
+  state.placed = { at: Math.max(upTo, (state.placed && state.placed.at) || 0), on: k,
+                   asked: asked.size, credited: added };
   save();
-  return added;
+  return { added, checked, unchecked: added - checked };
 }
+
+/* A placed character stops being unchecked the moment it is answered right. */
+const isUnchecked = c => { const r = rec(c); return !!r && !!r.unchecked; };
+const uncheckedCount = () => Object.keys(state.chars).filter(c => CHAR_INDEX[c] && state.chars[c].unchecked).length;
 
 const wasPlaced = () => !!state.placed;
 

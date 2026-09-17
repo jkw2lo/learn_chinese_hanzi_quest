@@ -1213,6 +1213,12 @@ function openChar(c) {
            <span class="qpill">${st === "due" ? "Due <b>now</b>" : `Next <b>${esc(r.due)}</b>`}</span>`
         : `<span class="qpill">Not started yet</span>`}</div>
       ${charCard(ch, { writerId: wid })}
+      ${r && isUnchecked(c) ? `<div class="gate-note">
+          <span class="gate-k han">待查</span>
+          <span>Credited by the placement quiz, which never actually asked you this one.
+            It's in your rotation as a check rather than a lesson — answer it right once and it climbs like
+            any other character.</span>
+        </div>` : ""}
       ${r ? "" : isLocked(c)
         ? `<div class="gate-note">
              <span class="gate-k han">未开</span>
@@ -2190,6 +2196,7 @@ function renderToday() {
       <div class="queue">
         <span class="qpill new">New <b>${newLeft}</b></span>
         <span class="qpill due">Due <b>${due}</b></span>
+        ${uncheckedCount() ? `<span class="qpill unchecked" title="Credited by the placement quiz but never actually asked. Each one is an ordinary card in your rotation; answering it right settles it.">Unchecked <b>${uncheckedCount()}</b></span>` : ""}
         <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Revised today <b>${revd.length}</b></span>
       </div>
     </div>
@@ -3219,10 +3226,11 @@ function openProfile(firstRun) {
    alike; a block of easy ones would place everybody at the end.
    ============================================================ */
 
-const place = { start: 0, block: [], idx: 0, right: 0, asked: 0, done: false };
+const place = { start: 0, block: [], idx: 0, right: 0, asked: 0, done: false, got: new Set() };
 
 function openPlacement() {
   place.start = 0; place.idx = 0; place.right = 0; place.asked = 0; place.done = false;
+  place.got = new Set();            /* the ones actually answered correctly */
   place.block = probeBlock(0);
   $("#place").classList.add("on");
   document.body.style.overflow = "hidden";
@@ -3274,7 +3282,7 @@ function renderPlacement() {
 
 function placementAnswer(ok, btn) {
   place.asked++;
-  if (ok) place.right++;
+  if (ok) { place.right++; place.got.add(place.block[place.idx]); }
   $$("#placeBody .place-opt").forEach(b => {
     b.disabled = true;
     if (b.dataset.c === place.block[place.idx]) b.classList.add("right");
@@ -3304,17 +3312,33 @@ function placementNext() {
 
 function renderPlacementDone() {
   const at = place.result;
-  const fresh = HQ.slice(0, at).filter(ch => !isKnown(ch.c)).length;
+  const fresh = HQ.slice(0, at).filter(ch => !isKnown(ch.c));
+  const confirmed = fresh.filter(ch => place.got.has(ch.c)).length;
+  const unchecked = fresh.length - confirmed;
   const stage = at >= HQ.length ? STAGES[STAGES.length - 1] : (STAGES.find(s => at < s.end) || STAGES[0]);
   $("#placeProg").style.width = "100%";
   $("#placeBody").innerHTML = `<div class="place-inner">
     <span class="place-seal">${at ? esc(stage.icon) : "🌱"}</span>
-    <h1>${at ? `You already read about ${at} character${at === 1 ? "" : "s"}.` : "We'll start at the beginning."}</h1>
+    <h1>${at ? `Your starting point is about ${at} characters in.` : "We'll start at the beginning."}</h1>
     <p class="note">${at
-      ? `That puts you in <b>${esc(stage.name)} ${esc(stage.zh)}</b>. ${fresh === at
-          ? `All ${at}`
-          : `The ${fresh} of them you don't already have`} go straight into your review rotation over the next few days rather than being taught from scratch — anything you were shakier on than you thought will surface there. Nothing you've already studied is touched.`
+      ? `That puts you in <b>${esc(stage.name)} ${esc(stage.zh)}</b>. Nothing you've already studied is touched.`
       : `Nothing to skip, which is the easiest place to start from. ${HQ.length} characters, in an order where each one makes the next easier.`}</p>
+
+    ${at ? `<div class="place-ledger">
+      <div class="pl-row">
+        <span class="pl-n">${place.asked}</span>
+        <span class="pl-t"><b>asked</b><small>${confirmed} of them right — those go in at a level that reflects it</small></span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-n">${unchecked}</span>
+        <span class="pl-t"><b>not asked</b><small>The quiz samples, so most of the range was never shown. These go in
+          <b>unchecked</b>, at the bottom of the ladder, and come up as ordinary recognition cards over the next
+          fortnight. Get one right and it climbs; get it wrong and it's taught properly from there.</small></span>
+      </div>
+    </div>
+    <p class="note">In other words the quiz only decides <b>where to start</b>. It doesn't decide what you know —
+      everything behind that point still has to earn its place.</p>` : ""}
+
     <div class="place-foot">
       <button class="btn btn-ghost" id="placeRedo">Take it again</button>
       <button class="btn btn-seal" id="placeGo">${at ? "Start here" : "Start from the beginning"}</button>
@@ -3322,7 +3346,11 @@ function renderPlacementDone() {
     <p class="note dim">You can reset and re-place from Settings at any time.</p>
   </div>`;
   $("#placeRedo").onclick = openPlacement;
-  $("#placeGo").onclick = () => { if (at) placeAt(at); else { state.placed = { at: 0, on: dayKey() }; save(); } closePlacement(); };
+  $("#placeGo").onclick = () => {
+    if (at) placeAt(at, place.got);
+    else { state.placed = { at: 0, on: dayKey() }; save(); }
+    closePlacement();
+  };
 }
 
 /* ============================================================

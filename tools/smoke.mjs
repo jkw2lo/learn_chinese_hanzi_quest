@@ -23,6 +23,7 @@ const CONTRACT = [
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay',
   'probeBlock', 'placeAt', 'wasPlaced', 'PROBE_WINDOW', 'PROBE_SIZE',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
+  'isUnchecked', 'uncheckedCount', 'CHECK_SPREAD',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied'
 ];
@@ -215,21 +216,47 @@ ok('the last block is clipped, not overrun',
    api.probeBlock(HQ.length - 3).every(c => api.CHAR_INDEX ? true : true) && api.probeBlock(HQ.length - 3).length <= 3);
 {
   const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
-    '\nreturn {HQ,state,load,placeAt,wasPlaced,rec,isKnown,dueCount,knownChars,dayKey};')();
+    '\nreturn {HQ,state,load,placeAt,wasPlaced,rec,isKnown,dueCount,knownChars,dayKey,isUnchecked,uncheckedCount,grade};')();
   globalThis.localStorage._d = {};
   fresh.load();
   ok('nobody is placed to begin with', !fresh.wasPlaced());
-  fresh.placeAt(100);
+  /* the quiz samples, so only some of the range was ever actually shown */
+  const asked = new Set(fresh.HQ.slice(0, 100).filter((_, i) => i % 4 === 0).map(ch => ch.c));
+  const out = fresh.placeAt(100, asked);
   ok('placing credits everything before the stopping point', fresh.knownChars().length === 100);
-  ok('shallowly, not as mastered', Object.values(fresh.state.chars).every(r => r.lvl === 2));
-  ok('and marked as placed rather than taught', Object.values(fresh.state.chars).every(r => r.placed));
+  ok('and reports how much of that was actually asked', out.checked === asked.size && out.added === 100);
+  ok('an asked character carries evidence',
+     fresh.HQ.slice(0, 100).filter(ch => asked.has(ch.c)).every(ch => fresh.rec(ch.c).lvl === 2));
+  ok('an unasked one does not',
+     fresh.HQ.slice(0, 100).filter(ch => !asked.has(ch.c)).every(ch => fresh.rec(ch.c).lvl === 0));
+  ok('and is flagged unchecked rather than assumed',
+     fresh.uncheckedCount() === 100 - asked.size);
+  ok('asked characters are never flagged unchecked',
+     [...asked].every(c => !fresh.isUnchecked(c)));
+  ok('all of them are marked as placed rather than taught', Object.values(fresh.state.chars).every(r => r.placed));
   ok('reviews are fanned out, not dumped on day one', fresh.dueCount() === 0);
   const days = new Set(Object.values(fresh.state.chars).map(r => r.due));
   ok('across several days', days.size >= 4, days.size + ' distinct due dates');
+  /* the whole point: an unchecked character settles the first time it is answered */
+  const u = fresh.HQ.slice(0, 100).find(ch => !asked.has(ch.c)).c;
+  ok('an unchecked character starts unchecked', fresh.isUnchecked(u));
+  fresh.grade(u, true, 'r');
+  ok('answering it settles the question', !fresh.isUnchecked(u));
+  const u2 = fresh.HQ.slice(0, 100).filter(ch => !asked.has(ch.c))[1].c;
+  fresh.grade(u2, false, 'r');
+  ok('getting it wrong settles it too — as a character to teach', !fresh.isUnchecked(u2) && fresh.rec(u2).lvl === 0);
+  ok('placing with no evidence at all leaves everything unchecked', (() => {
+    const f2 = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+      '\nreturn {state,load,placeAt,uncheckedCount};')();
+    globalThis.localStorage._d = {};
+    f2.load();
+    const r = f2.placeAt(20);
+    return r.checked === 0 && f2.uncheckedCount() === 20;
+  })());
   /* retaking must never undo study */
   const c = fresh.knownChars()[0];
   fresh.rec(c).lvl = 8; fresh.rec(c).due = '2099-01-01';
-  const added = fresh.placeAt(40);
+  const added = fresh.placeAt(40).added;
   ok('a lower retake adds nothing', added === 0);
   ok('and leaves studied characters alone', fresh.rec(c).lvl === 8 && fresh.rec(c).due === '2099-01-01');
   ok('the high-water mark is kept', fresh.state.placed.at === 100);
