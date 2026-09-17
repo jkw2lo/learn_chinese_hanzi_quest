@@ -212,6 +212,25 @@ function tally(kind, ch) {
 
 const reviewedToday = () => Object.keys((state.days[dayKey()] || {}).revC || {});
 
+/* ---------- extra practice: reps, counted like reps ----------
+
+   Today's list is a finishable checklist and closes. Go deeper is the
+   opposite — unbounded, never "done", and the place where repetition actually
+   happens. A checklist tick is the wrong reward for that: you want to see the
+   pile grow. So extra reps are counted separately from everything else and
+   never touch the day's completion. */
+function tallyExtra() {
+  const t = today();
+  t.extra = (t.extra || 0) + 1;
+  touchStreak();
+  save();
+}
+
+const extraToday = () => (state.days[dayKey()] || {}).extra || 0;
+const extraTotal = () => Object.values(state.days).reduce((a, d) => a + (d.extra || 0), 0);
+const extraBestDay = () => Object.values(state.days).reduce((a, d) => Math.max(a, d.extra || 0), 0);
+const extraDays = () => Object.values(state.days).filter(d => d.extra > 0).length;
+
 function touchStreak() {
   const k = dayKey();
   const s = state.streak;

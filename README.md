@@ -1,7 +1,7 @@
 # Hanzi Quest
 
-A practice notebook for learning to read Chinese characters. 302 characters
-across seven core stages plus a kitchen topic pack, taught in an order where
+A practice notebook for learning to read Chinese characters. 348 characters
+across eight core stages plus a kitchen topic pack, taught in an order where
 each one makes the next easier.
 
 ## Picking this up again
@@ -208,8 +208,8 @@ silence where `say -v Tingting` produces 0.84s. In both cases `speak()`
 queues, `speaking` goes true, and `start` never fires, with no error. Four
 attempts at fixing the engine failed because the engine was never the fix.
 
-So `tools/make-audio.mjs` records all 302 characters with macOS `say` and
-bundles them as base64 AAC in `js/audio.js` (1.6 MB of audio, 2.1 MB encoded).
+So `tools/make-audio.mjs` records all 348 characters with macOS `say` and
+bundles them as base64 AAC in `js/audio.js` (1.8 MB of audio, 2.4 MB encoded).
 They play through one shared `<audio>` element, unlocked with a muted play on
 the first real click so later programmatic plays are allowed. **That file is
 committed**, because the app is only as good as its sound and a clone without
@@ -295,6 +295,31 @@ page argue with itself, so three things changed:
   shown with a lock and a reason, and reported separately (`2 of 4 done · 1
   locked`) instead of shrinking the denominator until the list looks finished.
 
+## Go deeper is not part of the list
+
+Today's practice is a checklist: scoped to today's characters, finishable, and
+it ticks. Go deeper is the opposite — the whole library, unbounded, and it can
+never be completed. Rewarding both the same way was the mistake: a fraction
+that never reaches its denominator reads as failure rather than as work done.
+
+So Go deeper is no longer a `.sheet` at all. It is an inked band with no tick
+boxes, and its reward is a **count that only goes up**: reps, tallied in 正.
+
+正 has five strokes and is the tally mark used across China and Japan — the
+five-bar gate with the gate made out of a character. One rep of extra practice
+draws one stroke, so a finished 正 is five reps and a row of them is the day's
+work, countable at a glance. It earns its place over stars or a growing tree
+for two reasons: it is the genuine article rather than decoration, and the
+seedling-to-tree metaphor is already taken by the stage ladder (🌱 Seed →
+🌿 Sprout → 🍃 Branch), where it means something else entirely. Reusing it
+would have blurred both.
+
+Reps are counted in `days[k].extra` and are deliberately sealed off from
+everything else: `tallyExtra()` fires only when `session.practice` is set and
+`session.todo` is not, so a row from today's list never inflates them, and a
+rep never counts as a character revised or ticks anything off. A smoke check
+holds both directions.
+
 ## Go deeper, and what "solid" means
 
 A character is **solid** in a skill after `PASSES_FOR_SOLID` (3) clean answers
@@ -316,7 +341,7 @@ Under each tile is a bar split by how many passes each character has had —
 solid, two, one, untouched. Two passes on everything looks different from three
 on half of it, and both look different from nothing; a single fraction showed
 all three as the same. Record's Skills panel uses the same maths, over the
-characters you know rather than the whole 302-character library — a bar reading
+characters you know rather than the whole 348-character library — a bar reading
 3% when everything you've met is solid is describing the syllabus, not you.
 
 ## Asking before something irreversible
@@ -413,7 +438,7 @@ character, and that scheduling and the side quest behave.
 own graphics file — stroke count, each path, and in sequence. Because stroke
 *order* is simply the array order, matching the source is what makes the order
 right; it also catches a corrupted download and any character whose strokes
-and medians disagree. All 302 currently match exactly.
+and medians disagree. All 348 currently match exactly.
 
 `check-components.mjs` verifies every "Built from" claim against Make Me a
 Hanzi's decomposition dictionary. Hand-written decompositions drift in two
@@ -428,11 +453,33 @@ indices fall inside a stage. Each entry needs `c p m comp story o pos words
 sent`. Then regenerate the stroke bundle:
 
     node tools/fetch-strokes.mjs
+    node tools/make-audio.mjs     # new characters are silent until you do
 
 Radical families, the trees, quest coverage and the progress maths all derive
 from the data, so nothing else needs touching. Editing `MENU` likewise
 re-derives the quest — but re-check that every glyph you add is a character
 the library actually teaches.
+
+**Order the new block so nothing needs a part it hasn't met.** `comp` drives
+both the "Built from" panel and the `FAMILIES` trees, so a character whose
+components arrive later in the array teaches backwards. Stage 9 is arranged
+this way on purpose: 见 comes first and 视 and 觉 are built on it, 音 precedes
+意, 自 precedes 息, 己 precedes 记.
+
+`tools/check-components.mjs` will tell you which `comp` claims are legal — it
+validates against Make Me a Hanzi's recursive decompositions, with squeezed
+radicals normalised to their free-standing forms (讠→言, 氵→水, ⺼→肉). If a
+character has no taught part worth naming, `comp:[]` is the honest answer;
+several of the best-known characters in the library have it.
+
+### Stage 9 · 交流 Connect
+
+46 characters covering what stages 1-8 left out: the courtesy words (见 谢 您),
+the vocabulary of thinking and remembering (思 意 觉 懂 记 忘), language and
+study (书 文 汉 语 英 美 考 试), screens (电 话 视 影 脑 机 网), and the shape
+of a working week (班 司 经 常 完 始 动 活). It closes some conspicuous gaps —
+谢谢 and 再见 were not previously writable — and it lets the app finally teach
+its own name: 汉字.
 
 ## Progress storage
 

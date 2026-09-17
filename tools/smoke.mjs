@@ -18,6 +18,7 @@ const CONTRACT = [
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
+  'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied'
 ];
@@ -156,6 +157,19 @@ ok('extra reps never overflow it', api.skillStanding('p', sc).pct === 1);
 ok('an empty set is not a division by zero', api.skillStanding('p', []).pct === 0);
 ok('buckets account for every character',
    full.buckets.reduce((a, b) => a + b, 0) === full.total);
+
+console.log('\nextra reps are their own count');
+/* Today's list is finishable and ticks; Go deeper is unbounded and tallies.
+   The two must not feed each other's numbers. */
+const revStart = api.today().rev, extraStart = api.extraToday();
+api.tallyExtra(); api.tallyExtra(); api.tallyExtra();
+ok('reps accumulate', api.extraToday() === extraStart + 3);
+ok('and never touch the review tally', api.today().rev === revStart);
+ok('the lifetime total sees them', api.extraTotal() >= 3);
+ok('so does the best day', api.extraBestDay() >= 3);
+const revd0 = api.reviewedToday().length;
+api.tallyExtra();
+ok('a rep is not a character revised', api.reviewedToday().length === revd0);
 
 console.log('\nstreak safety');
 api.setState ? 0 : 0;

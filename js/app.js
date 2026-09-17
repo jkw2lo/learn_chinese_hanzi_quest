@@ -1040,6 +1040,8 @@ function settle(item, ch, ok, foot, extra, slips) {
   session.qStart = 0;
   grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice, gentle: writing });
   if (!item.fresh) { tally("rev", ch.c); session.reviewed++; }
+  /* a rep in Go deeper, as opposed to a row on today's list */
+  if (session.practice && !session.todo) tallyExtra();
   if (ok) {
     session.right++; session.combo++;
     session.bestCombo = Math.max(session.bestCombo, session.combo);
@@ -2001,6 +2003,46 @@ function renderTracker() {
       ${s ? `🔥 ${s}` : "🔥 0"}<span class="sep">·</span>${total} day${total === 1 ? "" : "s"} studied</span>`;
 }
 
+/* ---------- 正 as a counting mark ----------
+
+   Five strokes, drawn in order — the tally that's kept across China and Japan,
+   the five-bar gate with the gate made out of a character. It earns its place
+   here over stars or a growing tree for two reasons: it's the genuine article
+   rather than decoration, and the seedling-to-tree metaphor is already taken
+   by the stage ladder (🌱 Seed → 🌿 Sprout → 🍃 Branch), where it means
+   something different. Reusing it for reps would blur both.
+
+   One rep of extra practice draws one stroke, so a finished 正 is five reps
+   and a row of them is the day's work, countable at a glance. */
+
+const ZHENG = [
+  "M14 21 H86",     /* 1  the lid */
+  "M39 21 V80",     /* 2  the long vertical */
+  "M39 50 H81",     /* 3  the arm */
+  "M17 50 V80",     /* 4  the short leg */
+  "M11 80 H89"      /* 5  the base */
+];
+
+function tallyMark(strokes) {
+  return `<svg class="tally" viewBox="0 0 100 100" aria-hidden="true">${
+    ZHENG.map((d, i) => `<path d="${d}" class="${i < strokes ? "on" : "off"}"/>`).join("")
+  }</svg>`;
+}
+
+/* A row of them, with the last one part-drawn. Past `max` the row would stop
+   being countable, so it becomes a multiplier instead. */
+function tallyRow(n, max = 6) {
+  if (!n) return `<span class="tally-none">${tallyMark(0)}<span>no reps yet today</span></span>`;
+  const full = Math.floor(n / 5), rest = n % 5;
+  if (full > max) {
+    return `<span class="tally-row">${tallyMark(5)}<span class="tally-x">× ${full}${rest ? ` + ${rest}` : ""}</span></span>`;
+  }
+  const marks = [];
+  for (let i = 0; i < full; i++) marks.push(tallyMark(5));
+  if (rest) marks.push(tallyMark(rest));
+  return `<span class="tally-row">${marks.join("")}</span>`;
+}
+
 /* ---------- today ---------- */
 
 function learnedToday() {
@@ -2204,10 +2246,18 @@ function renderToday() {
      of it — how much is solid, how much has been round once or twice, how
      much hasn't been touched. Going through the material again and getting it
      right is the thing that makes it stick, so it should be visible. */
-  const deeper = `<div class="sheet practice">
-    <div class="pr-head">
-      <span class="eyebrow">Go deeper</span>
-      <span class="dim" style="font-size:.76rem">Shakiest first · ${PASSES_FOR_SOLID} clean passes makes a character solid</span>
+  const exToday = extraToday(), exAll = extraTotal(), exBest = extraBestDay();
+  const deeper = `<section class="deeper">
+    <div class="deeper-head">
+      <span class="deeper-title">
+        <span class="eyebrow">Go deeper <span class="han">加练</span></span>
+        <p class="deeper-sub">Reps past today's list. None of it is required and none of it can be finished —
+          that's what makes it the part that compounds.</p>
+      </span>
+      <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark">
+        ${tallyRow(exToday)}
+        <span class="deeper-n"><b>${exToday}</b> rep${exToday === 1 ? "" : "s"} today</span>
+      </span>
     </div>
     <div class="pr-grid pr-grid-3">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
@@ -2239,7 +2289,13 @@ function renderToday() {
         </button>`;
       }).join("")}
     </div>
-  </div>`;
+    <div class="deeper-foot">
+      <span>${PASSES_FOR_SOLID} clean passes makes a character solid · shakiest first</span>
+      <span class="deeper-life">${exAll
+        ? `${exAll.toLocaleString()} rep${exAll === 1 ? "" : "s"} all told${exBest > 4 ? ` · best day ${exBest}` : ""}`
+        : "Your first rep starts the count"}</span>
+    </div>
+  </section>`;
 
   /* ---- the side quest ---- */
   const mp = menuProgress();
@@ -2937,7 +2993,7 @@ const asking = () => !!askDone;
 
 const TOUR = [
   { k: "汉", title: "Welcome",
-    body: `302 characters, taught in an order where each one makes the next easier —
+    body: `${HQ.length} characters, taught in an order where each one makes the next easier —
            you'll meet 马 just before 妈 and 吗, so by then you already own both halves.
            Nothing here needs to be finished in a sitting.` },
   { k: "今天", title: "Today is a short list",

@@ -1235,7 +1235,46 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .deck-text small { font-size: .76rem; color: var(--ink-3); }
 .deck-go { color: var(--gold); font-size: 1.1rem; }
 
-/* ---------- go deeper ---------- */
+/* ---------- go deeper ----------
+
+   Deliberately not a .sheet. Today's practice is a white page with a finite
+   list on it; this is the workbench next to the desk — inked ground, no tick
+   boxes, a counter instead of a fraction. The two blocks should not read as
+   two halves of the same list, because finishing one is the point and
+   finishing the other is impossible. */
+
+.deeper {
+  margin-top: 1.1rem; padding: 1rem 1.1rem 1rem;
+  border-radius: var(--r); border: 1px solid var(--rule);
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--jade) 6%, transparent), transparent 40%),
+    var(--sunken);
+  display: flex; flex-direction: column; gap: .8rem;
+}
+.deeper-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.deeper-title { display: flex; flex-direction: column; gap: .25rem; min-width: 12rem; flex: 1; }
+.deeper-title .han { color: var(--seal); font-family: var(--f-han-ui); letter-spacing: .04em; }
+.deeper-sub { font-size: .76rem; line-height: 1.5; color: var(--ink-3); max-width: 30rem; }
+.deeper-count { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.deeper-n { font-size: .74rem; color: var(--ink-3); }
+.deeper-n b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.tally-row { display: flex; align-items: flex-end; gap: .28rem; }
+.tally { width: 26px; height: 26px; flex: none; overflow: visible; }
+.tally path { stroke-width: 7; stroke-linecap: round; fill: none; }
+.tally path.on { stroke: var(--ink); }
+.tally path.off { stroke: var(--rule); opacity: .45; }
+.tally-x { font-size: .8rem; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tally-none { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--ink-3); }
+.tally-none .tally { opacity: .55; }
+
+.deeper .pr-deep { background: var(--sheet); }
+.deeper-foot {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
+  font-size: .72rem; color: var(--ink-3); padding-top: .1rem;
+}
+.deeper-life { font-variant-numeric: tabular-nums; }
+
 
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
 @media (min-width: 620px) { .pr-grid-4 { grid-template-columns: repeat(4, 1fr); } }
