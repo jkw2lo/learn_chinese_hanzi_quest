@@ -1213,7 +1213,15 @@ function openChar(c) {
            <span class="qpill">${st === "due" ? "Due <b>now</b>" : `Next <b>${esc(r.due)}</b>`}</span>`
         : `<span class="qpill">Not started yet</span>`}</div>
       ${charCard(ch, { writerId: wid })}
-      ${r ? "" : `<button class="btn btn-block" id="learnNow">Learn this one now</button>`}
+      ${r ? "" : isLocked(c)
+        ? `<div class="gate-note">
+             <span class="gate-k han">未开</span>
+             <span>This one is in <b>${esc(tierOf(ch.i).name)} ${esc(tierOf(ch.i).zh)}</b>, which hasn't opened yet.
+               ${(() => { const nd = tierNeeds(tierOf(ch.i));
+                  return nd ? `Learn ${nd.more} more from ${esc(nd.tier.name)} and it unlocks.` : ""; })()}
+               You can read about it here — it just isn't one to start on yet.</span>
+           </div>`
+        : `<button class="btn btn-block" id="learnNow">Learn this one now</button>`}
     </div></div>`);
   bindCard($("#svBody"), ch, wid);
   const ln = $("#learnNow");
@@ -2466,6 +2474,25 @@ function calendar(days) {
 
 let libFilter = "all", libSearch = "";
 
+/* Which tiers the learner has opened or shut by hand this session. */
+const libOpenTiers = {};
+
+/* What is actually standing between you and this tier.
+
+   tierNeeds() returns the *first* unfinished tier, which is the right gate but
+   the wrong sentence: telling someone on tier 1 that ninety more characters
+   opens Fluent is a promise the third door won't keep. When the blocker isn't
+   the tier immediately before this one, say so. */
+function tierGateNote(t) {
+  const needs = tierNeeds(t);
+  if (!needs) return `Open to you — ${tierPlanned(t)} characters, not written yet.`;
+  const justBefore = TIERS[t.n - 2];
+  const line = `Learn ${needs.more} more character${needs.more === 1 ? "" : "s"} from <b>${esc(needs.tier.name)} ${esc(needs.tier.zh)}</b>`;
+  return needs.tier.n === justBefore.n
+    ? `${line} and this opens.`
+    : `${line} to open <b>${esc(TIERS[needs.tier.n].name)}</b>. This one comes after <b>${esc(justBefore.name)} ${esc(justBefore.zh)}</b>.`;
+}
+
 function renderLibrary() {
   const chars = HQ.filter(ch => {
     const st = strength(ch.c);
@@ -2482,17 +2509,71 @@ function renderLibrary() {
   const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"],
     ...STAGES.map(s => ["s" + s.n, `${s.icon} ${s.name}`])];
 
+  /* Grouped by tier rather than laid out in one sheet of 348. A beginner
+     scrolling past three hundred characters they can't start on is the
+     overwhelm this is meant to remove; a locked tier collapses to a single
+     card, and the tier you are actually in is the one left open. */
+  const ceiling = unlockedCeiling();
+  const openTier = TIERS.find(t => tierUnlocked(t) && tierProgress(t).known < tierProgress(t).built) || TIERS[0];
+  const tile = ch => `<button class="gc ${strength(ch.c)} ${isLocked(ch.c) ? "gc-locked" : ""}" data-c="${esc(ch.c)}">
+      <span class="z">${esc(ch.c)}</span><span class="p">${esc(ch.p)}</span></button>`;
+
+  const sections = TIERS.map(t => {
+    const mine = chars.filter(ch => ch.i >= tierFrom(t) && ch.i < t.to);
+    const prog = tierProgress(t);
+    const unlocked = tierUnlocked(t);
+    const unwritten = prog.planned - prog.built;
+
+    if (!unlocked) {
+      return `<div class="tier tier-shut">
+        <div class="tier-head">
+          <span class="tier-icon">${esc(t.icon)}</span>
+          <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+            <small>${esc(t.blurb)}</small></span>
+          <span class="tier-lock">🔒 to ${t.to}</span>
+        </div>
+        <p class="note">${tierGateNote(t)}</p>
+      </div>`;
+    }
+    if (!prog.built) {
+      return `<div class="tier tier-shut">
+        <div class="tier-head">
+          <span class="tier-icon">${esc(t.icon)}</span>
+          <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+            <small>${esc(t.blurb)}</small></span>
+          <span class="tier-lock">to ${t.to}</span>
+        </div>
+        <p class="note">Open to you, but not written yet — the library stops at ${HQ.length} for now.</p>
+      </div>`;
+    }
+    const isOpen = libOpenTiers[t.n] !== undefined ? libOpenTiers[t.n]
+                 : (t.n === openTier.n || !!libSearch || libFilter !== "all");
+    return `<div class="tier ${isOpen ? "on" : ""}">
+      <button class="tier-head tier-toggle" data-tier="${t.n}" aria-expanded="${isOpen}">
+        <span class="tier-icon">${esc(t.icon)}</span>
+        <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+          <small>${prog.known} of ${prog.built} learned${unwritten > 0 ? ` · ${unwritten} more to come` : ""}</small></span>
+        <span class="tier-bar"><i style="width:${(prog.pct * 100).toFixed(1)}%"></i></span>
+        <span class="tier-caret">${isOpen ? "▾" : "▸"}</span>
+      </button>
+      ${isOpen ? (mine.length
+        ? `<div class="grid-chars">${mine.map(tile).join("")}</div>`
+        : `<p class="note" style="padding:0 .2rem .6rem">Nothing here matches that filter.</p>`) : ""}
+    </div>`;
+  }).join("");
+
   $("#viewLibrary").innerHTML = `<div class="wrap">
     <div class="today-head">
       <h1>The library</h1>
-      <p class="note">${HQ.length} characters, taught in the order that makes each one easier than the last.</p>
+      <p class="note">${HQ.length} characters in three tiers, taught in the order that makes each one easier
+        than the last. ${ceiling < HQ.length
+          ? `You've opened the first ${ceiling} — the rest stay shut until the tier before them is ${Math.round(TIER_UNLOCK * 100)}% learned, so there's no way to get ahead of yourself by accident.`
+          : "Every tier is open to you."}</p>
     </div>
     <input class="search" id="libQ" type="search" placeholder="Search a character, pinyin or meaning…" value="${esc(libSearch)}">
     <div class="filters">${filters.map(([k, l]) =>
       `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}</div>
-    ${chars.length ? `<div class="grid-chars">${chars.map(ch =>
-      `<button class="gc ${strength(ch.c)}" data-c="${esc(ch.c)}">
-        <span class="z">${esc(ch.c)}</span><span class="p">${esc(ch.p)}</span></button>`).join("")}</div>`
+    ${chars.length ? sections
       : `<div class="empty"><span class="z">空</span><p>Nothing here yet. Try another filter.</p></div>`}
     <div class="legend">
       <span><i style="background:var(--seal)"></i>Due now</span>
@@ -2503,6 +2584,12 @@ function renderLibrary() {
   </div>`;
 
   $$("#viewLibrary .filt").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $$("#viewLibrary .tier-toggle").forEach(b => b.onclick = () => {
+    const n = +b.dataset.tier;
+    const cur = b.getAttribute("aria-expanded") === "true";
+    libOpenTiers[n] = !cur;
+    renderLibrary();
+  });
   $$("#viewLibrary .gc").forEach(b => b.onclick = () => openChar(b.dataset.c));
   const qEl = $("#libQ");
   qEl.oninput = () => {
@@ -2604,22 +2691,42 @@ function renderRecord() {
         </div>
 
         <div class="sec-head" style="margin-top:.4rem"><h2>The climb</h2>
-          <span class="dim" style="font-size:.78rem">${known} of ${HQ.length} built</span></div>
-        <div class="sheet" style="padding:.3rem 1rem">
-          <div class="ladder">
-            ${STAGES.map(s => {
-              const p = stageProgress(s.n);
-              return `<div class="rung ${p.known > 0 ? "reached" : ""} ${s.n === cur.n ? "current" : ""}">
-                <span class="rung-icon">${esc(s.icon)}</span>
-                <span class="rung-body">
-                  <b>${esc(s.name)} <span class="han dim" style="font-weight:400;font-size:.78rem">${esc(s.zh)}</span>${s.core ? "" : ` <span class="dim" style="font-weight:400;font-size:.72rem">· topic pack</span>`}</b>
-                  <small>${esc(s.blurb)}</small>
-                </span>
-                <span class="rung-n">${p.known}/${p.total}</span>
-              </div>`;
-            }).join("")}
-          </div>
-        </div>
+          <span class="dim" style="font-size:.78rem">${known} of ${HQ.length} learned</span></div>
+        ${TIERS.map(t => {
+          const prog = tierProgress(t);
+          const unlocked = tierUnlocked(t);
+          /* A stage belongs to whichever tier its midpoint falls in. The two
+             were never going to line up — tiers are literacy milestones, stages
+             are a teaching order — and stage 7 does straddle 200. Listing a
+             straddling stage under both tiers reads as a bug rather than as
+             precision, so each one is filed once, where most of it lives. */
+          const inTier = STAGES.filter(st => {
+            const from = st.n === 1 ? 0 : STAGES[st.n - 2].end;
+            return tierOf((from + st.end - 1) >> 1).n === t.n;
+          });
+          return `<div class="sheet tier-block ${unlocked ? "" : "shut"}">
+            <div class="tier-head">
+              <span class="tier-icon">${esc(t.icon)}</span>
+              <span class="tier-name"><b>${esc(t.name)} <span class="han">${esc(t.zh)}</span></b>
+                <small>${esc(t.blurb)}</small></span>
+              <span class="tier-lock">${unlocked ? `${prog.known}/${prog.built || prog.planned}` : `🔒 to ${t.to}`}</span>
+            </div>
+            ${unlocked && prog.built ? `<div class="bar ${prog.pct >= 1 ? "gold" : ""}"><i style="width:${(prog.pct * 100).toFixed(1)}%"></i></div>
+            <div class="ladder">
+              ${inTier.map(s => {
+                const p = stageProgress(s.n);
+                return `<div class="rung ${p.known > 0 ? "reached" : ""} ${s.n === cur.n ? "current" : ""}">
+                  <span class="rung-icon">${esc(s.icon)}</span>
+                  <span class="rung-body">
+                    <b>${esc(s.name)} <span class="han dim" style="font-weight:400;font-size:.78rem">${esc(s.zh)}</span>${s.core ? "" : ` <span class="dim" style="font-weight:400;font-size:.72rem">· topic pack</span>`}</b>
+                    <small>${esc(s.blurb)}</small>
+                  </span>
+                  <span class="rung-n">${p.known}/${p.total}</span>
+                </div>`;
+              }).join("")}
+            </div>` : `<p class="note">${tierGateNote(t)}</p>`}
+          </div>`;
+        }).join("")}
 
         ${(() => {
           const stuck = leeches();
@@ -2635,16 +2742,8 @@ function renderRecord() {
           </div>`;
         })()}
 
-        <div class="section" style="gap:.5rem">
-          ${LOCKED_STAGES.map(s => `<div class="sheet locked-card">
-            <span class="li">${esc(s.icon)}</span>
-            <span class="lb">
-              <b>${esc(s.name)} <span class="han">${esc(s.zh)}</span> <span class="lk">🔒 ${s.target} characters</span></b>
-              <small>${esc(s.blurb)}</small>
-            </span>
-          </div>`).join("")}
-          <p class="note">The library stops at ${HQ.length} characters for now. These modules are the road out to 1,000 — the point where roughly nine in ten characters on a page are ones you know.</p>
-        </div>
+        <p class="note">The library stops at ${HQ.length} characters for now. The tiers above are the road out
+          to 1,000 — the point where roughly nine characters in ten on an ordinary page are ones you know.</p>
       </div>
 
       <div class="col-side">
@@ -3296,7 +3395,7 @@ const TOUR = [
            back — but clearing your browser data, switching browsers or opening a private
            window loses the lot.` },
   { k: "备份", title: "Save it somewhere real",
-    body: `The <kbd class="opt-n">⤓</kbd> button in the top bar writes everything — characters,
+    body: `The <kbd class="opt-n">💾</kbd> button in the top bar writes everything — characters,
            streak, diary — to one file you can keep. The same screen loads it back, on this
            computer or another one. Worth doing once you've a streak worth keeping; the button
            grows a gold dot when you're overdue.` }

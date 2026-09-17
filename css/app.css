@@ -140,6 +140,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--ink-2); font-size: .9rem;
 }
 .icon-btn:hover { background: var(--sunken); color: var(--ink); }
+/* an emoji glyph rides higher and larger than the text icons beside it */
+.save-btn { font-size: .78rem; line-height: 1; }
 
 /* A copy of your progress is the one thing this app can't recover for you,
    so the button says so quietly when there isn't one. */
@@ -1507,6 +1509,54 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 }
 
 /* ---------- first-run tour ---------- */
+
+/* ---------- tiers ---------- */
+
+.tier { margin-bottom: .7rem; }
+.tier-head {
+  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: .7rem;
+  width: 100%; text-align: left; padding: .7rem .8rem;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r);
+  color: var(--ink);
+}
+button.tier-head { cursor: pointer; transition: border-color .15s, background .15s; }
+button.tier-head:hover { border-color: var(--ink-3); }
+.tier.on > .tier-head { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.tier-icon { font-size: 1.2rem; line-height: 1; }
+.tier-name { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.tier-name b { font-family: var(--f-display); font-size: .98rem; font-weight: 600; }
+.tier-name .han { font-family: var(--f-han-ui); font-size: .78rem; font-weight: 400; color: var(--seal); }
+.tier-name small { font-size: .74rem; color: var(--ink-3); }
+.tier-bar { width: 4.5rem; height: 5px; border-radius: 3px; background: var(--rule-2); overflow: hidden; }
+.tier-bar > i { display: block; height: 100%; background: var(--jade); border-radius: 3px; transition: width .6s cubic-bezier(.2,.8,.3,1); }
+.tier-caret { color: var(--ink-3); font-size: .8rem; width: 1rem; text-align: center; }
+.tier-lock { font-size: .74rem; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tier.on .grid-chars {
+  border: 1px solid var(--rule); border-top: 0;
+  border-radius: 0 0 var(--r) var(--r); padding: .7rem; margin: 0; background: var(--paper);
+}
+.tier-shut { opacity: .72; }
+.tier-shut .tier-head { background: var(--sunken); border-style: dashed; }
+.tier-shut .tier-icon { filter: grayscale(1); }
+.tier-shut .note { padding: .5rem .85rem 0; }
+
+.tier-block { padding: .8rem 1rem .5rem; margin-bottom: .6rem; display: flex; flex-direction: column; gap: .6rem; }
+.tier-block .tier-head { background: none; border: 0; padding: 0; grid-template-columns: auto 1fr auto; }
+.tier-block.shut { opacity: .7; }
+.tier-block.shut .tier-icon { filter: grayscale(1); }
+.tier-block .note { padding-bottom: .4rem; }
+.tier-block .ladder { margin-top: -.2rem; }
+
+.gc.gc-locked { opacity: .4; }
+.gc.gc-locked .z { color: var(--ink-3); }
+
+.gate-note {
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .75rem .85rem; border-radius: var(--r);
+  background: var(--sunken); border: 1px dashed var(--rule);
+  font-size: .8rem; line-height: 1.55; color: var(--ink-2);
+}
+.gate-k { font-family: var(--f-han-ui); font-size: .95rem; color: var(--ink-3); flex: none; }
 
 /* ---------- interests, and the word of the week ---------- */
 

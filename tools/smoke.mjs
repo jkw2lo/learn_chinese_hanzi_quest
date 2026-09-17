@@ -12,7 +12,9 @@ globalThis.localStorage = { _d: {}, getItem(k) { return this._d[k] ?? null; }, s
 
 /* Everything app.js reaches for across the file boundary. */
 const CONTRACT = [
-  'HQ', 'STAGES', 'CHAR_INDEX', 'FAMILIES', 'RADICALS', 'QUESTS', 'LOCKED_STAGES',
+  'HQ', 'STAGES', 'CHAR_INDEX', 'FAMILIES', 'RADICALS', 'QUESTS',
+  'TIERS', 'TIER_UNLOCK', 'tierOf', 'tierChars', 'tierFrom', 'tierProgress',
+  'tierUnlocked', 'tierNeeds', 'unlockedCeiling', 'isLocked',
   'POS_LABEL', 'MENU', 'MENU_CHARS',
   'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote',
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
@@ -248,6 +250,48 @@ ok('every interest has an icon and a name', api.INTEREST_KEYS.every(k =>
 ok('week keys look like ISO weeks', /^\d{4}-W\d{2}$/.test(api.weekKey()));
 ok('and change from week to week',
    api.weekKey(new Date(2026, 0, 5)) !== api.weekKey(new Date(2026, 0, 15)));
+
+console.log('\ntiers gate the library');
+{
+  const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {HQ,TIERS,TIER_UNLOCK,state,load,introduce,tierProgress,tierUnlocked,tierNeeds,unlockedCeiling,isLocked,nextNew,remainingNew,tierFrom,tierChars,tierOf,placeAt};')();
+  globalThis.localStorage._d = {};
+  fresh.load();
+  ok('tiers run to the literacy milestones', fresh.TIERS.map(t => t.to).join() === '200,500,1000');
+  ok('they tile the curriculum with no gaps',
+     fresh.TIERS.every((t, i) => fresh.tierFrom(t) === (i ? fresh.TIERS[i - 1].to : 0)));
+  ok('tier 1 is open from the start', fresh.tierUnlocked(fresh.TIERS[0]));
+  ok('tier 2 is not', !fresh.tierUnlocked(fresh.TIERS[1]));
+  ok('the ceiling starts at the first tier', fresh.unlockedCeiling() === 200);
+  ok('a character past it is locked', fresh.isLocked(fresh.HQ[250].c));
+  ok('one inside it is not', !fresh.isLocked(fresh.HQ[10].c));
+  ok('new characters never come from beyond the gate',
+     fresh.nextNew(500).every(c => fresh.HQ.find(x => x.c === c).i < 200));
+  ok('and "remaining" counts only what you may start',
+     fresh.remainingNew() === 200);
+  ok('the gate says what would open it', (() => {
+    const nd = fresh.tierNeeds(fresh.TIERS[1]);
+    return nd && nd.tier.n === 1 && nd.more === Math.ceil(200 * fresh.TIER_UNLOCK);
+  })());
+  /* learn enough of tier 1 and the door opens */
+  fresh.HQ.slice(0, Math.ceil(200 * fresh.TIER_UNLOCK)).forEach(ch => fresh.introduce(ch.c));
+  ok('reaching the threshold unlocks the next tier', fresh.tierUnlocked(fresh.TIERS[1]));
+  ok('and the ceiling moves with it', fresh.unlockedCeiling() === fresh.HQ.length);
+  ok('what was locked no longer is', !fresh.isLocked(fresh.HQ[250].c));
+  ok('tier 3 stays shut — nothing is written there', !fresh.tierUnlocked(fresh.TIERS[2]));
+  ok('an unwritten tier reports nothing built', fresh.tierProgress(fresh.TIERS[2]).built === 0);
+  ok('but still knows what it is aiming at', fresh.tierProgress(fresh.TIERS[2]).planned === 500);
+}
+{
+  /* placement credits past a gate, and that is what opens it */
+  const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') +
+    '\nreturn {HQ,TIERS,state,load,placeAt,tierUnlocked,unlockedCeiling};')();
+  globalThis.localStorage._d = {};
+  fresh.load();
+  fresh.placeAt(300);
+  ok('a placement past tier 1 opens tier 2', fresh.tierUnlocked(fresh.TIERS[1]));
+  ok('and the ceiling follows', fresh.unlockedCeiling() === fresh.HQ.length);
+}
 
 console.log('\nstreak safety');
 api.setState ? 0 : 0;

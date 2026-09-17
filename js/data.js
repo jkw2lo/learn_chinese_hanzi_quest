@@ -581,11 +581,34 @@ const STAGES = [
   {n:9, icon:"💬", name:"Connect",  zh:"交流", end:348, core:true,  blurb:"Language, study, screens, and the words for thinking and remembering."}
 ];
 
-/* Modules not built yet — shown so the road ahead is visible. */
-const LOCKED_STAGES = [
-  {icon:"📚", name:"Independent",zh:"自读", target:500,  blurb:"Messages, product labels, social posts."},
-  {icon:"🎓", name:"Fluent",     zh:"流利", target:1000, blurb:"News snippets and articles. ~89% of everyday text."}
+/* ============================================================
+   Tiers — the gates on the library
+
+   The nine stages are a teaching order; these are three doors across it. The
+   Library used to lay all of the characters out at once, which made a beginner
+   scroll past hundreds they had no business opening yet — and let them open
+   one anyway, out of order, without any of the parts it is built from.
+
+   The splits are the conventional literacy milestones: 200 gets you signs,
+   prices and the shape of a sentence; 500 gets you most everyday writing; 1000
+   covers roughly nine characters in ten on an ordinary page. A tier opens when
+   you know TIER_UNLOCK of the one before it, so the road ahead stays visible
+   without being walkable.
+   ============================================================ */
+
+const TIERS = [
+  {n:1, icon:"🏮", name:"Foundation",  zh:"基础", to:200,
+   blurb:"The characters everything else is built from. Signs, prices, menus, and the shape of a sentence."},
+  {n:2, icon:"📚", name:"Independent", zh:"自读", to:500,
+   blurb:"Messages, product labels, social posts — reading without a dictionary at your elbow."},
+  {n:3, icon:"🎓", name:"Fluent",      zh:"流利", to:1000,
+   blurb:"News snippets and articles. Around nine characters in ten on an ordinary page."}
 ];
+
+/* Share of a tier you need before the next one opens. High enough that you
+   can't skim the foundation and jump, low enough that a handful of stubborn
+   characters can't hold the whole door shut. */
+const TIER_UNLOCK = 0.8;
 
 HQ.forEach((ch, i) => {
   ch.i = i;

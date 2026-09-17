@@ -294,13 +294,17 @@ const dueCount = () => dueList().length;
    The menu side quest runs on its own daily thread and never reorders this. */
 function nextNew(n) {
   const out = [];
+  const ceiling = unlockedCeiling();
   for (const ch of HQ) {
     if (out.length >= n) break;
+    if (ch.i >= ceiling) break;              /* the tier gate, not just an ordering */
     if (!state.chars[ch.c]) out.push(ch.c);
   }
   return out;
 }
-const remainingNew = () => HQ.length - Object.keys(state.chars).length;
+/* What is left that you're actually allowed to start on. Counting the whole
+   library here would promise "study ahead" sessions the gate then refuses. */
+const remainingNew = () => HQ.slice(0, unlockedCeiling()).filter(ch => !state.chars[ch.c]).length;
 
 /* ---------- word of the week ----------
 
@@ -540,6 +544,64 @@ function stageProgress(stageNo) {
   const known = inStage.filter(c => isKnown(c.c)).length;
   return { known, total: inStage.length, pct: inStage.length ? known / inStage.length : 0 };
 }
+
+/* ---------- tiers ----------
+
+   `to` is the milestone the tier stands for, not how many characters are
+   written yet: tier 2 runs to 500 but the library currently stops at 348, so
+   `tierChars` returns what actually exists and `tierPlanned` says what it is
+   aiming at. Keeping those apart is what lets the Library show an honest
+   "148 of 300 written" instead of pretending the rest are missing. */
+
+const tierFrom = t => t.n === 1 ? 0 : TIERS[t.n - 2].to;
+const tierChars = t => HQ.slice(tierFrom(t), t.to);
+const tierPlanned = t => t.to - tierFrom(t);
+const tierOf = i => TIERS.find(t => i < t.to) || TIERS[TIERS.length - 1];
+
+function tierProgress(t) {
+  const inTier = tierChars(t);
+  const known = inTier.filter(ch => isKnown(ch.c)).length;
+  return { known, built: inTier.length, planned: tierPlanned(t),
+           pct: inTier.length ? known / inTier.length : 0 };
+}
+
+/* Tier 1 is always open. After that you need TIER_UNLOCK of the previous
+   tier's *written* characters — and every tier before that too, so a gap
+   early on can't be stepped over. */
+function tierUnlocked(t) {
+  for (let i = 0; i < t.n - 1; i++) {
+    const p = tierProgress(TIERS[i]);
+    if (!p.built || p.pct < TIER_UNLOCK) return false;
+  }
+  return true;
+}
+
+/* How many more of the blocking tier are needed to open this one. */
+function tierNeeds(t) {
+  for (let i = 0; i < t.n - 1; i++) {
+    const prev = TIERS[i], p = tierProgress(prev);
+    if (!p.built || p.pct < TIER_UNLOCK) {
+      return { tier: prev, more: Math.max(1, Math.ceil(p.built * TIER_UNLOCK) - p.known) };
+    }
+  }
+  return null;
+}
+
+/* The curriculum position past which nothing may be studied yet. Everything
+   the daily session and the Library hand out is checked against this. */
+function unlockedCeiling() {
+  let ceiling = 0;
+  for (const t of TIERS) {
+    if (!tierUnlocked(t)) break;
+    ceiling = Math.min(t.to, HQ.length);
+  }
+  return ceiling;
+}
+
+const isLocked = c => {
+  const ch = CHAR_INDEX[c];
+  return !!ch && !isKnown(c) && ch.i >= unlockedCeiling();
+};
 
 function currentStage() {
   for (const s of STAGES) {

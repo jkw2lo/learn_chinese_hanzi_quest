@@ -46,7 +46,8 @@ either. See **Audio** below.
 
 - **今天 Today** — the day's session, what you've learned today, and the
   menu side quest.
-- **字库 Library** — every character, filterable; tap any to study or restudy.
+- **字库 Library** — every character, grouped into three tiers and filterable;
+  tap any to study or restudy. Tiers past the one you're in stay shut.
 - **部首 Radicals** — 27 radicals taught properly, each with the characters
   in your library that use it.
 - **记录 Record** — the full calendar, the stage ladder, per-skill mastery,
@@ -279,7 +280,7 @@ ignored while the trackpad holds it for inking.
 
 ## Backup
 
-The **⤓ button in the top bar** saves progress *and* the practice diary as one
+The **💾 button in the top bar** saves progress *and* the practice diary as one
 JSON file, and loads one back. See **Progress storage** for why it's in the top
 bar and how the three save paths differ.
 
@@ -331,6 +332,44 @@ everything else: `tallyExtra()` fires only when `session.practice` is set and
 `session.todo` is not, so a row from today's list never inflates them, and a
 rep never counts as a character revised or ticks anything off. A smoke check
 holds both directions.
+
+## Tiers — the gates on the library
+
+The nine stages are a teaching order. The three **tiers** are doors across it,
+at the conventional literacy milestones: **200** gets you signs, prices and the
+shape of a sentence; **500** gets you most everyday writing; **1000** covers
+roughly nine characters in ten on an ordinary page.
+
+The Library used to lay all 348 out at once, which did two bad things: it made
+a beginner scroll past hundreds they had no business opening yet, and it let
+them open one anyway — out of order, without any of the parts it is built from.
+Now it groups by tier, each tier collapsible, with the one you are actually in
+left open and the rest shut. A locked tier collapses to a single card saying
+what would open it, instead of 150 grey squares.
+
+A tier opens at `TIER_UNLOCK` (80%) of the tier before it — and of every tier
+before that, so a gap early on can't be stepped over. `unlockedCeiling()` is the
+curriculum position past which nothing may be studied, and it gates three
+things: `nextNew()` (so a session never deals a locked character),
+`remainingNew()` (so "study ahead" doesn't promise characters the gate then
+refuses), and the **Learn this one now** button on a character card, which is
+replaced by an explanation of which tier it is in and what opens it. The card
+itself still reads — the etymology, the components, the stroke order are all
+still there. It just isn't one to start on yet.
+
+Two deliberate exemptions:
+
+- **Placement** credits past the gate, because proving you know 300 characters
+  is exactly what should open tier 2. It does, automatically — the unlock is
+  computed from what you know, so the quiz result unlocks tiers as a side
+  effect rather than needing a special case.
+- **The word of the week** is drawn from your interests and routinely uses
+  characters far beyond your tier. That is the point of it, and it is safe
+  because it is not a drill and never enters the review queue.
+
+Tiers and stages don't line up — stage 7 straddles 200 — so for display each
+stage is filed under whichever tier its **midpoint** falls in. Listing a
+straddling stage under both reads as a bug rather than as precision.
 
 ## Placement — finding where to start
 
@@ -489,7 +528,7 @@ identical repetition.
 Settings used to sit at the bottom of the Record tab, where nobody would look
 for them. They're now their own sheet behind the **gear in the top bar**,
 grouped as Studying / Sound / Your data, and reachable from any tab. Record is
-progress only. Saving progress has its own button (⤓) beside the gear, because
+progress only. Saving progress has its own button (💾) beside the gear, because
 it's the one thing worth doing before you know you needed it.
 
 A six-step tour runs on the first visit (`state.tour`), then the placement offer,
@@ -587,7 +626,7 @@ the viewer's private store, so one streak follows you between devices.
 `localStorage` is not a safe place to keep months of work: clearing browser
 data, switching browsers or studying in a private window loses all of it, and
 the app can't recover it afterwards. So saving a copy is a **top-bar button**
-(⤓, next to the gear), not a setting three screens down — it was buried under
+(💾, next to the gear), not a setting three screens down — it was buried under
 Settings → Your data → Backup before, where nobody would find it before they
 needed it. It grows a gold dot once there are five characters' worth of
 progress and no saved copy, or when the last one is a fortnight old.
