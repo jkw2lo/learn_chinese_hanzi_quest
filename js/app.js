@@ -1,0 +1,2873 @@
+/* ============================================================
+   Hanzi Quest — views, the study session, and the writing canvas.
+   ============================================================ */
+
+/* Components that teach a family but aren't themselves on the syllabus. */
+const RADICAL_GLOSS = {
+  "土":["tǔ","earth, soil"], "辶":["chuò","walking; movement"], "讠":["yán","speech (compressed 言)"],
+  "隹":["zhuī","short-tailed bird"], "寸":["cùn","an inch; a measure"], "王":["wáng","jade; king"],
+  "见":["jiàn","to see"], "兑":["duì","to exchange"], "斤":["jīn","an axe"], "乞":["qǐ","to beg"],
+  "矢":["shǐ","an arrow"], "钅":["jīn","metal (compressed 金)"], "立":["lì","to stand"],
+  "刀":["dāo","a knife"], "纟":["sī","silk (compressed 糸)"], "青":["qīng","blue-green; young"],
+  "父":["fù","father"], "且":["qiě","moreover"], "又":["yòu","again; a hand"], "巾":["jīn","a cloth"],
+  "夕":["xī","evening"], "主":["zhǔ","master; host"], "食":["shí","food (compressed 飠)"],
+  "鸟":["niǎo","a bird"], "虫":["chóng","creeping creature"], "石":["shí","stone"],
+  "贝":["bèi","cowrie shell; money"], "力":["lì","strength"], "者":["zhě","one who…"],
+  "衣":["yī","clothing"], "足":["zú","a foot"], "止":["zhǐ","to stop; a footprint"], "田":["tián","a field"],
+  "囗":["wéi","an enclosure; a border"], "宀":["mián","a roof"], "豕":["shǐ","a pig"],
+  "页":["yè","a head; a page"], "亲":["qīn","close; kin"], "冫":["bīng","ice (two strokes, not three)"],
+  "欠":["qiàn","to owe; a person yawning"], "母":["mǔ","mother"], "舌":["shé","tongue"],
+  "甘":["gān","sweet"], "广":["guǎng","a lean-to roof; a shelter"], "戈":["gē","a halberd"],
+  "酉":["yǒu","a wine jar; fermentation"], "艹":["cǎo","grass (compressed 艸)"],
+  "犭":["quǎn","beast (compressed 犬)"], "八":["bā","eight; dividing"]
+};
+const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m] : (RADICAL_GLOSS[c] || ["", ""]);
+
+/* ---------- tiny helpers ---------- */
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const pick = (arr, n) => shuffle([...arr]).slice(0, n);
+const one = arr => arr[(Math.random() * arr.length) | 0];
+
+/* Nobody types tone marks, so searches compare against bare letters. "shui"
+   finds 水, and "lv" finds 绿 — the usual keyboard stand-in for ü. */
+const bare = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const searchable = q => bare(q).replace(/v/g, "u");
+const matches = (ch, q) => {
+  const n = searchable(q);
+  return ch.c.includes(q) || searchable(ch.p).includes(n) || bare(ch.m).includes(bare(q));
+};
+
+/* Tone contour — the shape your voice makes. */
+const TONE_PATHS = { 1:"M3,5 L17,5", 2:"M3,14 L17,5", 3:"M3,6 L7,13 L12,13 L17,5", 4:"M3,5 L17,14", 5:"M9,9 L11,9" };
+function toneMark(pinyin) {
+  const t = toneOf(pinyin);
+  return `<span class="tone" title="Tone ${t === 5 ? "neutral" : t}">
+    <svg width="20" height="18" viewBox="0 0 20 18" aria-hidden="true"><path d="${TONE_PATHS[t]}"/></svg>
+    ${t === 5 ? "·" : t}</span>`;
+}
+
+/* Grammar tags — which kind of word this is. */
+const TAG_CLASS = p => p === "v" ? "v" : p === "adj" ? "adj" : p.startsWith("part") ? "part"
+  : ["n","num","mw"].includes(p) ? "n" : "fn";
+const posTags = ch => `<div class="tags">${ch.pos.map(p =>
+  `<span class="tag ${TAG_CLASS(p)}">${esc(POS_LABEL[p] || p)}</span>`).join("")}</div>`;
+
+/* The 田字格 a Chinese schoolchild writes into. */
+const TIAN_SVG = `<svg class="tian-grid" viewBox="0 0 100 100" aria-hidden="true">
+  <rect class="edge" x="1" y="1" width="98" height="98" rx="2"/>
+  <line class="mid" x1="50" y1="1" x2="50" y2="99"/>
+  <line class="mid" x1="1" y1="50" x2="99" y2="50"/>
+  <line class="mid" x1="1" y1="1" x2="99" y2="99"/>
+  <line class="mid" x1="99" y1="1" x2="1" y2="99"/>
+</svg>`;
+
+/* ---------- audio ----------
+
+   Browser speech synthesis is fragile in three well-known ways, all of which
+   show up as "the audio stopped working after a while":
+
+   1. Chrome garbage-collects a SpeechSynthesisUtterance that nothing holds a
+      reference to, cutting playback off mid-word and jamming the queue. The
+      live one is kept in `liveUtterance` for exactly this reason.
+   2. The engine can be left `paused` — after a tab blur, or an interrupted
+      cancel — and every later speak() then queues silently forever.
+   3. cancel() is asynchronous, so speaking in the same tick can drop the new
+      utterance and leave `speaking` stuck true with nothing playing.
+
+   So: hold the reference, resume before speaking, let cancel land, and keep a
+   watchdog that clears a wedged engine instead of queueing behind a ghost. */
+
+/* ---------- bundled clips ----------
+
+   The browser's speech engine is unreliable here: it is blocked outright in
+   the cross-origin frame this page is embedded in, and several voices macOS
+   lists have no voice data and produce silence. So every character ships with
+   a recorded clip, played through a plain <audio> element, which works where
+   speechSynthesis does not. Words and sentences still fall back to the engine. */
+
+let audioEl = null, audioUnlocked = false;
+const clipFor = t => (window.HQ_AUDIO && window.HQ_AUDIO[t]) || null;
+
+function ensureAudioEl() {
+  if (!audioEl) { audioEl = new Audio(); audioEl.preload = "auto"; }
+  return audioEl;
+}
+
+/* One muted play inside the first real click unlocks the element for the rest
+   of the visit, so later programmatic plays — from a card that advances
+   itself, say — are allowed. */
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const first = window.HQ_AUDIO && Object.values(window.HQ_AUDIO)[0];
+  if (!first) return;
+  audioUnlocked = true;
+  const a = ensureAudioEl();
+  try {
+    a.muted = true;
+    a.src = "data:audio/mp4;base64," + first;
+    const p = a.play();
+    const done = () => { try { a.pause(); a.currentTime = 0; } catch {} a.muted = false; };
+    if (p && p.then) p.then(done, () => { a.muted = false; }); else done();
+  } catch { a.muted = false; }
+}
+
+function playClip(text) {
+  const b64 = clipFor(text);
+  if (!b64) return false;
+  const a = ensureAudioEl();
+  try {
+    a.pause();
+    a.muted = false;
+    a.src = "data:audio/mp4;base64," + b64;
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && p.catch) p.catch(() => { speechBlocked = true; renderMuted(); });
+    if (speechBlocked) { speechBlocked = false; renderMuted(); }
+    return true;
+  } catch { return false; }
+}
+
+let phraseTimer = null;
+
+/* Only single characters have bundled clips, and the system voice can't be
+   relied on here — so a word or sentence is read one character at a time from
+   the clips. Not connected speech, but every character is actually spoken. */
+function stopPhrase() {
+  clearTimeout(phraseTimer);
+  phraseTimer = null;
+  if (audioEl) audioEl.onended = null;
+}
+
+function sayPhrase(text, force) {
+  if ((!state.audio && !force) || !text) return;
+  const chars = [...text].filter(c => /[\u4e00-\u9fff]/.test(c));
+  if (!chars.length) return;
+  stopPhrase();
+  if (chars.length === 1) return say(chars[0], force);
+  if (!chars.every(clipFor)) return say(text, force);   /* fall back wholesale */
+
+  lastSaid = text;
+  const a = ensureAudioEl();
+  let i = 0;
+  const step = () => {
+    if (i >= chars.length) { a.onended = null; return; }
+    const c = chars[i++];
+    a.onended = () => { phraseTimer = setTimeout(step, 110); };
+    playClip(c);
+  };
+  step();
+}
+
+let zhVoice = null, zhVoices = [], voiceIdx = 0;
+
+/* Not every voice the browser lists can actually speak. Recent macOS ships
+   Chinese voices as placeholders until their data is downloaded: the browser
+   reports them, speak() queues, `speaking` goes true — and nothing ever
+   plays, with no error. So prefer the ones known to work, prefer local over
+   network, and be ready to move on if one turns out to be mute. */
+const KNOWN_GOOD = /ting-?ting|sin-?ji|mei-?jia|li-?mu|yu-?shu|普通话|huihui|yaoyao|kangkang|google/i;
+
+function findVoice() {
+  const all = speechSynthesis.getVoices();
+  if (!all.length) return;                   /* voices load late; try again later */
+  const score = v =>
+    (KNOWN_GOOD.test(v.name) ? 4 : 0) +
+    (v.localService ? 2 : 0) +
+    (/^zh[-_]?(CN|Hans)/i.test(v.lang) ? 1 : 0);
+  zhVoices = all.filter(v => /^zh/i.test(v.lang)).sort((a, b) => score(b) - score(a));
+  const saved = zhVoices.findIndex(v => v.name === state.voice);
+  voiceIdx = saved >= 0 ? saved : 0;
+  zhVoice = zhVoices[voiceIdx] || null;
+}
+
+function useNextVoice() {
+  if (voiceIdx + 1 >= zhVoices.length) return false;
+  voiceIdx++;
+  zhVoice = zhVoices[voiceIdx];
+  return true;
+}
+
+let liveUtterance = null, sayTimer = null, sayGuard = null, startGuard = null;
+let speechPrimed = false, speechBlocked = false, lastSaid = "";
+
+/* Browsers refuse to play audio a page starts on its own. Speaking once,
+   silently, inside the first real click unlocks the engine for the rest of
+   the visit — without it, anything spoken from a timer (a card that advances
+   itself, say) is queued and never starts. */
+function primeSpeech() {
+  if (speechPrimed || !("speechSynthesis" in window)) return;
+  speechPrimed = true;
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  } catch { /* engine unavailable */ }
+}
+
+function speechReset() {
+  clearTimeout(sayGuard); clearTimeout(startGuard);
+  liveUtterance = null;
+  try { speechSynthesis.cancel(); } catch { /* engine gone */ }
+}
+
+function say(text, force) {
+  if ((!state.audio && !force) || !text) return;
+  if (audioEl) audioEl.onended = null;
+  lastSaid = text;
+  if (playClip(text)) return;               /* a recorded clip beats the engine */
+  if (!("speechSynthesis" in window)) return;
+  const synth = window.speechSynthesis;
+  clearTimeout(sayTimer); clearTimeout(sayGuard); clearTimeout(startGuard);
+
+  const begin = () => {
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "zh-CN";
+      if (!zhVoice) findVoice();
+      if (zhVoice) u.voice = zhVoice;
+      u.rate = 0.75;
+      let started = false;
+      u.onstart = () => {
+        started = true;
+        /* this one works — remember it rather than rediscovering it */
+        if (zhVoice && state.voice !== zhVoice.name) { state.voice = zhVoice.name; save(); }
+        if (speechBlocked) { speechBlocked = false; renderMuted(); }
+      };
+      u.onend = u.onerror = () => { liveUtterance = null; clearTimeout(sayGuard); };
+      liveUtterance = u;                     /* Chrome collects unreferenced utterances mid-word */
+      synth.speak(u);
+      /* queued but never starts = the browser is refusing it. Say so rather
+         than leaving the learner wondering why a sound drill is silent. */
+      startGuard = setTimeout(() => {
+        if (started) return;
+        /* a mute voice: move to the next candidate and try again */
+        if (useNextVoice()) { speechReset(); say(text, true); return; }
+        speechBlocked = true;
+        renderMuted();
+      }, 900);
+      sayGuard = setTimeout(speechReset, 2500 + text.length * 700);
+    } catch { speechReset(); }
+  };
+
+  try {
+    if (synth.paused) synth.resume();
+    /* Speaking in the same tick as the click keeps the gesture's permission;
+       only defer when something is already talking and must be cut off. */
+    if (synth.speaking || synth.pending) {
+      synth.cancel();
+      sayTimer = setTimeout(begin, 60);
+    } else {
+      begin();
+    }
+  } catch { speechReset(); }
+}
+
+/* both unlocks want the first real gesture */
+addEventListener("pointerdown", unlockAudio, { capture: true, once: true });
+addEventListener("keydown", unlockAudio, { capture: true, once: true });
+
+if ("speechSynthesis" in window) {
+  findVoice();
+  speechSynthesis.onvoiceschanged = findVoice;
+  addEventListener("pointerdown", primeSpeech, { capture: true, once: true });
+  addEventListener("keydown", primeSpeech, { capture: true, once: true });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) speechReset(); });
+}
+
+/* ---------- the writing canvas ---------- */
+
+function inkColors() {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    stroke: cs.getPropertyValue("--ink").trim() || "#17211E",
+    outline: cs.getPropertyValue("--rule").trim() || "#CBD5CC",
+    jade: cs.getPropertyValue("--jade").trim() || "#3F7D63"
+  };
+}
+function makeWriter(mount, char, opts = {}) {
+  if (!window.HanziWriter || !window.STROKE_DATA[char] || !mount) return null;
+  const c = inkColors();
+  return HanziWriter.create(mount, char, Object.assign({
+    width: 190, height: 190, padding: 8,
+    strokeColor: c.stroke, outlineColor: c.outline, drawingColor: c.jade,
+    showOutline: true, showCharacter: true,
+    strokeAnimationSpeed: 1, delayBetweenStrokes: 180,
+    charDataLoader: (ch, onComplete) => onComplete(window.STROKE_DATA[ch])
+  }, opts));
+}
+function writerBox(char, id) {
+  return `<div class="writer-box"><div class="tian">${TIAN_SVG}
+    <div class="tian-slot"><div id="${id}"></div></div></div></div>`;
+}
+
+/* ============================================================
+   Trackpad writing
+
+   A browser can't read the trackpad's actual contacts — no API exposes
+   finger positions. What it can do is Pointer Lock: hide the cursor and
+   hand us raw, unbounded movement deltas. Integrating those into a brush
+   position turns the trackpad into a relative drawing surface, so strokes
+   come from moving your finger rather than dragging a held click.
+
+   hanzi-writer reads mousedown/mousemove on its SVG and mouseup on the
+   document, positioning from clientX/clientY — so we suppress the real
+   events while locked and feed it synthetic ones from the brush instead.
+   All of its stroke matching, ordering and hinting keeps working.
+   ============================================================ */
+
+const PAD_SENSITIVITY = 0.55;   /* trackpad travel : ink travel */
+
+const pad = { active: false, svg: null, box: null, lockEl: null, dot: null, hint: null,
+              x: 0, y: 0, ink: false, onEnd: null, onDraw: null };
+
+const padSupported = () => !!document.body.requestPointerLock && !!window.MouseEvent;
+
+/* Two sinks: a hanzi-writer quiz, fed mouse events it will believe, or a
+   free page that just wants the brush position. */
+function padEmit(type) {
+  if (pad.onDraw) { pad.onDraw(type, pad.x, pad.y); return; }
+  if (!pad.svg) return;
+  const r = pad.svg.getBoundingClientRect();
+  const ev = new MouseEvent(type, {
+    clientX: r.left + pad.x, clientY: r.top + pad.y, bubbles: true, cancelable: true
+  });
+  ev.__hq = true;
+  (type === "mouseup" ? document : pad.svg).dispatchEvent(ev);
+}
+
+function padSetInk(on) {
+  if (on === pad.ink || !pad.active) return;
+  pad.ink = on;
+  pad.dot?.classList.toggle("down", on);
+  padEmit(on ? "mousedown" : "mouseup");
+}
+
+function padMove() {
+  if (!pad.dot) return;
+  const r = (pad.svg || pad.box).getBoundingClientRect();
+  pad.x = Math.max(0, Math.min(r.width, pad.x));
+  pad.y = Math.max(0, Math.min(r.height, pad.y));
+  pad.dot.style.transform = `translate(${pad.x}px, ${pad.y}px)`;
+}
+
+/* One document-level capture listener: while locked it swallows every real
+   pointer event before anything else sees it, and reads the deltas. */
+function padGuard(e) {
+  if (!pad.active || e.__hq) return;
+  if (e.type === "mousemove") {
+    pad.x += (e.movementX || 0) * PAD_SENSITIVITY;
+    pad.y += (e.movementY || 0) * PAD_SENSITIVITY;
+    padMove();
+    if (pad.ink) padEmit("mousemove");
+  } else if (e.type === "mousedown") {
+    padSetInk(!pad.ink);          /* a tap starts a stroke, another ends it */
+  }
+  e.stopImmediatePropagation();
+  e.preventDefault();
+}
+
+function padKey(e) {
+  if (!pad.active) return;
+  if (e.code === "Space") { e.preventDefault(); padSetInk(e.type === "keydown"); }
+  if (e.type === "keydown" && e.key === "Escape") document.exitPointerLock?.();
+}
+
+function padLockChange() {
+  if (document.pointerLockElement === pad.lockEl) padArm();
+  else padStop();
+}
+
+/* Move the brush to a different box without touching the lock. Releasing and
+   re-requesting it per square raced with the browser's own lock change and
+   tore the pad down — which is why the first squares misbehaved. */
+function padRetarget(mount, box) {
+  if (!pad.active) return false;
+  const svg = mount && mount.querySelector("svg");
+  if (!svg || !box) return false;
+  pad.box?.classList.remove("padding-on");
+  pad.svg = svg;
+  pad.box = box;
+  box.classList.add("padding-on");
+  if (pad.dot) box.appendChild(pad.dot);
+  if (pad.hint) box.appendChild(pad.hint);
+  const r = svg.getBoundingClientRect();
+  pad.x = r.width / 2; pad.y = r.height / 2;
+  padSetInk(false);
+  padMove();
+  return true;
+}
+
+/* Only once the lock is genuinely ours do we start swallowing mouse events —
+   otherwise a refused lock would leave the writer unable to hear a real hand. */
+function padArm() {
+  if (pad.active) return;
+  pad.active = true;
+  pad.ink = false;
+
+  const r = (pad.svg || pad.box).getBoundingClientRect();
+  pad.x = r.width / 2; pad.y = r.height / 2;
+
+  const dot = document.createElement("span");
+  dot.className = "brush";
+  pad.box.appendChild(dot);
+  pad.dot = dot;
+
+  const hint = document.createElement("span");
+  hint.className = "pad-hint";
+  hint.textContent = "Hold space or tap to ink · Esc to stop";
+  pad.box.appendChild(hint);
+  pad.hint = hint;
+
+  pad.box.classList.add("padding-on");
+  padMove();
+  requestAnimationFrame(() => {
+    const r2 = (pad.svg || pad.box)?.getBoundingClientRect();
+    if (r2 && r2.width && !pad.ink) { pad.x = r2.width / 2; pad.y = r2.height / 2; padMove(); }
+  });
+
+  document.addEventListener("mousedown", padGuard, true);
+  document.addEventListener("mousemove", padGuard, true);
+  document.addEventListener("mouseup", padGuard, true);
+  document.addEventListener("keydown", padKey);
+  document.addEventListener("keyup", padKey);
+}
+
+function padStart(box, mount, onEnd, onDraw, lockEl) {
+  const svg = mount ? mount.querySelector("svg") : null;
+  if ((!svg && !onDraw) || !padSupported() || pad.active) return false;
+  pad.svg = svg; pad.box = box; pad.onEnd = onEnd; pad.onDraw = onDraw || null;
+  pad.lockEl = lockEl || box;
+
+  document.addEventListener("pointerlockchange", padLockChange);
+  document.addEventListener("pointerlockerror", padRefused);
+
+  let p;
+  try { p = pad.lockEl.requestPointerLock(); } catch { padRefused(); return false; }
+  if (p && typeof p.catch === "function") p.catch(padRefused);
+  return true;
+}
+
+/* Pointer lock can be refused — notably inside an embedded frame that wasn't
+   granted it. Say so plainly rather than leaving a dead button. */
+function padRefused() {
+  padStop();
+  const box = pad.box || $(".tian");
+  if (!box || box.querySelector(".pad-note")) return;
+  const note = document.createElement("span");
+  note.className = "pad-hint pad-note";
+  note.textContent = "Your browser blocked pointer lock here — open the page in its own tab.";
+  box.appendChild(note);
+  setTimeout(() => note.remove(), 6000);
+}
+
+function padStop() {
+  document.removeEventListener("pointerlockchange", padLockChange);
+  document.removeEventListener("pointerlockerror", padRefused);
+  if (!pad.active) { const cb0 = pad.onEnd; pad.onEnd = null; cb0?.(); return; }
+  padSetInk(false);
+  pad.active = false;
+  document.removeEventListener("mousedown", padGuard, true);
+  document.removeEventListener("mousemove", padGuard, true);
+  document.removeEventListener("mouseup", padGuard, true);
+  document.removeEventListener("keydown", padKey);
+  document.removeEventListener("keyup", padKey);
+  pad.dot?.remove(); pad.hint?.remove();
+  pad.box?.classList.remove("padding-on");
+  pad.dot = pad.hint = pad.svg = pad.box = pad.lockEl = null;
+  pad.onDraw = null;
+  const cb = pad.onEnd; pad.onEnd = null;
+  cb?.();
+}
+
+/* ---------- sentence rendering: known characters light up ---------- */
+
+/* `target` is the character being taught — it gets the emphasis. Everything
+   else is inked if you know it and grey if you don't, so a sentence visibly
+   fills in as you progress. Without a target, this is just the ink pass. */
+function renderZh(text, target) {
+  return [...text].map(ch => {
+    if (!/[\u4e00-\u9fff]/.test(ch)) return `<span class="u">${esc(ch)}</span>`;
+    if (ch === target) return `<span class="t">${esc(ch)}</span>`;
+    return `<span class="${isKnown(ch) ? "k" : "u"}">${esc(ch)}</span>`;
+  }).join("");
+}
+/* Reading should never show you material you can't read. */
+const cjkOf = str => [...str].filter(c => /[\u4e00-\u9fff]/.test(c));
+const canRead = str => { const g = cjkOf(str); return g.length > 0 && g.every(isKnown); };
+
+/* The longest thing built from this character that the learner can actually
+   read: its example sentence if every glyph is known, otherwise a word, and
+   otherwise nothing — in which case the reading drill isn't offered at all. */
+function readingMaterial(ch) {
+  if (canRead(ch.sent[0])) return { zh: ch.sent[0], en: ch.sent[2], pin: ch.sent[1], long: true };
+  const w = ch.words.find(x => x[0].length > 1 && canRead(x[0]));
+  if (w) return { zh: w[0], en: w[2], pin: w[1], long: false };
+  return null;
+}
+
+const highlightWord = (word, char) =>
+  [...word].map(ch => ch === char ? `<mark>${esc(ch)}</mark>` : esc(ch)).join("");
+
+/* ============================================================
+   The character card
+   ============================================================ */
+
+function charCard(ch, { writerId }) {
+  const comps = ch.comp.length
+    ? `<div class="block sheet">
+        <div class="block-head"><span class="k">部件</span><span class="t">Built from</span></div>
+        <div class="comps">${ch.comp.map((k, i) => {
+          const [p, m] = gloss(k);
+          return `${i ? '<span class="comp-plus">+</span>' : ""}<button class="comp ${isKnown(k) ? "known" : ""}" data-comp="${esc(k)}">
+            <em>${esc(k)}</em><span>${esc(p)}${p && m ? " · " : ""}${esc(m)}</span></button>`;
+        }).join("")}
+        <span class="comp-plus">→</span><span class="comp"><em>${esc(ch.c)}</em></span></div>
+      </div>` : "";
+
+  return `
+  <div class="card-hero">
+    ${writerBox(ch.c, writerId)}
+    <div class="hero-meta">
+      <div class="hero-pin">${esc(ch.p)} ${toneMark(ch.p)}</div>
+      <div class="hero-mean">${esc(ch.m)}</div>
+      ${posTags(ch)}
+    </div>
+    <div class="tools">
+      <button class="tool" data-act="say" data-text="${esc(ch.c)}"><span class="han">发音</span> Hear it</button>
+      <button class="tool" data-act="animate"><span class="han">笔顺</span> Stroke order</button>
+      <button class="tool" data-act="practise"><span class="han">默写</span> Try writing</button>
+    </div>
+  </div>
+
+  <div class="block sheet">
+    <div class="block-head"><span class="k">字源</span><span class="t">Where it comes from</span></div>
+    <p class="origin">${esc(ch.o)}</p>
+  </div>
+
+  <div class="block sheet">
+    <div class="block-head"><span class="k">记忆</span><span class="t">How to remember it</span></div>
+    <p class="story">${esc(ch.story)}</p>
+  </div>
+
+  ${comps}
+
+  <div class="block sheet">
+    <div class="block-head"><span class="k">词语</span><span class="t">Words you'll meet it in</span></div>
+    <div class="words">
+      ${ch.words.map(w => `<div class="word">
+        <button class="word-zh" data-act="say" data-text="${esc(w[0])}">${highlightWord(w[0], ch.c)}</button>
+        <div class="word-pin">${esc(w[1])}</div>
+        <div class="word-en" style="grid-column:2">${esc(w[2])}</div>
+      </div>`).join("")}
+    </div>
+  </div>
+
+  <div class="block sheet">
+    <div class="block-head"><span class="k">例句</span><span class="t">In a sentence</span></div>
+    <div class="sentence">
+      <button class="sen-zh" data-act="say" data-text="${esc(ch.sent[0])}" style="background:none;border:0;padding:0;text-align:left">${renderZh(ch.sent[0], ch.c)}</button>
+      <div class="sen-pin">${esc(ch.sent[1])}</div>
+      <div class="sen-en">${esc(ch.sent[2])}</div>
+    </div>
+  </div>`;
+}
+
+function bindCard(root, ch, writerId) {
+  let writer = null;
+  const mount = () => (writer = writer || makeWriter($("#" + writerId, root), ch.c));
+  mount();
+  /* Try writing always starts a fresh attempt, goes straight into trackpad
+     mode where the browser allows it, and drops out again once the character
+     is finished — so a second go is one click, not three. */
+  function startWriting() {
+    mount();
+    if (!writer) return;
+    padStop();
+    writer.cancelQuiz();
+    writer.hideCharacter();
+    writer.quiz({
+      showHintAfterMisses: 2,
+      onComplete: () => { padStop(); say(ch.c, true); }
+    });
+    padStart($(".tian", root), $("#" + writerId, root), null);
+  }
+  root.addEventListener("click", e => {
+    const b = e.target.closest("[data-act]");
+    if (b) {
+      const act = b.dataset.act;
+      if (act === "say") sayPhrase(b.dataset.text, true);
+      if (act === "animate") { mount(); writer && writer.animateCharacter(); }
+      if (act === "practise") startWriting();
+    }
+    const comp = e.target.closest("[data-comp]");
+    if (comp && CHAR_INDEX[comp.dataset.comp]) openChar(comp.dataset.comp);
+  });
+}
+
+/* ============================================================
+   Session
+   ============================================================ */
+
+const session = { queue: [], idx: 0, right: 0, wrong: 0, learned: 0, reviewed: 0,
+                  combo: 0, bestCombo: 0, active: false, questAtStart: 0, practice: null, todo: null, got: {},
+                  qStart: 0, times: [], quick: 0 };
+
+/* A question is "quick" if it lands while the bar still has some drain left.
+   Running out costs nothing — the bar is there to add pace, not a penalty. */
+const QUICK_MS = 6000;
+
+function startQuestionTimer(run) {
+  const bar = $("#qtimer");
+  if (!bar) return;
+  if (!run || !state.timer) { bar.hidden = true; session.qStart = 0; return; }
+  bar.hidden = false;
+  bar.classList.remove("spent");
+  bar.style.setProperty("--q", QUICK_MS + "ms");
+  /* replacing the node restarts the animation */
+  bar.innerHTML = "<i></i>";
+  session.qStart = Date.now();
+}
+
+/* Extra reps, on demand. Each targets one skill and draws the characters
+   you're shakiest at — it reinforces without rescheduling your reviews. */
+const PRACTICE = {
+  read:  { k: "\u9605\u8bfb", name: "Reading",       blurb: "Do you know what it means?", kinds: ["r", "d"], skill: "r" },
+  write: { k: "\u9ed8\u5199", name: "Writing",       blurb: "Draw it from memory",        kinds: ["w"],      skill: "w" },
+  say:   { k: "\u53d1\u97f3", name: "Pronunciation", blurb: "Sound and tone",             kinds: ["p", "l"], skill: "p" }
+};
+
+function practiceAvailable(mode) {
+  let pool = practicePool(PRACTICE[mode].skill, 60);
+  if (mode === "write") pool = pool.filter(c => window.STROKE_DATA[c]);
+  return pool;
+}
+
+function startPractice(mode) {
+  const cfg = PRACTICE[mode];
+  const pool = practiceAvailable(mode);
+  if (!pool.length) return;
+  session.queue = pool.slice(0, 10).map(c => ({ t: "drill", c, kind: one(cfg.kinds) }));
+  session.idx = 0;
+  session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.combo = session.bestCombo = 0;
+  session.got = {};
+  session.times = []; session.quick = 0;
+  session.questAtStart = menuProgress().known;
+  session.practice = mode;
+  session.todo = null;
+  session.active = true;
+  $("#session").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderStep();
+}
+
+function buildSession() {
+  const due = dueList();
+  const fresh = nextNew(state.goalNew);
+  const items = [];
+  const reviews = due.map(c => ({ t: "drill", c, kind: drillKind(c) }));
+  let r = 0;
+  fresh.forEach(c => {
+    items.push({ t: "intro", c });
+    for (let k = 0; k < 3 && r < reviews.length; k++) items.push(reviews[r++]);
+    items.push({ t: "drill", c, kind: "r", fresh: true });
+  });
+  while (r < reviews.length) items.push(reviews[r++]);
+  session.queue = items;
+  session.idx = 0;
+  session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.combo = session.bestCombo = 0;
+  session.got = {};
+  session.times = []; session.quick = 0;
+  session.questAtStart = menuProgress().known;
+  session.practice = null;
+  session.todo = null;
+  return items;
+}
+
+/* Which drill a character has earned. Recall and writing arrive
+   only once recognition is solid.
+
+   Writing is sticky: you learn a character's strokes by writing it several
+   times in a short window, not once every thirty-five days. So once a
+   character has had one writing drill, it keeps getting them until three
+   land — otherwise the reps scatter across the whole library and no single
+   character ever becomes solid. */
+function drillKind(c) {
+  const r = rec(c);
+  const lvl = r?.lvl || 0;
+  const ch = CHAR_INDEX[c];
+  const canWrite = lvl >= 4 && state.writeDrills && window.STROKE_DATA[c];
+
+  if (canWrite && r && r.skills.w > 0 && r.skills.w < 3) return "w";
+
+  const bag = ["r", "p"];
+  if (lvl >= 2) bag.push("c", "l");
+  if (lvl >= 3) { if (ch.words.length) bag.push("s"); if (ch.words.some(w => w[0].length > 1)) bag.push("a"); }
+  if (lvl >= 4) { if (readingMaterial(ch)) bag.push("d"); if (canWrite) bag.push("w", "w"); }
+  return one(bag);
+}
+
+function startSession() {
+  if (!buildSession().length) return;
+  session.active = true;
+  $("#session").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderStep();
+}
+function endSession() {
+  padStop();
+  clearAdvance();
+  $("#qtimer") && ($("#qtimer").hidden = true);
+  session.active = false;
+  $("#session").classList.remove("on");
+  document.body.style.overflow = "";
+  renderAll();
+}
+
+function renderMuted() {
+  const el = $("#muted");
+  if (!el) return;
+  const off = !state.audio, blocked = speechBlocked && state.audio;
+  el.hidden = !off && !blocked;
+  el.textContent = off ? "🔇 sound off" : "🔇 tap to allow sound";
+  el.title = off ? "Turn sound back on"
+    : "Your browser is blocking audio this page started on its own — tap once to allow it";
+}
+
+function renderCombo() {
+  renderMuted();
+  const el = $("#combo");
+  const n = session.combo;
+  el.className = "combo " + (n >= 8 ? "blaze" : n >= 4 ? "hot" : n === 0 ? "zero" : "");
+  el.innerHTML = `<span class="han">连对</span>${n}`;
+  el.title = `${n} correct in a row · best this session ${session.bestCombo}`;
+}
+
+function renderStep() {
+  clearAdvance();
+  const total = session.queue.length, done = session.idx;
+  $("#sesProg").style.width = total ? `${(done / total) * 100}%` : "0%";
+  $("#sesCount").textContent = `${Math.min(done + 1, total)} / ${total}`;
+  renderCombo();
+
+  if (session.idx >= session.queue.length) return renderDone();
+
+  const item = session.queue[session.idx];
+  const ch = CHAR_INDEX[item.c];
+  const body = $("#sesInner"), foot = $("#sesFoot");
+
+  /* handwriting is excluded: the input is slow by nature, and reaching for
+     the Trackpad button shouldn't look like hesitation */
+  startQuestionTimer(item.t === "drill" && item.kind !== "w");
+
+  if (item.t === "intro") {
+    const isNew = !isKnown(item.c);
+    const wid = "w" + Math.random().toString(36).slice(2, 8);
+    const st = STAGES.find(s => s.n === ch.stage);
+    const onMenu = MENU_CHARS.includes(ch.c);
+    body.innerHTML = `
+      <div class="stack" style="gap:.3rem;align-items:center;text-align:center">
+        <span class="eyebrow">${isNew ? "New character" : "Revisiting"} · ${esc(st.icon)} ${esc(st.name)}</span>
+        ${onMenu ? `<span class="chip" style="background:var(--seal-wash);color:var(--seal)">🍜 on the menu</span>` : ""}
+      </div>
+      ${charCard(ch, { writerId: wid })}`;
+    bindCard(body, ch, wid);
+    foot.innerHTML = `<button class="btn btn-block" id="gotIt">Got it — keep going</button>`;
+    $("#gotIt").onclick = () => {
+      if (!isKnown(item.c)) { introduce(item.c); tally("new"); session.learned++; }
+      next();
+    };
+    setTimeout(() => say(ch.c), 340);
+  } else {
+    renderDrill(item, ch, body, foot);
+  }
+  $("#sesBody").scrollTop = 0;
+}
+
+/* A correct answer doesn't need confirming twice. Show the verdict, let it
+   land, then move on by itself — but only when it was right; a miss is the
+   one time you actually need to read what's on screen. */
+const AUTO_ADVANCE_MS = 1400;
+let advanceTimer = null;
+function clearAdvance() { clearTimeout(advanceTimer); advanceTimer = null; }
+
+const next = () => { clearAdvance(); session.idx++; renderStep(); };
+
+function requeue(item) {
+  const at = Math.min(session.queue.length, session.idx + 4);
+  session.queue.splice(at, 0, Object.assign({}, item, { kind: "r", again: true }));
+}
+
+const KIND_LABEL = {
+  r: ["认读", "What does it mean?"],
+  p: ["发音", "How is it said?"],
+  c: ["默写", "Which character?"],
+  s: ["词语", "Fill the gap"],
+  w: ["笔顺", "Write it from memory"],
+  l: ["听力", "Listen — which character?"],
+  a: ["组词", "Build the word"],
+  d: ["阅读", "Read the sentence"]
+};
+const SKILL_OF = { r:"r", p:"p", l:"p", c:"c", s:"c", a:"c", d:"r", w:"w" };
+
+function renderDrill(item, ch, body, foot) {
+  const kind = item.kind;
+  const [k, label] = KIND_LABEL[kind];
+  const pool = HQ.filter(x => x.c !== ch.c);
+  const head = `<div class="drill-kind"><span class="han">${k}</span> ${esc(label)}</div>`;
+
+  /* --- write from memory --- */
+  if (kind === "w") {
+    const wid = "q" + Math.random().toString(36).slice(2, 8);
+    /* A trackpad is not a brush. Allow slips in proportion to how much there
+       is to get wrong — one for a simple character, five for 15 strokes. */
+    const nStrokes = (window.STROKE_DATA[ch.c]?.strokes || []).length || 1;
+    const allowed = Math.max(1, Math.ceil(nStrokes / 3));
+    body.innerHTML = `<div class="drill">
+      <div class="drill-prompt sheet">${head}
+        <div class="drill-q"><span class="pin">${esc(ch.p)}</span> ${toneMark(ch.p)}</div>
+        <div class="drill-hint">${esc(ch.m)}</div>
+      </div>
+      ${writerBox(ch.c, wid)}
+      <p class="note" style="text-align:center">Draw the strokes in the box. A hint appears if you miss twice —
+        and up to ${allowed} slip${allowed === 1 ? "" : "s"} still counts, since a trackpad isn't a brush.</p>
+    </div>`;
+    $(".writer-box", body).style.margin = "0 auto";
+    $(".writer-box", body).insertAdjacentHTML("afterend", `<div class="write-tools"></div>`);
+    const tools = $(".write-tools", body);
+    const w = makeWriter($("#" + wid, body), ch.c, { showCharacter: false, showOutline: false });
+    foot.innerHTML = "";
+
+    let missed = 0, peeked = false;
+
+    const bindPad = () => $("#padW")?.addEventListener("click", () => {
+      const btn = $("#padW");
+      btn.disabled = true;
+      if (!padStart($(".tian", body), $("#" + wid, body), () => { btn.disabled = false; })) btn.disabled = false;
+    });
+
+    /* Looking at the strokes shouldn't end the question — that's the moment
+       you most want to try it. So the hint offers a way back into writing. */
+    const showStrokes = () => {
+      padStop();
+      peeked = true;
+      w.cancelQuiz();
+      w.showCharacter();
+      w.animateCharacter();
+      tools.innerHTML = `
+        <button class="btn btn-sm" id="tryW">Now you try</button>
+        <button class="btn btn-ghost btn-sm" id="againW">Show again</button>
+        <button class="btn btn-ghost btn-sm" id="moveW">Move on</button>`;
+      $("#againW").onclick = () => w.animateCharacter();
+      $("#moveW").onclick = () => settle(item, ch, false, foot, null, -1);
+      $("#tryW").onclick = arm;
+    };
+
+    const arm = () => {
+      missed = 0;
+      w.cancelQuiz();
+      w.hideCharacter();
+      tools.innerHTML = `
+        ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="padW"><span class="han">触控</span> Trackpad</button>` : ""}
+        <button class="btn btn-ghost btn-sm" id="skipW">${peeked ? "Show me again" : "Show me the strokes"}</button>`;
+      bindPad();
+      $("#skipW").onclick = showStrokes;
+      w.quiz({
+        showHintAfterMisses: 2,
+        onMistake: () => missed++,
+        onComplete: () => {
+          padStop();
+          say(ch.c);
+          /* written after peeking still counts as practice, just not as recall */
+          settle(item, ch, !peeked && missed <= allowed, foot, null, peeked ? -1 : missed);
+        }
+      });
+    };
+
+    if (w) arm(); else settle(item, ch, false, foot, null, -1);
+    return;
+  }
+
+  /* --- build the word from tiles --- */
+  if (kind === "a") {
+    /* Prefer a word you can actually read — every character already taught. */
+    const multi = ch.words.filter(x => x[0].length > 1);
+    const readable = multi.filter(x => [...x[0]].every(z => CHAR_INDEX[z]));
+    const w = one(readable.length ? readable : multi) || ch.words[0];
+    const target = [...w[0]];
+    const distract = pick(pool.map(x => x.c).filter(c => !target.includes(c)), 3);
+    const tiles = shuffle([...target, ...distract]);
+    body.innerHTML = `<div class="drill">
+      <div class="drill-prompt sheet">${head}
+        <div class="drill-q">${esc(w[2])}</div>
+        <div class="drill-hint"><span class="pin">${esc(w[1])}</span></div>
+      </div>
+      <div class="assemble">
+        <div class="slots">${target.map((_, i) => `<div class="slot" data-s="${i}"></div>`).join("")}</div>
+        <div class="tiles">${tiles.map((c, i) => `<button class="tile" data-c="${esc(c)}" data-i="${i}">${esc(c)}</button>`).join("")}</div>
+      </div>
+    </div>`;
+    foot.innerHTML = "";
+    let at = 0, wrongOnce = false;
+    $$(".tile", body).forEach(t => t.onclick = () => {
+      const slot = $(`.slot[data-s="${at}"]`, body);
+      if (t.dataset.c === target[at]) {
+        slot.textContent = t.dataset.c; slot.classList.add("filled");
+        t.classList.add("used"); at++;
+        if (at === target.length) {
+          sayPhrase(w[0]);
+          $$(".tile", body).forEach(x => x.disabled = true);
+          settle(item, ch, !wrongOnce, foot, `<b>${esc(w[0])}</b> · ${esc(w[1])} · ${esc(w[2])}`);
+        }
+      } else {
+        wrongOnce = true;
+        slot.classList.add("bad");
+        setTimeout(() => slot.classList.remove("bad"), 400);
+      }
+    });
+    return;
+  }
+
+  /* --- multiple choice, including listening and reading --- */
+  let prompt, options, correct, grid2 = false, autoSay = null, spoken = null;
+
+  if (kind === "r") {
+    prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
+    correct = ch.m;
+    options = [ch.m, ...pick(pool, 3).map(x => x.m)].map(m => ({ v: m, html: esc(m) }));
+  } else if (kind === "p") {
+    prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
+    correct = ch.p;
+    const near = pool.filter(x => x.p !== ch.p && (toneOf(x.p) === toneOf(ch.p) || x.p[0] === ch.p[0]));
+    options = [ch.p, ...pick(near.length >= 3 ? near : pool, 3).map(x => x.p)]
+      .map(p => ({ v: p, html: `<span class="pin">${esc(p)}</span> ${toneMark(p)}` }));
+    grid2 = true;
+  } else if (kind === "l") {
+    prompt = `<button class="ear" id="earBtn" aria-label="Play again">🔊</button>
+              <div class="drill-hint">Tap to hear it again</div>`;
+    correct = ch.c;
+    const near = pool.filter(x => toneOf(x.p) !== toneOf(ch.p) || x.p[0] !== ch.p[0]);
+    options = [ch.c, ...pick(near.length >= 3 ? near : pool, 3).map(x => x.c)]
+      .map(c => ({ v: c, html: `<span class="big">${esc(c)}</span>` }));
+    grid2 = true;
+    autoSay = ch.c;
+  } else if (kind === "c") {
+    prompt = `<div class="drill-q"><span class="pin">${esc(ch.p)}</span> ${toneMark(ch.p)}</div>
+              <div class="drill-hint">${esc(ch.m)}</div>`;
+    correct = ch.c;
+    const kin = pool.filter(x => x.comp.some(z => ch.comp.includes(z)));
+    options = [ch.c, ...pick(kin.length >= 3 ? kin : pool, 3).map(x => x.c)]
+      .map(c => ({ v: c, html: `<span class="big">${esc(c)}</span>` }));
+    grid2 = true;
+  } else if (kind === "d") {
+    const mat = readingMaterial(ch);
+    if (!mat) return renderDrill(Object.assign({}, item, { kind: "r" }), ch, body, foot);
+    prompt = `<div class="drill-sen">${renderZh(mat.zh)}</div>`;
+    spoken = mat.zh;
+    correct = mat.en;
+    /* distractors of the same shape — a sentence against sentences */
+    const others = mat.long
+      ? pick(pool, 3).map(x => x.sent[2])
+      : pick(pool.flatMap(x => x.words.filter(w => w[0].length > 1)), 3).map(w => w[2]);
+    options = [mat.en, ...others.filter(o => o !== mat.en)].slice(0, 4).map(m => ({ v: m, html: esc(m) }));
+  } else { /* s — gap in a word */
+    const readable = ch.words.filter(x => canRead(x[0]));
+    const w = one(readable.length ? readable : ch.words);
+    prompt = `<div class="drill-sen">${[...w[0]].map(x => x === ch.c ? `<span class="gap">?</span>` : esc(x)).join("")}</div>
+              <div class="drill-hint"><span class="pin">${esc(w[1])}</span> · ${esc(w[2])}</div>`;
+    correct = ch.c;
+    options = [ch.c, ...pick(pool, 3).map(x => x.c)]
+      .map(c => ({ v: c, html: `<span class="big">${esc(c)}</span>` }));
+    grid2 = true;
+  }
+
+  shuffle(options);
+  body.innerHTML = `<div class="drill">
+    <div class="drill-prompt sheet">${head}${prompt}</div>
+    <div class="opts ${grid2 ? "grid2" : ""}">
+      ${options.map((o, i) => `<button class="opt" data-v="${esc(o.v)}"><kbd class="opt-n">${i + 1}</kbd>${o.html}</button>`).join("")}
+    </div>
+  </div>`;
+  foot.innerHTML = "";
+
+  if (autoSay) {
+    say(autoSay, true);
+    $("#earBtn").onclick = () => say(autoSay, true);
+  }
+
+  $$(".opt", body).forEach(btn => btn.onclick = () => {
+    const ok = btn.dataset.v === correct;
+    $$(".opt", body).forEach(b => {
+      b.disabled = true;
+      if (b.dataset.v === correct) { b.classList.add("right"); b.insertAdjacentHTML("beforeend", `<span class="mk">✓</span>`); }
+    });
+    if (!ok) { btn.classList.remove("right"); btn.classList.add("wrong"); btn.querySelector(".mk")?.remove(); btn.insertAdjacentHTML("beforeend", `<span class="mk">✗</span>`); }
+    if (kind === "d") sayPhrase(spoken || ch.c);          /* the whole phrase shown */
+    else if (["p","r","l"].includes(kind)) say(ch.c);
+    settle(item, ch, ok, foot);
+  });
+}
+
+/* Grade, show the verdict, offer the way forward. */
+function settle(item, ch, ok, foot, extra, slips) {
+  const writing = item.kind === "w";
+  const elapsed = session.qStart ? Date.now() - session.qStart : 0;
+  const quick = ok && !writing && elapsed > 0 && elapsed <= QUICK_MS;
+  if (elapsed > 0 && !writing) session.times.push(elapsed);
+  if (quick) session.quick++;
+  $("#qtimer")?.classList.add("spent");
+  session.qStart = 0;
+  grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice, gentle: writing });
+  if (!item.fresh) { tally("rev"); session.reviewed++; }
+  if (ok) {
+    session.right++; session.combo++;
+    session.bestCombo = Math.max(session.bestCombo, session.combo);
+    (session.got[item.kind] = session.got[item.kind] || new Set()).add(ch.c);
+  } else {
+    session.wrong++; session.combo = 0;
+    /* a missed character comes round again — a missed handwriting attempt
+       doesn't, because you've just been shown the strokes */
+    if (!writing) requeue(item);
+  }
+  renderCombo();
+
+  const praise = session.combo >= 8 ? "On fire." : session.combo >= 4 ? "Good run." : "Right.";
+  let said;
+  if (writing) {
+    said = ok
+      ? (slips > 0
+          ? `Written — ${slips} slip${slips === 1 ? "" : "s"}, still counts.`
+          : "Clean. Every stroke first time.")
+      : slips === -1
+        ? `<b>${esc(ch.c)}</b> · ${esc(ch.p)} · ${esc(ch.m)} — you looked first, so this one doesn't count towards 笔顺. Writing it out is still the point.`
+        : `<b>${esc(ch.c)}</b> · ${esc(ch.p)} · ${esc(ch.m)} — handwriting is its own skill, so this hasn't touched your review schedule.`;
+  } else {
+    const r0 = rec(ch.c);
+    said = ok ? esc(praise) + (extra ? " " + extra : "")
+              : `<b>${esc(ch.c)}</b> · ${esc(ch.p)} · ${esc(ch.m)}${isLeech(ch.c)
+                  ? ` — that's ${r0.wrong} misses. Another repetition won't fix this one; open the card.`
+                  : " — you'll see it again shortly."}`;
+  }
+  const audible = ["p", "l", "r", "d"].includes(item.kind);
+  foot.innerHTML = `
+    <div class="verdict ${ok ? "ok" : "no"}">
+      <span class="han">${ok ? "答对" : "再来"}</span>
+      <span>${quick ? `<span class="quick-badge">快 ${(elapsed / 1000).toFixed(1)}s</span>` : ""}${said}</span>
+      ${audible ? `<button class="verdict-play" id="replay" title="Hear it again" aria-label="Hear it again">🔊</button>` : ""}
+    </div>
+    <div class="split">
+      ${ok || writing ? "" : `<button class="btn ${isLeech(ch.c) ? "btn-seal" : "btn-ghost"}" id="review">Study the card</button>`}
+      <button class="btn ${ok ? "btn-timed" : ""}" id="cont" style="--wait:${AUTO_ADVANCE_MS}ms">${ok ? "Next" : "Continue"}</button>
+    </div>`;
+  /* listening again means you want to stay on this card */
+  $("#replay")?.addEventListener("click", () => {
+    clearAdvance();
+    $("#cont")?.classList.remove("btn-timed");
+    say(ch.c, true);
+  });
+  $("#cont").onclick = next;
+  if (ok) advanceTimer = setTimeout(next, AUTO_ADVANCE_MS);
+  const rv = $("#review");
+  if (rv) rv.onclick = () => { session.queue.splice(session.idx, 0, { t: "intro", c: ch.c }); renderStep(); };
+  $("#cont").focus();
+}
+
+function renderDone() {
+  startQuestionTimer(false);              /* nothing left to time */
+  const answered = session.right + session.wrong;
+  const acc = answered ? Math.round((session.right / answered) * 100) : 100;
+  const mark = acc >= 90 ? "甲" : acc >= 75 ? "乙" : "丙";
+  const gradeNote = acc >= 90 ? "Top marks" : acc >= 75 ? "Solid work" : "Worth another pass";
+  const qp = menuProgress();
+  const gained = qp.known - session.questAtStart;
+  const prac = session.practice ? PRACTICE[session.practice] : null;
+  if (session.todo) markDone(session.todo);
+  else if (!session.practice) markDone("learn");
+  /* Doing the work counts wherever you did it: if every one of today's
+     characters was answered correctly in a task's drill during this session,
+     that task is done — even if you started it from Go deeper. */
+  TODAY_TASKS.forEach(task => {
+    if (task.copy || didToday(task.id)) return;
+    const pool = taskPool(task);
+    if (!pool.length) return;
+    if (pool.every(c => task.proves.some(k => session.got[k] && session.got[k].has(c)))) markDone(task.id);
+  });
+  const task = session.todo ? TODAY_TASKS.find(x => x.id === session.todo) : null;
+
+  $("#sesInner").innerHTML = `
+    <div class="done-wrap">
+      <div class="grade-seal">${mark}</div>
+      <span class="grade-note">${esc(gradeNote)} · ${acc}% correct</span>
+      <div class="stack" style="gap:.3rem">
+        <h1>${task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
+        <p class="muted" style="font-size:.9rem">${prac
+          ? `${answered} rep${answered === 1 ? "" : "s"}. Your reviews are untouched — this was extra.`
+          : `${liveStreak()} day${liveStreak() === 1 ? "" : "s"} in a row.`}</p>
+      </div>
+      <div class="done-stats">
+        ${prac ? `<div><b>${session.right}</b><small>right</small></div>
+                 <div><b>${session.wrong}</b><small>missed</small></div>`
+               : `<div><b>${session.learned}</b><small>learned</small></div>
+                 <div><b>${session.reviewed}</b><small>reviewed</small></div>`}
+        <div><b>${session.bestCombo}</b><small>best run</small></div>
+        ${session.times.length ? `<div><b>${(session.times.reduce((a, b) => a + b, 0) / session.times.length / 1000).toFixed(1)}s</b><small>average</small></div>
+        <div><b>${session.quick}</b><small><span class="han">快</span> under ${QUICK_MS / 1000}s</small></div>` : ""}
+      </div>
+      ${prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
+      : `<div class="quest-bump">
+        <div class="lbl"><span>🍜 Read a Menu</span><span>${qp.known} / ${qp.total}</span></div>
+        <div class="bar ${qp.done ? "gold" : ""}"><i style="width:${(qp.pct * 100).toFixed(1)}%"></i></div>
+        <div class="lbl"><span>${gained > 0 ? `+${gained} from today` : "No menu characters today"}</span>
+          <span>${qp.done ? "Complete" : `${qp.total - qp.known} to go`}</span></div>
+      </div>`}
+    </div>`;
+  $("#again")?.addEventListener("click", () => startPractice(session.practice));
+  $("#sesFoot").innerHTML = prac
+    ? `<button class="btn btn-block" id="fin">Done</button>`
+    : qp.done
+    ? `<div class="split"><button class="btn btn-ghost" id="fin">Close</button>
+       <button class="btn btn-seal" id="openReward">🍜 Read your menu</button></div>`
+    : `<button class="btn btn-block" id="fin">Close</button>`;
+  $("#fin").onclick = endSession;
+  const or = $("#openReward");
+  if (or) or.onclick = () => { endSession(); openQuest("menu"); };
+  $("#sesProg").style.width = "100%";
+}
+
+/* ============================================================
+   Overlays — a character, and a quest
+   ============================================================ */
+
+function openSheet(title, html) {
+  $("#svTitle").innerHTML = title;
+  $("#svBody").innerHTML = html;
+  $("#charView").classList.add("on");
+  document.body.style.overflow = "hidden";
+}
+function closeSheet() {
+  $("#charView").classList.remove("on");
+  document.body.style.overflow = "";
+  renderAll();
+}
+
+function openChar(c) {
+  const ch = CHAR_INDEX[c];
+  if (!ch) return;
+  const wid = "d" + Math.random().toString(36).slice(2, 8);
+  const r = rec(c), st = strength(c);
+  const stage = STAGES.find(s => s.n === ch.stage);
+  openSheet(
+    `<span class="han">${esc(ch.c)}</span> <span class="dim" style="font-weight:400;font-size:.85rem">${esc(stage.icon)} ${esc(stage.name)} · #${ch.i + 1}</span>`,
+    `<div class="wrap"><div class="section">
+      <div class="queue">${r
+        ? `<span class="qpill">Seen <b>${r.seen}</b></span>
+           <span class="qpill">Level <b>${r.lvl}/8</b></span>
+           <span class="qpill">${st === "due" ? "Due <b>now</b>" : `Next <b>${esc(r.due)}</b>`}</span>`
+        : `<span class="qpill">Not started yet</span>`}</div>
+      ${charCard(ch, { writerId: wid })}
+      ${r ? "" : `<button class="btn btn-block" id="learnNow">Learn this one now</button>`}
+    </div></div>`);
+  bindCard($("#svBody"), ch, wid);
+  const ln = $("#learnNow");
+  if (ln) ln.onclick = () => { introduce(c); tally("new"); closeSheet(); };
+}
+
+function openQuest(id) {
+  const q = QUESTS.find(x => x.id === id);
+  if (!q || q.locked) return;
+  const p = menuProgress();
+  const pick = menuToday();
+  const target = pick.c && !isKnown(pick.c) ? pick.c : null;
+
+  openSheet(`🍜 Read a Menu <span class="dim" style="font-weight:400;font-size:.85rem">看菜单</span>`,
+    `<div class="wrap"><div class="section">
+      <div class="today-head">
+        <h1>${p.done ? "You can read this." : "The menu you're working towards."}</h1>
+        <p class="note">${p.done
+          ? "Every character here is one you've learned. Hover any of them for a reminder."
+          : `${p.known} of ${p.total} characters are yours so far. The rest are greyed out — hover any of them to see what you're missing.`}</p>
+      </div>
+      <div class="bar ${p.done ? "gold" : ""}"><i style="width:${(p.pct * 100).toFixed(1)}%"></i></div>
+      ${renderMenuCard(target, true)}
+      <div class="sheet block">
+        <div class="block-head"><span class="k">口语</span><span class="t">Say it out loud</span></div>
+        <div class="phrase-list">
+          ${MENU.phrases.map(ph => `<button class="phrase" data-speak="${esc(ph[0])}">
+            <span class="z">${glyphs(ph[0], target)}</span>
+            <span class="p">${esc(ph[1])}</span>
+            <span class="e">${esc(ph[2])}</span>
+          </button>`).join("")}
+        </div>
+      </div>
+      
+    </div></div>`);
+}
+
+/* ============================================================
+   Views
+   ============================================================ */
+
+function ringSvg(pct, done) {
+  const R = 28, C = 2 * Math.PI * R;
+  const arc = C * Math.min(1, Math.max(0, pct));
+  return `<svg viewBox="0 0 66 66"><circle class="trk" cx="33" cy="33" r="${R}"/>
+    ${arc > 0.5 ? `<circle class="val ${done ? "done" : ""}" cx="33" cy="33" r="${R}"
+      stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}"/>` : ""}</svg>`;
+}
+
+/* ---------- the menu, rendered as print ---------- */
+
+/* Every Chinese glyph becomes hoverable. */
+function glyphs(str, target) {
+  return [...str].map(c => {
+    if (!/[\u4e00-\u9fff]/.test(c)) return esc(c);
+    const cls = c === target ? "target" : isKnown(c) ? "known" : "";
+    return `<span class="g ${cls}" data-ch="${esc(c)}">${esc(c)}</span>`;
+  }).join("");
+}
+
+/* How grown-up a menu you can cope with right now. */
+function menuTier() {
+  const k = menuProgress().known;
+  return MENU_TIERS.filter(t => k >= t.at).pop() || MENU_TIERS[0];
+}
+
+function renderMenuCard(target, tall) {
+  const m = MENU, tier = menuTier().n;
+  const row = it => `<div class="mrow">
+      <span class="dish">${glyphs(it[0], target)}</span>
+      <span class="dots"></span>
+      <span class="price">¥${it[3]}</span>
+    </div>${tier >= 2 && it[4] ? `<div class="mdesc">${glyphs(it[4][0], target)}</div>` : ""}`;
+
+  return `<div class="menu-card ${tall ? "tall" : ""}">
+    <div class="menu-top">
+      <span class="t">${glyphs(m.title, target)}</span>
+      <span class="n">${glyphs(m.name, target)}</span>
+      <span class="e">${esc(m.en)}</span>
+    </div>
+    ${tier >= 3 ? `<div class="msec special">
+      <div class="msec-head"><span class="z">${glyphs(m.specials.head, target)}</span><span class="e">${esc(m.specials.en)}</span></div>
+      ${m.specials.items.map(row).join("")}
+      <div class="mnote">${glyphs(m.specials.note[0], target)}</div>
+    </div>` : ""}
+    ${m.sections.map(s => `<div class="msec">
+      <div class="msec-head"><span class="z">${glyphs(s.head, target)}</span><span class="e">${esc(s.en)}</span></div>
+      ${s.items.map(row).join("")}
+    </div>`).join("")}
+  </div>`;
+}
+
+/* ---------- hover cards ---------- */
+
+let tipEl = null;
+function initTips() {
+  tipEl = document.createElement("div");
+  tipEl.className = "tip";
+  document.body.appendChild(tipEl);
+
+  document.addEventListener("mouseover", e => {
+    const g = e.target.closest("[data-ch]");
+    if (!g) return;
+    const ch = CHAR_INDEX[g.dataset.ch];
+    if (!ch) return;
+    const known = isKnown(ch.c);
+    tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
+      <div class="p">${esc(ch.p)}</div>
+      <div class="m">${esc(ch.m)}</div>
+      <div class="s">${known ? "You know this one" : "Not learned yet"} · ${esc(ch.words[0][0])} ${esc(ch.words[0][2])}</div>`;
+    tipEl.classList.add("on");
+    place(g);
+  });
+  document.addEventListener("mouseout", e => {
+    if (e.target.closest("[data-ch]")) tipEl.classList.remove("on");
+  });
+  /* touch has no hover — open the full card instead */
+  document.addEventListener("click", e => {
+    const g = e.target.closest("[data-ch]");
+    if (g && CHAR_INDEX[g.dataset.ch]) openChar(g.dataset.ch);
+  });
+
+  function place(g) {
+    const r = g.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+    let x = r.left + r.width / 2 - t.width / 2;
+    let y = r.top - t.height - 8;
+    if (y < 8) y = r.bottom + 8;
+    x = Math.max(8, Math.min(x, innerWidth - t.width - 8));
+    tipEl.style.left = x + "px";
+    tipEl.style.top = y + "px";
+  }
+}
+
+/* ---------- flashcards ---------- */
+
+const flash = { deck: [], i: 0, flipped: false, title: "" };
+
+function openFlash(deck, title) {
+  if (!deck.length) return;
+  flash.deck = shuffle([...deck]);
+  flash.i = 0; flash.flipped = false; flash.title = title;
+  $("#flash").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderFlash();
+}
+function closeFlash() {
+  $("#flash").classList.remove("on");
+  document.body.style.overflow = "";
+  renderAll();
+}
+function renderFlash() {
+  const c = flash.deck[flash.i], ch = CHAR_INDEX[c];
+  $("#flashTitle").textContent = flash.title;
+  $("#flashCount").textContent = `${flash.i + 1} / ${flash.deck.length}`;
+  $("#flashStage").innerHTML = `
+    <button class="card3d ${flash.flipped ? "flipped" : ""}" id="card3d" aria-label="Flip card">
+      <div class="card3d-inner">
+        <div class="card-face">
+          <span class="big">${esc(ch.c)}</span>
+          <span class="hint">Tap to flip</span>
+        </div>
+        <div class="card-face card-back">
+          <span class="sm">${esc(ch.c)}</span>
+          <span class="pin">${esc(ch.p)} ${toneMark(ch.p)}</span>
+          <span class="mean">${esc(ch.m)}</span>
+          <span class="word">${esc(ch.words[0][0])} · ${esc(ch.words[0][1])}</span>
+          <span class="hint">Tap to flip back</span>
+        </div>
+      </div>
+    </button>`;
+  $("#card3d").onclick = () => {
+    flash.flipped = !flash.flipped;
+    $("#card3d").classList.toggle("flipped", flash.flipped);
+    if (flash.flipped) say(ch.c);
+  };
+  $("#flashPrev").disabled = flash.i === 0;
+  $("#flashNext").textContent = flash.i === flash.deck.length - 1 ? "Done" : "Next";
+}
+function flashStep(d) {
+  if (flash.i + d >= flash.deck.length) return closeFlash();
+  flash.i = Math.max(0, flash.i + d);
+  flash.flipped = false;
+  renderFlash();
+}
+
+/* ============================================================
+   抄写 — guided copying
+
+   Write a set of characters, one per square, strokes checked as you go.
+   The set is today's characters by default, because that's what needs
+   bedding in; a word you already know is the other option.
+   ============================================================ */
+
+const nb = { source: "today", deck: [], pos: 0, chars: [], idx: 0,
+             writers: [], done: [], word: null, round: 1 };
+
+const NB_LINE = 5;                       /* squares shown at a time */
+
+/* Words you could actually write: every character known and drawable. */
+function writableWords() {
+  const out = new Map();
+  knownChars().forEach(c => CHAR_INDEX[c].words.forEach(w => {
+    if (w[0].length >= 2 && [...w[0]].every(z => CHAR_INDEX[z] && isKnown(z) && window.STROKE_DATA[z]))
+      out.set(w[0], w);
+  }));
+  return [...out.values()];
+}
+const todaysWritable = () => learnedToday().filter(c => window.STROKE_DATA[c]);
+const nbCanWrite = () => todaysWritable().length > 0 || writableWords().length > 0;
+
+/* Shuffled, and every character from today — not the first handful in the
+   order you met them, which you'd end up reciting rather than recalling. */
+function nbBuildDeck() {
+  if (nb.source === "word") {
+    const words = writableWords();
+    if (!words.length) return [];
+    const pool = words.filter(w => !nb.word || w[0] !== nb.word[0]);
+    nb.word = one(pool.length ? pool : words);
+    return [...nb.word[0]];
+  }
+  nb.word = null;
+  return shuffle(todaysWritable());
+}
+
+function nbLine() {
+  nb.chars = nb.deck.slice(nb.pos, nb.pos + NB_LINE);
+  nb.done = [];
+  nb.idx = 0;
+}
+
+function nbSetSource(src) {
+  nb.source = todaysWritable().length || src === "word" ? src : "today";
+  nb.deck = nbBuildDeck();
+  if (!nb.deck.length && src === "word") { nb.source = "today"; nb.deck = nbBuildDeck(); }
+  nb.pos = 0; nb.round = 1;
+  nbLine();
+}
+
+function openNotebook() {
+  if (!nbCanWrite()) return;
+  nb.word = null;
+  nbSetSource(todaysWritable().length ? "today" : "word");
+  if (!nb.chars.length) return;
+  $("#notebook").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderNotebook();
+}
+
+function closeNotebook() {
+  padStop();
+  nb.writers = [];
+  $("#notebook").classList.remove("on");
+  document.body.style.overflow = "";
+  renderAll();
+}
+
+/* Finishing here should hand you straight to whatever's still outstanding. */
+function nextExercise() {
+  const next = TODAY_TASKS.find(t => !t.copy && taskAvailable(t) && !didToday(t.id));
+  closeNotebook();
+  if (next) setTimeout(() => startTodayDrill(next), 260);
+}
+
+function renderNotebook() {
+  const byWord = nb.source === "word";
+  const today = todaysWritable();
+  const total = nb.deck.length;
+  const doneSoFar = Math.min(nb.pos + nb.done.filter(Boolean).length, total);
+
+  $("#nbTitle").innerHTML = `<span class="han">抄写</span> Writing practice
+    <span class="dim" style="font-weight:400;font-size:.82rem">${byWord && nb.word
+      ? esc(nb.word[1]) + " · " + esc(nb.word[2])
+      : `today's characters · round ${nb.round}`}</span>`;
+
+  $("#nbStage").innerHTML = `
+    <div class="nb-modes">
+      <button class="filt ${!byWord ? "on" : ""}" data-nbsrc="today" ${today.length ? "" : "disabled"}>今天 Today's</button>
+      <button class="filt ${byWord ? "on" : ""}" data-nbsrc="word" ${writableWords().length ? "" : "disabled"}>词语 A word</button>
+      <button class="filt" id="nbNew">${byWord ? "Another word" : "Shuffle"}</button>
+    </div>
+
+    <div class="nb-progress">
+      <span class="nb-count">${doneSoFar} / ${total}</span>
+      <span class="bar"><i style="width:${total ? (doneSoFar / total * 100).toFixed(1) : 0}%"></i></span>
+    </div>
+
+    <div class="nb-line">
+      ${nb.chars.map((c, i) => `
+        <div class="nb-sq ${i === nb.idx ? "on" : ""} ${nb.done[i] ? "done" : ""}" data-sq="${i}">
+          <div class="tian">${TIAN_SVG}<div class="tian-slot"><div id="nbw${i}"></div></div></div>
+          <span class="nb-label">${esc(c)}</span>
+        </div>`).join("")}
+    </div>
+
+    <div class="nb-tools">
+      <button class="btn btn-ghost btn-sm" id="nbPad">触控 Trackpad <kbd class="opt-n">T</kbd></button>
+    </div>
+
+    <p class="note nb-hint">Write each character in order — the strokes are checked as you go.
+      For a blank page to scribble on, use the <span class="han">练字</span> tab.</p>`;
+
+  nb.writers = [];
+  nb.chars.forEach((c, i) => {
+    const w = makeWriter($("#nbw" + i), c, { width: 150, height: 150,
+      showCharacter: !!nb.done[i], showOutline: i === nb.idx && !nb.done[i] });
+    nb.writers[i] = w;
+    if (w && i === nb.idx && !nb.done[i]) startSquare(i);
+  });
+
+  $$("#nbStage [data-nbsrc]").forEach(b => b.onclick = () => {
+    padStop(); nb.word = null; nbSetSource(b.dataset.nbsrc); renderNotebook();
+  });
+  $("#nbNew").onclick = () => { padStop(); nbSetSource(nb.source); renderNotebook(); };
+  $("#nbPad").onclick = () => nbPad();
+  $$("#nbStage .nb-sq").forEach(sq => sq.addEventListener("click", () => {
+    const i = +sq.dataset.sq;
+    if (i === nb.idx || nb.done[i]) return;
+    nb.idx = i;
+    renderNotebook();
+    nbFollow();
+  }));
+  renderNotebookPadState();
+}
+
+/* Keep the brush on whichever square is live, without disturbing the lock. */
+function nbFollow(retry) {
+  retry = retry || 0;
+  if (!pad.active || nb.idx < 0) return;
+  const sq = $(`#nbStage .nb-sq[data-sq="${nb.idx}"]`);
+  const mount = $("#nbw" + nb.idx);
+  if (!sq || !mount || !mount.querySelector("svg")) {
+    if (retry < 15) setTimeout(() => nbFollow(retry + 1), 60);
+    return;
+  }
+  padRetarget(mount, $(".tian", sq));
+}
+
+function startSquare(i) {
+  const w = nb.writers[i];
+  if (!w) return;
+  w.cancelQuiz();
+  w.quiz({
+    showHintAfterMisses: 2,
+    onComplete: () => {
+      nb.done[i] = true;
+      say(nb.chars[i]);
+      const nextInLine = nb.chars.findIndex((_, k) => !nb.done[k]);
+      if (nextInLine >= 0) {
+        nb.idx = nextInLine;
+        renderNotebook();
+        nbFollow();
+        return;
+      }
+      /* line finished — slide on to the next without breaking stride */
+      nb.pos += NB_LINE;
+      if (nb.pos < nb.deck.length) {
+        nbLine();
+        renderNotebook();
+        nbFollow();
+        return;
+      }
+      nb.idx = -1;
+      markDone("copy");
+      renderNotebook();
+      const more = TODAY_TASKS.filter(t => !t.copy && taskAvailable(t) && !didToday(t.id)).length;
+      $("#nbStage").insertAdjacentHTML("beforeend",
+        `<div class="nb-finish">
+           <div class="verdict ok"><span class="han">写完</span>
+             <span>${byWordLabel()} — round ${nb.round} done, ${nb.deck.length} character${nb.deck.length === 1 ? "" : "s"} written.</span></div>
+           <div class="split">
+             <button class="btn btn-ghost" id="nbAgain">Another round</button>
+             <button class="btn" id="nbDone">${more ? "Next exercise →" : "Done"}</button>
+           </div>
+         </div>`);
+      $("#nbAgain").onclick = () => {
+        nb.round++;
+        nb.deck = nb.source === "word" ? nb.deck : shuffle(todaysWritable());
+        nb.pos = 0; nbLine(); renderNotebook(); nbFollow();
+      };
+      $("#nbDone").onclick = more ? nextExercise : closeNotebook;
+    }
+  });
+}
+
+const byWordLabel = () => nb.word ? esc(nb.word[0]) : "Today's characters";
+
+function nbPad() {
+  if (pad.active) { padStop(); renderNotebookPadState(); return; }
+  const sq = $(`#nbStage .nb-sq[data-sq="${nb.idx}"]`);
+  const mount = $("#nbw" + nb.idx);
+  if (!sq || !mount || !mount.querySelector("svg")) return;
+  /* the lock lives on the stage, so moving between squares never re-requests it */
+  if (padStart($(".tian", sq), mount, renderNotebookPadState, null, $("#nbStage"))) {
+    setTimeout(renderNotebookPadState, 60);
+  }
+}
+
+function renderNotebookPadState() {
+  const b = $("#nbPad");
+  if (!b) return;
+  b.innerHTML = (pad.active ? "触控 Trackpad on" : "触控 Trackpad") + ` <kbd class="opt-n">T</kbd>`;
+  b.classList.toggle("on", pad.active);
+}
+
+/* ============================================================
+   练字 — the exercise book
+
+   A page to spam bad handwriting into. One grid, one sheet of ink that
+   never resets unless you clear it, and an optional faint character to
+   trace like a 字帖 copybook.
+   ============================================================ */
+
+const wp = { built: false, rows: 6, guide: null, pen: 8, cell: 84, strokes: [], cur: null,
+             sort: "day", find: "" };
+
+/* ---------- the practice diary ----------
+   Pages are stored as stroke vectors, not pictures: a densely filled page is
+   about 30 KB of points against 333 KB as a PNG, and vectors redraw crisply
+   at any size and re-ink themselves correctly when the theme changes.
+   IndexedDB, not localStorage, because that has room for years of them. */
+
+function diaryDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("hanzi-quest", 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains("pages")) d.createObjectStore("pages", { keyPath: "id" });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function diaryTx(mode, fn) {
+  return diaryDB().then(d => new Promise((res, rej) => {
+    const tx = d.transaction("pages", mode);
+    const out = fn(tx.objectStore("pages"));
+    tx.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
+    tx.onerror = () => rej(tx.error);
+  })).catch(() => null);
+}
+const diaryPut = page => diaryTx("readwrite", st => st.put(page));
+const diaryDel = id   => diaryTx("readwrite", st => st.delete(id));
+const diaryAll = ()   => diaryTx("readonly",  st => st.getAll()).then(r => r || []);
+
+function renderWrite() {
+  if (!wp.built) buildWritePage(); else wpControls();
+}
+
+function buildWritePage() {
+  $("#viewWrite").innerHTML = `<div class="wrap wp-wrap">
+    <div class="cols">
+      <div class="section">
+        <div class="wp-bar">
+          <div class="wp-title">
+            <span class="eyebrow">练字 · Exercise book</span>
+            <p class="note">A blank page. Nothing is checked here — fill it, scrawl on it, clear it and go again.</p>
+          </div>
+          <div class="wp-tools">
+            <label class="wp-field">Nib
+              <select id="wpPen">
+                <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>
+            <button class="btn btn-ghost btn-sm" id="wpSave">Save page</button>
+            <button class="btn btn-ghost btn-sm" id="wpClear">Clear page</button>
+          </div>
+        </div>
+        <div class="wp-page" id="wpPage">
+          <canvas id="wpGrid"></canvas>
+          <canvas id="wpInk"></canvas>
+        </div>
+        <div class="wp-foot">
+          <button class="btn btn-ghost btn-sm" id="wpMore">Add more rows</button>
+          <span class="note" id="wpCount"></span>
+        </div>
+        <div class="sheet wp-diary" id="wpDiary"></div>
+      </div>
+      <div class="col-side">
+        <div class="sheet wp-picker" id="wpPicker"></div>
+      </div>
+    </div>
+  </div>`;
+  wp.built = true;
+  wpControls();
+  wpSizePage();
+  wpBindInk();
+
+  $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
+  $("#wpClear").onclick = () => wpClear();
+  $("#wpSave").onclick  = () => wpSave();
+  $("#wpPad").onclick   = () => wpPad();
+  $("#wpMore").onclick  = () => { wp.rows += 4; wpSizePage(); };
+  addEventListener("resize", wpSizePage);
+  wpDiary();
+}
+
+function wpControls() {
+  const b = $("#wpPad");
+  if (b) { b.textContent = pad.active ? "触控 Trackpad on" : "触控 Trackpad"; b.classList.toggle("on", pad.active); }
+  renderPicker();
+}
+
+const WP_SORTS = [
+  { id: "day",    label: "By day" },
+  { id: "stage",  label: "By stage" },
+  { id: "pinyin", label: "A–Z" },
+  { id: "weak",   label: "Shakiest" }
+];
+
+function dayLabel(key) {
+  if (key === dayKey()) return "Today";
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  if (key === dayKey(d)) return "Yesterday";
+  const [y, m, dd] = key.split("-").map(Number);
+  return new Date(y, m - 1, dd).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/* A dropdown of hundreds of characters is unusable. Grouped chips are not —
+   by default the days you learned them, which is how you'd think of them. */
+function pickerGroups() {
+  let known = knownChars().filter(c => window.STROKE_DATA[c]);
+  if (wp.find) known = known.filter(c => matches(CHAR_INDEX[c], wp.find));
+  if (wp.sort === "day") {
+    const by = {};
+    known.forEach(c => { const d = (rec(c) && rec(c).first) || "0000-00-00"; (by[d] = by[d] || []).push(c); });
+    return Object.keys(by).sort().reverse().map(d => ({ label: dayLabel(d), chars: by[d] }));
+  }
+  if (wp.sort === "stage") {
+    return STAGES.map(st => ({ label: `${st.icon} ${st.name}`,
+        chars: known.filter(c => CHAR_INDEX[c].stage === st.n) })).filter(g => g.chars.length);
+  }
+  if (wp.sort === "weak") {
+    const score = c => ((rec(c).skills.w || 0) * 10) - rec(c).wrong;
+    return [{ label: "Needs the most work", chars: [...known].sort((a, b) => score(a) - score(b)) }];
+  }
+  return [{ label: "All characters",
+            chars: [...known].sort((a, b) => CHAR_INDEX[a].p.localeCompare(CHAR_INDEX[b].p)) }];
+}
+
+function renderPicker() {
+  const host = $("#wpPicker");
+  if (!host) return;
+  const groups = pickerGroups();
+  const total = groups.reduce((a, g) => a + g.chars.length, 0);
+
+  host.innerHTML = `
+    <div class="pick-head">
+      <span class="eyebrow">Trace a character</span>
+      ${wp.guide ? `<button class="link-btn" id="pickClear">Clear <span class="han">${esc(wp.guide)}</span></button>` : ""}
+    </div>
+    <input class="search pick-find" id="pickFind" type="search" placeholder="Find a character…" value="${esc(wp.find)}">
+    <div class="pick-sorts">
+      ${WP_SORTS.map(o => `<button class="filt ${wp.sort === o.id ? "on" : ""}" data-sort="${o.id}">${esc(o.label)}</button>`).join("")}
+    </div>
+    <div class="pick-scroll">
+      ${total ? groups.map(g => `<div class="pick-group">
+        <div class="pick-label">${esc(g.label)}<span>${g.chars.length}</span></div>
+        <div class="pick-grid">${g.chars.map(c => `<button class="pick ${wp.guide === c ? "on" : ""}"
+          data-pick="${esc(c)}" title="${esc(CHAR_INDEX[c].p)} · ${esc(CHAR_INDEX[c].m)}">${esc(c)}</button>`).join("")}</div>
+      </div>`).join("")
+      : `<p class="note">${wp.find ? "Nothing matches." : "Learn a character and it'll appear here."}</p>`}
+    </div>`;
+
+  $$("#wpPicker [data-sort]").forEach(b => b.onclick = () => { wp.sort = b.dataset.sort; renderPicker(); });
+  $$("#wpPicker [data-pick]").forEach(b => b.onclick = () => {
+    wp.guide = wp.guide === b.dataset.pick ? null : b.dataset.pick;
+    wpDrawGrid(); renderPicker();
+  });
+  $("#pickClear")?.addEventListener("click", () => { wp.guide = null; wpDrawGrid(); renderPicker(); });
+  const f = $("#pickFind");
+  if (f) f.oninput = () => {
+    wp.find = f.value.trim();
+    const pos = f.selectionStart;
+    renderPicker();
+    const n = $("#pickFind"); n.focus(); n.setSelectionRange(pos, pos);
+  };
+}
+
+function wpSizePage() {
+  const page = $("#wpPage");
+  if (!page || !page.isConnected) return;
+  page.style.height = (wp.rows * wp.cell) + "px";
+  wpDrawGrid();
+  wpSizeInk();
+  const cols = Math.max(1, Math.floor(page.clientWidth / wp.cell));
+  const cnt = $("#wpCount");
+  if (cnt) cnt.textContent = `${cols * wp.rows} squares`;
+}
+
+function wpDPR() { return Math.min(2, window.devicePixelRatio || 1); }
+
+function wpDrawGrid() {
+  const c = $("#wpGrid"), page = $("#wpPage");
+  if (!c || !page) return;
+  const dpr = wpDPR(), w = page.clientWidth, h = page.clientHeight;
+  if (!w || !h) return;                    /* hidden tab: sizing now would blank it */
+  c.width = w * dpr; c.height = h * dpr;
+  const ctx = c.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const cs = getComputedStyle(document.documentElement);
+  const rule = cs.getPropertyValue("--rule").trim() || "#CBD5CC";
+  const seal = cs.getPropertyValue("--seal").trim() || "#C0392B";
+  const cell = wp.cell;
+  const cols = Math.max(1, Math.floor(w / cell));
+  const pad0 = (w - cols * cell) / 2;
+
+  for (let r = 0; r < wp.rows; r++) {
+    for (let k = 0; k < cols; k++) {
+      const x = pad0 + k * cell, y = r * cell;
+      ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+      /* 米字格: centre cross and diagonals, in seal red at low opacity */
+      ctx.save();
+      ctx.strokeStyle = seal; ctx.globalAlpha = 0.28; ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(x + cell / 2, y); ctx.lineTo(x + cell / 2, y + cell);
+      ctx.moveTo(x, y + cell / 2); ctx.lineTo(x + cell, y + cell / 2);
+      ctx.moveTo(x, y); ctx.lineTo(x + cell, y + cell);
+      ctx.moveTo(x + cell, y); ctx.lineTo(x, y + cell);
+      ctx.stroke();
+      ctx.restore();
+      if (wp.guide) {
+        ctx.save();
+        ctx.globalAlpha = 0.14;
+        ctx.fillStyle = cs.getPropertyValue("--ink").trim() || "#17211E";
+        ctx.font = `${Math.round(cell * 0.78)}px "Songti SC","STSong","Noto Serif SC",serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(wp.guide, x + cell / 2, y + cell / 2 + 2);
+        ctx.restore();
+      }
+    }
+  }
+}
+
+/* Resizing a canvas wipes it, so carry the ink across. */
+function wpSizeInk() {
+  const c = $("#wpInk"), page = $("#wpPage");
+  if (!c || !page) return;
+  const dpr = wpDPR(), w = page.clientWidth, h = page.clientHeight;
+  /* A resize while this tab is hidden reports zero, and resizing a canvas to
+     zero throws away everything on it — so never act on a zero measurement. */
+  if (!w || !h) return;
+  if (c.width === w * dpr && c.height === h * dpr) return;
+  let keep = null;
+  if (c.width && c.height) {
+    keep = document.createElement("canvas");
+    keep.width = c.width; keep.height = c.height;
+    keep.getContext("2d").drawImage(c, 0, 0);
+  }
+  c.width = w * dpr; c.height = h * dpr;
+  const ctx = c.getContext("2d");
+  ctx.scale(dpr, dpr);
+  wpSetPen();
+  if (keep) ctx.drawImage(keep, 0, 0, keep.width / dpr, keep.height / dpr);
+}
+
+function wpSetPen() {
+  const c = $("#wpInk");
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  ctx.lineWidth = wp.pen; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+}
+
+function wpDraw(type, x, y) {
+  const c = $("#wpInk");
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  if (type === "mousedown") {
+    ctx.beginPath(); ctx.moveTo(x, y);
+    wp.cur = [[Math.round(x), Math.round(y)]];
+    wp.strokes.push(wp.cur);
+  } else if (type === "mousemove" && wp.cur) {
+    ctx.lineTo(x, y); ctx.stroke();
+    wp.cur.push([Math.round(x), Math.round(y)]);
+  } else if (type === "mouseup") {
+    wp.cur = null;
+  }
+}
+
+/* Repaint a page from its vectors — used when loading from the diary. */
+function wpPaint(strokes, ctx, scale) {
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  strokes.forEach(pts => {
+    if (!pts.length) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0] * scale, pts[0][1] * scale);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * scale, pts[i][1] * scale);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function wpClear() {
+  const c = $("#wpInk");
+  if (!c) return;
+  c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  wp.strokes = []; wp.cur = null;
+}
+
+function wpBindInk() {
+  const c = $("#wpInk");
+  let drawing = false;
+  const at = e => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  c.addEventListener("pointerdown", e => {
+    if (pad.active) return;
+    drawing = true; const p = at(e); wpDraw("mousedown", p.x, p.y);
+    c.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  c.addEventListener("pointermove", e => { if (drawing && !pad.active) { const p = at(e); wpDraw("mousemove", p.x, p.y); } });
+  c.addEventListener("pointerup", () => { if (drawing) wpDraw("mouseup"); drawing = false; });
+  c.addEventListener("pointercancel", () => { if (drawing) wpDraw("mouseup"); drawing = false; });
+}
+
+function wpPad() {
+  if (pad.active) { padStop(); wpControls(); return; }
+  if (padStart($("#wpPage"), null, wpControls, wpDraw)) setTimeout(wpControls, 50);
+}
+
+async function wpSave() {
+  if (!wp.strokes.length) return;
+  const page = $("#wpPage");
+  await diaryPut({
+    id: Date.now(), date: dayKey(), w: page.clientWidth, h: page.clientHeight,
+    rows: wp.rows, guide: wp.guide,
+    strokes: wp.strokes.map(p => p.map(([x, y]) => [x, y]))
+  });
+  wpDiary();
+}
+
+async function wpLoad(id) {
+  const all = await diaryAll();
+  const page = all.find(p => p.id === id);
+  if (!page) return;
+  wp.rows = page.rows || wp.rows;
+  wp.guide = page.guide || null;
+  wpControls(); wpSizePage();
+  const c = $("#wpInk"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  wpSetPen();
+  wpPaint(page.strokes, ctx, $("#wpPage").clientWidth / (page.w || 1));
+  wp.strokes = page.strokes.map(p => p.map(([x, y]) => [x, y]));
+  wp.cur = null;
+}
+
+async function wpDiary() {
+  const host = $("#wpDiary");
+  if (!host) return;
+  const all = (await diaryAll()).sort((a, b) => b.id - a.id);
+  if (!all.length) {
+    host.innerHTML = `<p class="note">Save a page and it'll be kept here by date — a diary of your handwriting.</p>`;
+    return;
+  }
+  const bytes = all.reduce((a, p) => a + p.strokes.reduce((n, s2) => n + s2.length, 0), 0) * 8;
+  host.innerHTML = `
+    <div class="pr-head">
+      <span class="eyebrow">Practice diary</span>
+      <span class="dim" style="font-size:.74rem">${all.length} page${all.length === 1 ? "" : "s"} · about ${(bytes / 1024).toFixed(0)} KB</span>
+    </div>
+    <div class="diary-strip">
+      ${all.map(p => `<div class="diary-item">
+        <button class="diary-thumb" data-page="${p.id}" title="Open this page">
+          <canvas width="150" height="${Math.round(150 * (p.h || 1) / (p.w || 1))}"></canvas>
+        </button>
+        <span class="diary-date"><span>${esc(new Date(p.id).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}
+          · ${esc(new Date(p.id).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }))}</span><button class="diary-del" data-del="${p.id}" aria-label="Delete page">✕</button></span>
+      </div>`).join("")}
+    </div>`;
+
+  const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+  $$("#wpDiary .diary-thumb").forEach((b, i) => {
+    const cv = b.querySelector("canvas"), ctx = cv.getContext("2d");
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.6;
+    wpPaint(all[i].strokes, ctx, cv.width / (all[i].w || 1));
+    b.onclick = () => wpLoad(all[i].id);
+  });
+  $$("#wpDiary .diary-del").forEach(b => b.onclick = async e => {
+    e.stopPropagation();
+    await diaryDel(+b.dataset.del);
+    wpDiary();
+  });
+}
+
+/* ---------- the four-week tracker ---------- */
+
+function renderTracker() {
+  const days = 28, cells = [];
+  const start = new Date(); start.setDate(start.getDate() - days + 1);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const k = dayKey(d), r = state.days[k], n = r ? r.new + r.rev : 0;
+    const lvl = n === 0 ? "" : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
+    cells.push(`<span class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></span>`);
+  }
+  const s = liveStreak(), total = daysStudied();
+  $("#tracker").innerHTML = `
+    <span class="tracker-lbl">Last 4 weeks</span>
+    <span class="tracker-row">${cells.join("")}</span>
+    <span class="tracker-note" title="A missed day leaves an empty box — nothing you've done is ever cleared.">
+      ${s ? `🔥 ${s}` : "🔥 0"}<span class="sep">·</span>${total} day${total === 1 ? "" : "s"} studied</span>`;
+}
+
+/* ---------- today ---------- */
+
+function learnedToday() {
+  const k = dayKey();
+  return HQ.filter(ch => state.chars[ch.c] && state.chars[ch.c].first === k).map(ch => ch.c);
+}
+
+/* Today's practice list — everything here is scoped to the characters you
+   picked up today, so it's a short, finishable list rather than a menu. */
+const TODAY_TASKS = [
+  { id: "recall", k: "认读", name: "Recognise them",       sub: "character to meaning", kind: "r", proves: ["r"] },
+  { id: "read",   k: "阅读", name: "Read them in context", sub: "words and sentences",  kind: "d", proves: ["d"] },
+  { id: "say",    k: "发音", name: "Hear them and say them", sub: "sound and tone",     kinds: ["l", "p"], kind: "p", proves: ["p", "l"] },
+  { id: "copy",   k: "抄写", name: "Write them out",       sub: "square by square",     copy: true }
+];
+
+const taskAvailable = task => taskPool(task).length > 0;
+
+function taskPool(task) {
+  const got = learnedToday();
+  if (task.copy) return got.filter(c => window.STROKE_DATA[c]);
+  if (task.kind === "d") return got.filter(c => readingMaterial(CHAR_INDEX[c]));
+  return got;
+}
+
+function startTodayDrill(task) {
+  const pool = taskPool(task);
+  if (!pool.length) return;
+  /* alternate the kinds a task declares, so a pronunciation round actually
+     plays characters aloud rather than only testing you on them silently */
+  const kinds = task.kinds || [task.kind];
+  session.queue = shuffle([...pool]).slice(0, 10)
+    .map((c, i) => ({ t: "drill", c, kind: kinds[i % kinds.length] }));
+  session.idx = 0;
+  session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.combo = session.bestCombo = 0;
+  session.got = {};
+  session.times = []; session.quick = 0;
+  session.questAtStart = menuProgress().known;
+  session.practice = "read";              /* graded gently, like any practice */
+  session.todo = task.id;
+  session.active = true;
+  $("#session").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderStep();
+}
+
+function renderToday() {
+  const t = today();
+  const due = dueCount();
+  const newLeft = Math.max(0, Math.min(state.goalNew, remainingNew()) - t.new);
+  const done = t.new + t.rev;
+  const pct = (done + newLeft + due) ? done / (done + newLeft + due) : 1;
+  const clear = newLeft === 0 && due === 0;
+  const got = learnedToday();
+  const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+
+  const headline = clear ? "You're clear for today." : done > 0 ? "Keep going." : "Ready when you are.";
+  const sub = clear
+    ? (remainingNew() ? "Nothing is due. You can study ahead whenever you like."
+       : "Every character in the library is in your review rotation.")
+    : done > 0
+      ? `${newLeft} new and ${due} review${due === 1 ? "" : "s"} still waiting.`
+      : `${newLeft} new character${newLeft === 1 ? "" : "s"} and ${due} review${due === 1 ? "" : "s"} are queued. About ${Math.max(2, Math.round(newLeft * 1.2 + due * 0.3))} minutes.`;
+
+  const R = 30, C = 2 * Math.PI * R, arc = C * Math.min(1, Math.max(0, clear ? 1 : pct));
+  const ring = `<div class="hero-ring">
+      <svg viewBox="0 0 74 74"><circle class="trk" cx="37" cy="37" r="${R}"/>
+        ${arc > .5 ? `<circle class="val ${clear ? "done" : ""}" cx="37" cy="37" r="${R}" stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}"/>` : ""}</svg>
+      <span class="hero-ring-lbl ${clear ? "is-done" : ""}">${clear ? "✓" : Math.round(pct * 100) + "%"}</span>
+    </div>`;
+
+  /* ---- the invitation ---- */
+  const hero = `<div class="hero">
+    <div class="hero-top">
+      <div class="hero-head">
+        <span class="hero-date">${esc(dateStr)}</span>
+        <h1 class="hero-title">${esc(headline)}</h1>
+        <p class="hero-sub">${esc(sub)}</p>
+      </div>
+      ${ring}
+    </div>
+    <div class="hero-cta">
+      ${newLeft + due > 0
+        ? `<button class="btn btn-seal btn-lg btn-block" id="startBtn">${done > 0 ? "Continue today's session" : "Start today's session"}</button>`
+        : (remainingNew()
+            ? `<button class="btn btn-ghost btn-lg btn-block" id="aheadBtn">Study ahead — ${Math.min(5, remainingNew())} more characters</button>`
+            : "")}
+      <div class="queue">
+        <span class="qpill new">New <b>${newLeft}</b></span>
+        <span class="qpill due">Due <b>${due}</b></span>
+        <span class="qpill">Reviewed today <b>${t.rev}</b></span>
+      </div>
+    </div>
+
+    <div class="learned">
+      <div class="learned-head">
+        <span class="eyebrow">Learned today</span>
+        <span class="dim" style="font-size:.76rem">${got.length} character${got.length === 1 ? "" : "s"}</span>
+      </div>
+      ${got.length
+        ? `<div class="learned-strip">${got.map(c => {
+            const ch = CHAR_INDEX[c];
+            return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
+              <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
+          }).join("")}</div>`
+        : `<div class="learned-empty"><span class="z">空</span>
+            <span>Nothing yet today. Characters you learn will collect here.</span></div>`}
+    </div>
+  </div>`;
+
+  /* ---- both decks, together ---- */
+  const all = knownChars();
+  const oneDeck = (id, chars, title, sub, tone) => `
+    <button class="deck deck-${tone} ${chars.length ? "" : "empty"}" id="${id}" ${chars.length ? "" : "disabled"}>
+      <span class="deck-cards" aria-hidden="true">
+        <span class="dc dc3"></span>
+        <span class="dc dc2"></span>
+        <span class="dc dc1">${chars.length ? esc(chars[chars.length - 1]) : "字"}</span>
+      </span>
+      <span class="deck-text">
+        <b>${esc(title)}</b>
+        <small>${esc(chars.length ? sub : "Learn a character to fill this deck")}</small>
+      </span>
+      <span class="deck-go">→</span>
+    </button>`;
+
+  const decks = `<div class="sheet decks">
+    <span class="eyebrow">Flashcards</span>
+    ${oneDeck("deckToday", got, "Today's characters",
+      `${got.length} card${got.length === 1 ? "" : "s"} — tap to flip`, "today")}
+    ${oneDeck("deckAll", all, "All characters",
+      `${all.length} card${all.length === 1 ? "" : "s"} you've learned`, "all")}
+  </div>`;
+
+  /* ---- the to-do list ---- */
+  const learnDone = got.length > 0 && clear;
+  const rows = [
+    `<div class="todo ${learnDone ? "done" : ""} ${newLeft + due > 0 ? "now" : ""}" data-todo="learn">
+      <span class="todo-tick">${learnDone ? "✓" : ""}</span>
+      <span class="todo-k han">学习</span>
+      <span class="todo-body"><b>Learn today's characters</b><small>${got.length} learned${due ? ` · ${due} to review` : ""}</small></span>
+      <span class="todo-go">${newLeft + due > 0 ? "→" : ""}</span>
+    </div>`,
+    ...TODAY_TASKS.map(task => {
+      const n = taskPool(task).length;
+      const ok = didToday(task.id);
+      const locked = n === 0;
+      return `<button class="todo ${ok ? "done" : ""} ${locked ? "locked" : ""}" data-todo="${task.id}" ${locked ? "disabled" : ""}>
+        <span class="todo-tick">${ok ? "✓" : ""}</span>
+        <span class="todo-k han">${esc(task.k)}</span>
+        <span class="todo-body"><b>${esc(task.name)}</b><small>${locked
+          ? (task.kind === "d" ? "Needs a word or sentence you can read" : "Learn a character first")
+          : esc(task.sub) + ` · ${n}`}</small></span>
+        <span class="todo-go">${locked ? "" : ok ? "again" : "→"}</span>
+      </button>`;
+    })
+  ].join("");
+
+  const todoBlock = `<div class="sheet todo-block">
+    <div class="pr-head">
+      <span class="eyebrow">Today's practice</span>
+      <span class="dim" style="font-size:.76rem">${(() => {
+        const avail = TODAY_TASKS.filter(taskAvailable);
+        if (!avail.length) return "nothing to practise yet";
+        return `${avail.filter(x => didToday(x.id)).length} of ${avail.length} done`;
+      })()}</span>
+    </div>
+    <div class="todo-list">${rows}</div>
+  </div>`;
+
+  /* ---- go deeper: the whole library, weakest first ---- */
+  const deeper = `<div class="sheet practice">
+    <div class="pr-head">
+      <span class="eyebrow">Go deeper</span>
+      <span class="dim" style="font-size:.76rem">Shakiest first · solid = 3 right</span>
+    </div>
+    <div class="pr-grid pr-grid-3">
+      ${Object.entries(PRACTICE).map(([id, cfg]) => {
+        const n = practiceAvailable(id).length;
+        const solid = knownChars().filter(c => (rec(c).skills[cfg.skill] || 0) >= 3).length;
+        const total = Math.max(1, knownChars().length);
+        const p = solid / total;
+        const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, p);
+        return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
+          title="Solid means three correct answers for that character in this mode">
+          <span class="pr-ring">
+            <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
+              ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
+            <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
+          </span>
+          <span class="pr-deep-body">
+            <b>${esc(cfg.name)}</b>
+            <small>${n ? `${solid} of ${total} solid` : "Learn a character first"}</small>
+          </span>
+        </button>`;
+      }).join("")}
+    </div>
+  </div>`;
+
+  /* ---- the side quest ---- */
+  const mp = menuProgress();
+  const pick2 = menuToday();
+  const pch = pick2.c ? CHAR_INDEX[pick2.c] : null;
+  const learnedIt = pick2.c ? isKnown(pick2.c) : true;
+
+  const sideQuest = `<div class="sheet sq">
+    <div class="sq-top">
+      <span class="sq-icon">🍜</span>
+      <span class="sq-name"><b>Read a Menu</b><span class="zh">看菜单</span></span>
+      <span class="sq-frac">${mp.known}/${mp.total}</span>
+    </div>
+    <div class="bar ${mp.done ? "gold" : ""}"><i style="width:${(mp.pct * 100).toFixed(1)}%"></i></div>
+    <p class="note">Menu level ${menuTier().n} of ${MENU_TIERS.length} — ${esc(menuTier().label.toLowerCase())}.${
+      menuTier().n < MENU_TIERS.length
+        ? ` ${MENU_TIERS[menuTier().n].at - mp.known} more character${MENU_TIERS[menuTier().n].at - mp.known === 1 ? "" : "s"} and it gets harder.`
+        : " This is a menu you could be handed in Chengdu."}</p>
+
+    ${pch ? `<div class="sq-target ${learnedIt ? "done" : ""}">
+      <span class="sq-glyph">${esc(pch.c)}</span>
+      <span class="sq-info">
+        <span class="t">${learnedIt ? "Today's menu character — learned" : "Today's menu character"}</span>
+        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}` : "One character a day. Find it on the menu below."}</span>
+        ${learnedIt ? `<span class="p">Next one tomorrow.</span>` : `<span class="p">${esc(pch.words[0][0])} · ${esc(pch.words[0][2])}</span>`}
+      </span>
+    </div>` : `<div class="sq-target done">
+      <span class="sq-glyph">✓</span>
+      <span class="sq-info"><span class="t">Quest complete</span>
+      <span class="m">You can read every character on this menu.</span></span>
+    </div>`}
+
+    <div class="sq-actions">
+      ${!learnedIt ? `<button class="btn btn-block" id="learnMenu">Learn ${esc(pch.c)}</button>` : ""}
+      <button class="btn btn-ghost" id="openMenuFull">See the full menu</button>
+    </div>
+
+    <div class="menu-wrap">${renderMenuCard(learnedIt ? null : pick2.c)}</div>
+
+    <div class="menu-legend">
+      <span><b style="color:var(--ink)">黑</b> you can read</span>
+      <span><b style="color:var(--ink-3)">灰</b> not yet</span>
+      ${!learnedIt ? `<span><b style="color:var(--seal)">红</b> today's character</span>` : ""}
+      <span class="dim">Hover any character for its meaning</span>
+    </div>
+  </div>`;
+
+  $("#viewToday").innerHTML = `<div class="wrap">
+    <div class="cols">
+      <div class="section">${hero}${todoBlock}${deeper}${sideQuest}</div>
+      <div class="col-side">${decks}</div>
+    </div>
+  </div>`;
+
+  $("#startBtn")?.addEventListener("click", startSession);
+  $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
+  $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
+  $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
+  $("#openMenuFull")?.addEventListener("click", () => openQuest("menu"));
+  $("#learnMenu")?.addEventListener("click", () => openMenuLesson(pick2.c));
+  $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
+  $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
+  $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
+    const id = b.dataset.todo;
+    if (id === "learn") return startSession();
+    const task = TODAY_TASKS.find(x => x.id === id);
+    if (!task) return;
+    if (task.copy) { openNotebook(); return; }
+    startTodayDrill(task);
+  });
+}
+
+/* The streak calendar. Each day is a practice square that fills with ink. */
+function calendar(days) {
+  const cells = [];
+  const start = new Date(); start.setDate(start.getDate() - days + 1);
+  for (let i = 0, pad = (start.getDay() + 6) % 7; i < pad; i++) cells.push(`<div class="day blank"></div>`);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const k = dayKey(d), r = state.days[k], n = r ? r.new + r.rev : 0;
+    const lvl = n === 0 ? "" : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
+    cells.push(`<div class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></div>`);
+  }
+  return `<div class="cal">${cells.join("")}</div>`;
+}
+
+/* ---------- library ---------- */
+
+let libFilter = "all", libSearch = "";
+
+function renderLibrary() {
+  const chars = HQ.filter(ch => {
+    const st = strength(ch.c);
+    if (libFilter === "due" && st !== "due") return false;
+    if (libFilter === "learning" && st !== "learning") return false;
+    if (libFilter === "strong" && st !== "strong") return false;
+    if (libFilter === "new" && isKnown(ch.c)) return false;
+    if (libFilter[0] === "s" && libFilter.length === 2 && ch.stage !== +libFilter[1]) return false;
+    if (libSearch && !(matches(ch, libSearch)
+        || ch.words.some(w => w[0].includes(libSearch) || bare(w[2]).includes(bare(libSearch))))) return false;
+    return true;
+  });
+
+  const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"],
+    ...STAGES.map(s => ["s" + s.n, `${s.icon} ${s.name}`])];
+
+  $("#viewLibrary").innerHTML = `<div class="wrap">
+    <div class="today-head">
+      <h1>The library</h1>
+      <p class="note">${HQ.length} characters, taught in the order that makes each one easier than the last.</p>
+    </div>
+    <input class="search" id="libQ" type="search" placeholder="Search a character, pinyin or meaning…" value="${esc(libSearch)}">
+    <div class="filters">${filters.map(([k, l]) =>
+      `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}</div>
+    ${chars.length ? `<div class="grid-chars">${chars.map(ch =>
+      `<button class="gc ${strength(ch.c)}" data-c="${esc(ch.c)}">
+        <span class="z">${esc(ch.c)}</span><span class="p">${esc(ch.p)}</span></button>`).join("")}</div>`
+      : `<div class="empty"><span class="z">空</span><p>Nothing here yet. Try another filter.</p></div>`}
+    <div class="legend">
+      <span><i style="background:var(--seal)"></i>Due now</span>
+      <span><i style="background:var(--gold)"></i>Learning</span>
+      <span><i style="background:var(--jade)"></i>Strong</span>
+      <span><i style="background:var(--rule)"></i>Not started</span>
+    </div>
+  </div>`;
+
+  $$("#viewLibrary .filt").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $$("#viewLibrary .gc").forEach(b => b.onclick = () => openChar(b.dataset.c));
+  const qEl = $("#libQ");
+  qEl.oninput = () => {
+    libSearch = qEl.value.trim();
+    const pos = qEl.selectionStart;
+    renderLibrary();
+    const n = $("#libQ"); n.focus(); n.setSelectionRange(pos, pos);
+  };
+}
+
+/* ---------- radicals ---------- */
+
+function renderRadicals() {
+  const documented = Object.keys(RADICALS)
+    .filter(k => FAMILIES[k] && FAMILIES[k].length)
+    .sort((a, b) => FAMILIES[b].length - FAMILIES[a].length);
+  const others = Object.entries(FAMILIES)
+    .filter(([k, v]) => v.length > 1 && !RADICALS[k])
+    .sort((a, b) => b[1].length - a[1].length);
+
+  $("#viewRadicals").innerHTML = `<div class="wrap">
+    <div class="today-head">
+      <h1>Characters come in families</h1>
+      <p class="note">Chinese isn't a few thousand unrelated symbols. Almost every character is built from a small set of parts called radicals: one part hints at the meaning, another at the sound. Learn a radical and you get a discount on everything containing it.</p>
+    </div>
+    <div class="rad-grid">
+      ${documented.map(k => {
+        const r = RADICALS[k], kids = FAMILIES[k];
+        const known = kids.filter(isKnown).length;
+        return `<div class="sheet rad">
+          <div class="rad-top">
+            <span class="rad-glyph">${esc(r.form)}</span>
+            <span class="rad-id">
+              <b>${esc(r.name)}</b>
+              <small>${esc(r.pin)} · ${r.strokes} strokes${r.variants ? ` · written ${esc(r.variants)}` : ""}</small>
+            </span>
+            <span class="quest-frac">${known}/${kids.length}</span>
+          </div>
+          <p class="rad-does">${esc(r.does)}</p>
+          <div class="rad-kids">${kids.map(c => `<button class="rad-kid ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
+            <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    ${others.length ? `<div class="sec-head" style="margin:1.4rem 0 .7rem">
+      <h2>Other shared parts</h2>
+      <span class="dim" style="font-size:.78rem">${others.length} groups</span>
+    </div>
+    <div class="section">
+      ${others.map(([root, kids]) => {
+        const [p, m] = gloss(root);
+        return `<div class="sheet tree">
+          <div class="tree-root">
+            <span class="z han">${esc(root)}</span>
+            <span class="m"><b>${esc(p)}</b><small>${esc(m)}</small></span>
+            <span class="n">${kids.filter(isKnown).length}/${kids.length}</span>
+          </div>
+          <div class="branches">${kids.map(c => `<button class="branch ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
+            <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
+        </div>`;
+      }).join("")}
+    </div>` : ""}
+  </div>`;
+
+  $$("#viewRadicals [data-c]").forEach(b => b.onclick = () => openChar(b.dataset.c));
+}
+
+/* ---------- record ---------- */
+
+function renderRecord() {
+  const known = Object.keys(state.chars).length;
+  const strong = Object.keys(state.chars).filter(c => strength(c) === "strong").length;
+  const totalCards = Object.values(state.days).reduce((a, d) => a + d.new + d.rev, 0);
+  const activeDays = Object.keys(state.days).length;
+  const skills = [["认","Recognise","r"],["音","Pronounce","p"],["写","Recall the form","c"],["笔","Write from memory","w"]];
+  const cur = currentStage();
+
+  $("#viewRecord").innerHTML = `<div class="wrap">
+    <div class="today-head">
+      <h1>Your record</h1>
+      <p class="note">Recognising a character and being able to write it are different skills. Here's where each stands.</p>
+    </div>
+    <div class="cols">
+      <div class="section">
+        <div class="stats">
+          <div class="sheet stat"><b>${known}</b><small>Characters</small></div>
+          <div class="sheet stat"><b>${liveStreak()}</b><small>Day streak</small></div>
+          <div class="sheet stat"><b>${totalCards}</b><small>Cards done</small></div>
+        </div>
+
+        <div class="sheet" style="padding:1rem">
+          <div class="stack" style="gap:.6rem">
+            <span class="eyebrow">Every day since you started</span>
+            <div class="cal-wrap">${calendar(182)}</div>
+            <div class="cal-legend">Less <span class="day"></span><span class="day f1"></span><span class="day f2"></span><span class="day f3"></span><span class="day f4"></span> More</div>
+            <p class="note">${activeDays} day${activeDays === 1 ? "" : "s"} studied · best run ${state.streak.best}</p>
+          </div>
+        </div>
+
+        <div class="sec-head" style="margin-top:.4rem"><h2>The climb</h2>
+          <span class="dim" style="font-size:.78rem">${known} of ${HQ.length} built</span></div>
+        <div class="sheet" style="padding:.3rem 1rem">
+          <div class="ladder">
+            ${STAGES.map(s => {
+              const p = stageProgress(s.n);
+              return `<div class="rung ${p.known > 0 ? "reached" : ""} ${s.n === cur.n ? "current" : ""}">
+                <span class="rung-icon">${esc(s.icon)}</span>
+                <span class="rung-body">
+                  <b>${esc(s.name)} <span class="han dim" style="font-weight:400;font-size:.78rem">${esc(s.zh)}</span>${s.core ? "" : ` <span class="dim" style="font-weight:400;font-size:.72rem">· topic pack</span>`}</b>
+                  <small>${esc(s.blurb)}</small>
+                </span>
+                <span class="rung-n">${p.known}/${p.total}</span>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>
+
+        ${(() => {
+          const stuck = leeches();
+          if (!stuck.length) return "";
+          return `<div class="sheet" style="padding:1rem">
+            <div class="stack" style="gap:.6rem">
+              <span class="eyebrow">Sticking points</span>
+              <p class="note">You've missed these more often than you've got them. Repeating the same drill won't shift them —
+                open one and look at where it comes from and what it's built out of.</p>
+              <div class="leech-list">${stuck.slice(0, 18).map(c => `<button class="leech" data-c="${esc(c)}">
+                <span class="z">${esc(c)}</span><span class="n">${rec(c).wrong}</span> missed</button>`).join("")}</div>
+            </div>
+          </div>`;
+        })()}
+
+        <div class="section" style="gap:.5rem">
+          ${LOCKED_STAGES.map(s => `<div class="sheet locked-card">
+            <span class="li">${esc(s.icon)}</span>
+            <span class="lb">
+              <b>${esc(s.name)} <span class="han">${esc(s.zh)}</span> <span class="lk">🔒 ${s.target} characters</span></b>
+              <small>${esc(s.blurb)}</small>
+            </span>
+          </div>`).join("")}
+          <p class="note">The library stops at ${HQ.length} characters for now. These modules are the road out to 1,000 — the point where roughly nine in ten characters on a page are ones you know.</p>
+        </div>
+      </div>
+
+      <div class="col-side">
+        <div class="sheet" style="padding:1rem">
+          <div class="stack" style="gap:.8rem">
+            <span class="eyebrow">Skills</span>
+            <div class="skills">
+              ${skills.map(([k, label, key]) => {
+                const pct = skillPct(key);
+                return `<div class="skill">
+                  <span class="k">${esc(k)}</span>
+                  <span style="display:flex;flex-direction:column;gap:.25rem">
+                    <span style="font-size:.8rem">${esc(label)}</span>
+                    <span class="bar"><i style="width:${(pct * 100).toFixed(1)}%"></i></span>
+                  </span>
+                  <span class="v">${Math.round(pct * 100)}%</span>
+                </div>`;
+              }).join("")}
+            </div>
+            <p class="note">A character counts toward a skill after three clean answers in that mode. Strong: ${strong} of ${known}.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>`;
+
+  $$("#viewRecord .leech").forEach(b => b.onclick = () => openChar(b.dataset.c));
+}
+
+/* ============================================================
+   设置 — settings, in a sheet of their own
+
+   These used to be buried at the bottom of the Record tab, where nobody
+   would think to look for them. The gear in the top bar reaches them from
+   anywhere instead.
+   ============================================================ */
+
+function openSettings() {
+  openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
+    <div class="sheet" style="padding:1rem">
+      <div class="stack" style="gap:.2rem">
+        <span class="eyebrow" style="margin-bottom:.5rem">Studying</span>
+        <div class="settings-row">
+          <label>New characters a day<small>More isn't better — reviews compound.</small></label>
+          <span class="stepper" id="goalStep">
+            <button data-d="-1" aria-label="Fewer">−</button>
+            <span>${state.goalNew}</span>
+            <button data-d="1" aria-label="More">+</button>
+          </span>
+        </div>
+        <div class="settings-row">
+          <label>Question timer<small>A bar that drains while you think. Running out costs nothing.</small></label>
+          <button class="btn btn-ghost btn-sm" id="timerTgl">${state.timer ? "On" : "Off"}</button>
+        </div>
+        <div class="settings-row">
+          <label>Include writing drills<small>Trace from memory once a character is solid.</small></label>
+          <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet" style="padding:1rem">
+      <div class="stack" style="gap:.2rem">
+        <span class="eyebrow" style="margin-bottom:.5rem">Sound</span>
+        <div class="settings-row">
+          <label>Speak characters aloud<small>Characters play a recorded clip.</small></label>
+          <button class="btn btn-ghost btn-sm" id="audioTgl">${state.audio ? "On" : "Off"}</button>
+        </div>
+        <div class="settings-row stacked">
+          <label>Voice for words and sentences
+            <small>Longer phrases use your system voice — and some voices are listed but silent, so test a few.</small></label>
+          <span class="voice-pick">
+            <select id="voiceSel">${zhVoices.length
+              ? zhVoices.map((v, i) => `<option value="${esc(v.name)}" ${i === voiceIdx ? "selected" : ""}>${esc(v.name)}</option>`).join("")
+              : `<option value="">no Chinese voice found</option>`}</select>
+            <button class="btn btn-ghost btn-sm" id="voiceTest" ${zhVoices.length ? "" : "disabled"}>Test</button>
+          </span>
+        </div>
+        <div class="settings-row" id="voiceMsgRow" hidden>
+          <small class="note" id="voiceMsg"></small>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet" style="padding:1rem">
+      <div class="stack" style="gap:.2rem">
+        <span class="eyebrow" style="margin-bottom:.5rem">Your data</span>
+        <div class="settings-row">
+          <label>Back up your progress<small>Export or restore everything, diary included.</small></label>
+          <button class="btn btn-ghost btn-sm" id="backupBtn">Backup</button>
+        </div>
+        <div class="settings-row">
+          <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
+          <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
+        </div>
+        <div class="settings-row">
+          <label>Reset everything<small>Clears your streak and all progress.</small></label>
+          <button class="btn btn-ghost btn-sm" id="resetBtn">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div></div>`);
+
+  $$("#goalStep button").forEach(b => b.onclick = () => {
+    state.goalNew = Math.max(1, Math.min(30, state.goalNew + (+b.dataset.d)));
+    save(); openSettings();
+  });
+  $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
+  $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $("#audioTgl").onclick = () => { state.audio = !state.audio; save(); openSettings(); };
+  $("#backupBtn").onclick = openBackup;
+  $("#tourBtn").onclick = () => { closeSheet(); setTimeout(() => startTour(true), 250); };
+  $("#resetBtn").onclick = () => {
+    if (!confirm("Clear your streak and all character progress? This can't be undone.")) return;
+    Object.assign(state, blank()); save(); closeSheet();
+  };
+  $("#voiceSel")?.addEventListener("change", e => {
+    const i = zhVoices.findIndex(v => v.name === e.target.value);
+    if (i < 0) return;
+    voiceIdx = i; zhVoice = zhVoices[i];
+    state.voice = zhVoice.name; save();
+  });
+  $("#voiceTest")?.addEventListener("click", () => {
+    const row = $("#voiceMsgRow"), msg = $("#voiceMsg");
+    if (!zhVoice) return;
+    const v = zhVoice, name = v.name;      /* pin it, so the verdict names the right voice */
+    row.hidden = false;
+    msg.textContent = `Testing ${name}…`;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance("你好");
+      u.lang = "zh-CN"; u.voice = v; u.rate = 0.8;
+      let began = false;
+      u.onstart = () => { began = true; msg.textContent = `${name} is speaking — if you hear nothing, check your volume and output device.`; };
+      u.onerror = e => { msg.textContent = `${name} failed: ${e.error}. Try another.`; };
+      liveUtterance = u;
+      speechSynthesis.speak(u);
+      setTimeout(() => {
+        if (!began) msg.textContent = `${name} never started — your system lists it but it has no voice data. Pick a different one.`;
+      }, 1200);
+    } catch (e) { msg.textContent = "This browser refused to speak at all."; }
+  });
+}
+
+/* ============================================================
+   Backup
+
+   Progress lives in localStorage and the diary in IndexedDB. Clear your site
+   data and months are gone, so this writes both out as one JSON file. The
+   artifact sandbox blocks downloads a page starts for itself, so we ask the
+   host to save it where that's available, and fall back to plain copyable
+   text where it isn't.
+   ============================================================ */
+
+async function buildBackup() {
+  return {
+    app: "hanzi-quest", version: 1, exported: new Date().toISOString(),
+    characters: HQ.length,
+    progress: JSON.parse(JSON.stringify(state)),
+    diary: await diaryAll()
+  };
+}
+
+async function doExport() {
+  const data = await buildBackup();
+  const text = JSON.stringify(data);
+  const name = `hanzi-quest-${dayKey()}.json`;
+  const saver = window.claude?.use ? await claude.use("downloads").catch(() => null) : null;
+  if (saver) {
+    try { await saver.save({ filename: name, data: text }); return { saved: true, name }; }
+    catch { /* declined or unavailable — fall through to copyable text */ }
+  }
+  return { saved: false, name, text };
+}
+
+function openBackup() {
+  openSheet(`<span class="han">备份</span> Backup`, `<div class="wrap"><div class="section">
+    <div class="today-head">
+      <h1>Back up your progress</h1>
+      <p class="note">${Object.keys(state.chars).length} characters, ${daysStudied()} day${daysStudied() === 1 ? "" : "s"} studied,
+        plus every page in your practice diary. Keep the file somewhere safe — clearing your browser data wipes all of it otherwise.</p>
+    </div>
+    <div class="sheet block">
+      <div class="block-head"><span class="k">导出</span><span class="t">Save a copy</span></div>
+      <button class="btn btn-block" id="bkExport">Export everything</button>
+      <div id="bkOut"></div>
+    </div>
+    <div class="sheet block">
+      <div class="block-head"><span class="k">导入</span><span class="t">Restore from a backup</span></div>
+      <p class="note">This replaces everything currently on this device.</p>
+      <input type="file" id="bkFile" accept="application/json,.json" class="search">
+      <textarea id="bkPaste" class="search" rows="3" placeholder="…or paste the contents of a backup file here"></textarea>
+      <button class="btn btn-ghost btn-block" id="bkImport">Restore</button>
+      <div id="bkMsg" class="note"></div>
+    </div>
+  </div></div>`);
+
+  $("#bkExport").onclick = async () => {
+    const r = await doExport();
+    $("#bkOut").innerHTML = r.saved
+      ? `<p class="note">Saved as <b>${esc(r.name)}</b>.</p>`
+      : `<p class="note">Your browser wouldn't let the page save a file, so here it is to copy — select all and paste it somewhere safe.</p>
+         <textarea class="search" rows="5" id="bkText"></textarea>`;
+    const ta = $("#bkText");
+    if (ta) { ta.value = r.text; ta.focus(); ta.select(); }
+  };
+
+  const restore = async raw => {
+    const msg = $("#bkMsg");
+    try {
+      const data = JSON.parse(raw);
+      if (data.app !== "hanzi-quest" || !data.progress) {
+        const e = new Error("wrong app");
+        e.wanted = "That doesn't look like a Hanzi Quest backup.";
+        throw e;
+      }
+      if (!confirm("Replace everything on this device with this backup?")) return;
+      Object.assign(state, blank(), data.progress);
+      save();
+      if (Array.isArray(data.diary)) for (const page of data.diary) await diaryPut(page);
+      msg.textContent = "Restored. Reloading…";
+      setTimeout(() => location.reload(), 600);
+    } catch (err) {
+      msg.textContent = err.wanted || "That isn't a readable backup file — it should be the JSON this page exported.";
+    }
+  };
+  $("#bkFile").onchange = e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => restore(String(fr.result));
+    fr.readAsText(f);
+  };
+  $("#bkImport").onclick = () => {
+    const v = $("#bkPaste").value.trim();
+    if (v) restore(v); else $("#bkMsg").textContent = "Choose a file or paste a backup first.";
+  };
+}
+
+/* ============================================================
+   Keyboard
+
+   This is a daily habit done at a laptop; reaching for the mouse on every
+   card is the main friction in a session. 1-4 answers, space or enter moves
+   on. Space is off limits while the trackpad has it for inking.
+   ============================================================ */
+
+function onKey(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && t.matches && t.matches("input, textarea, select")) return;
+
+  /* the notebook: T for the trackpad */
+  if ($("#notebook").classList.contains("on")) {
+    if (e.key.toLowerCase() === "t") { e.preventDefault(); nbPad(); }
+    return;
+  }
+
+  /* flashcards */
+  if ($("#flash").classList.contains("on")) {
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); $("#card3d")?.click(); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); flashStep(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); flashStep(-1); }
+    return;
+  }
+
+  if (!session.active || pad.active) return;   /* the pad owns space */
+
+  if (e.key === " " || e.key === "Enter") {
+    const go2 = $("#cont") || $("#gotIt") || $("#fin") || $("#again") || $("#skipW");
+    if (go2) { e.preventDefault(); go2.click(); }
+    return;
+  }
+  if (/^[1-9]$/.test(e.key)) {
+    const n = +e.key - 1;
+    const opts = $$("#sesInner .opt:not(:disabled)");
+    if (opts[n]) { e.preventDefault(); opts[n].click(); return; }
+    const tiles = $$("#sesInner .tile:not(.used)");
+    if (tiles[n]) { e.preventDefault(); tiles[n].click(); }
+    return;
+  }
+  if (e.key.toLowerCase() === "r") $("#earBtn")?.click();
+  if (e.key.toLowerCase() === "t") { e.preventDefault(); $("#padW")?.click(); }
+}
+
+/* ============================================================
+   A short walk round, the first time only
+   ============================================================ */
+
+const TOUR = [
+  { k: "汉", title: "Welcome",
+    body: `302 characters, taught in an order where each one makes the next easier —
+           you'll meet 马 just before 妈 and 吗, so by then you already own both halves.
+           Nothing here needs to be finished in a sitting.` },
+  { k: "今天", title: "Today is a short list",
+    body: `Learn the day's characters, then tick off practising them: recognising,
+           reading, saying and writing. Everything is scoped to what you learned today,
+           so the list is always finishable.` },
+  { k: "看菜单", title: "A side quest with an ending",
+    body: `One character a day from a real restaurant menu. The ones you know are inked
+           in; the rest stay grey. Learn them all and you can read the whole thing —
+           hover any character for its meaning while you get there.` },
+  { k: "写字", title: "Writing, two ways",
+    body: `Trace characters stroke by stroke with a mouse, a finger or the trackpad
+           (press <kbd class="opt-n">T</kbd>). Or open the 练字 tab for a blank exercise
+           book to fill however you like.` },
+  { k: "记录", title: "It's all kept here",
+    body: `Progress lives in this browser, so it's waiting when you come back. The gear
+           in the corner holds settings and a backup — worth exporting once you've got
+           a streak worth keeping.` }
+];
+
+let tourStep = 0;
+
+function startTour(force) {
+  if (!force && state.tour) return;
+  tourStep = 0;
+  $("#tour").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderTour();
+}
+
+function endTour() {
+  state.tour = true; save();
+  $("#tour").classList.remove("on");
+  document.body.style.overflow = "";
+}
+
+function renderTour() {
+  const t = TOUR[tourStep], last = tourStep === TOUR.length - 1;
+  $("#tourBody").innerHTML = `
+    <span class="tour-k han">${esc(t.k)}</span>
+    <h2>${esc(t.title)}</h2>
+    <p>${t.body}</p>
+    <div class="tour-dots">${TOUR.map((_, i) =>
+      `<span class="${i === tourStep ? "on" : ""}"></span>`).join("")}</div>`;
+  $("#tourBack").hidden = tourStep === 0;
+  $("#tourNext").textContent = last ? "Start learning" : "Next";
+}
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+
+let view = "today";
+const RENDER = { today: renderToday, library: renderLibrary, write: renderWrite,
+                 radicals: renderRadicals, record: renderRecord };
+
+function go(v) {
+  view = v;
+  const id = "view" + v[0].toUpperCase() + v.slice(1);
+  $$(".view").forEach(el => el.classList.toggle("on", el.id === id));
+  $$("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === v));
+  RENDER[v]();
+  window.scrollTo(0, 0);
+}
+function renderAll() {
+  /* renderWrite() deliberately no-ops once built — rebuilding it would wipe
+     whatever is on the page. */
+  RENDER[view]();
+  renderStreakChip();
+  renderTracker();
+}
+
+function renderStreakChip() {
+  const s = liveStreak();
+  $$(".streak-chip").forEach(chip => {
+    chip.className = "chip chip-streak streak-chip" + (s ? "" : " cold");
+    chip.innerHTML = `🔥 ${s}`;
+    chip.title = s ? `${s} day streak · best ${state.streak.best}` : "No streak yet — study today to start one";
+  });
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("hq-theme");
+  if (saved) document.documentElement.dataset.theme = saved;
+  $$(".theme-btn").forEach(b => b.onclick = () => {
+    const cur = document.documentElement.dataset.theme
+      || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
+    try { localStorage.setItem("hq-theme", document.documentElement.dataset.theme); } catch {}
+    renderAll();
+    if (wp.built) { wpDrawGrid(); wpSetPen(); }
+  });
+}
+
+function boot() {
+  load();
+  initTheme();
+  $$("[data-nav]").forEach(b => b.onclick = () => go(b.dataset.nav));
+  $("#sesClose").onclick = () => {
+    if (session.idx > 0 && session.idx < session.queue.length
+        && !confirm("Leave this session? Answers so far are saved.")) return;
+    endSession();
+  };
+  $("#svClose").onclick = closeSheet;
+  $("#muted").onclick = () => {
+    /* this tap is the gesture the engine was waiting for */
+    state.audio = true; speechBlocked = false; speechPrimed = false; audioUnlocked = false;
+    unlockAudio(); primeSpeech(); save(); renderMuted();
+    if (lastSaid) setTimeout(() => say(lastSaid, true), 80);
+  };
+  document.addEventListener("keydown", onKey);
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
+    else if ($("#flash").classList.contains("on")) closeFlash();
+    else if ($("#charView").classList.contains("on")) closeSheet();
+    else if (session.active) $("#sesClose").click();
+  });
+  initTips();
+  $("#flashClose").onclick = closeFlash;
+  $("#nbClose").onclick = closeNotebook;
+  /* #nbPad lives inside the notebook stage now, and is bound when it renders */
+  $("#flashPrev").onclick = () => flashStep(-1);
+  $("#flashNext").onclick = () => flashStep(1);
+  $$(".settings-btn").forEach(b => b.onclick = openSettings);
+  $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };
+  $("#tourBack").onclick = () => { if (tourStep > 0) { tourStep--; renderTour(); } };
+  $("#tourSkip").onclick = endTour;
+  go("today");
+  renderTracker();
+  startTour();
+  connectRemote().then(changed => { if (changed) renderAll(); });
+}
+
+document.addEventListener("DOMContentLoaded", boot);

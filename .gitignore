@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Cached upstream data for the check tools (tens of MB, re-fetched on demand)
+tools/.mmah-dictionary.txt
+tools/.mmah-graphics.txt
+
+# Generated speech clips — 2.1 MB of macOS TTS output.
+# Left out of the repo deliberately: redistributing Apple's synthesised voice
+# is a grey area, and git history is forever. Anyone cloning can regenerate it
+# in a minute with `node tools/make-audio.mjs`. Delete this line if you'd
+# rather have it committed.
+js/audio.js

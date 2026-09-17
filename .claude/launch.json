@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hanzi-quest",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/server.mjs"],
+      "port": 8731
+    }
+  ]
+}

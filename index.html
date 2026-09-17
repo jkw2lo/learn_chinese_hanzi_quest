@@ -1,0 +1,113 @@
+<title>Hanzi Quest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/app.css">
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-seal" aria-hidden="true">汉</span>
+      <span class="brand-name">Hanzi Quest</span>
+    </div>
+    <nav class="top-nav" aria-label="Sections">
+      <button data-nav="today" class="on"><span class="nz">今天</span> Today</button>
+      <button data-nav="library"><span class="nz">字库</span> Library</button>
+      <button data-nav="write"><span class="nz">练字</span> Write</button>
+      <button data-nav="radicals"><span class="nz">部首</span> Radicals</button>
+      <button data-nav="record"><span class="nz">记录</span> Record</button>
+    </nav>
+    <span class="chip chip-streak cold streak-chip">🔥 0</span>
+    <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">⚙</button>
+    <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">◐</button>
+  </header>
+
+  <div class="tracker" id="tracker"></div>
+
+  <main>
+    <section class="view on" id="viewToday"></section>
+    <section class="view" id="viewLibrary"></section>
+    <section class="view" id="viewWrite"></section>
+    <section class="view" id="viewRadicals"></section>
+    <section class="view" id="viewRecord"></section>
+  </main>
+
+  <nav class="nav" aria-label="Sections">
+    <button data-nav="today" class="on"><span class="nz">今天</span><span class="nl">Today</span></button>
+    <button data-nav="library"><span class="nz">字库</span><span class="nl">Library</span></button>
+    <button data-nav="write"><span class="nz">练字</span><span class="nl">Write</span></button>
+    <button data-nav="radicals"><span class="nz">部首</span><span class="nl">Radicals</span></button>
+    <button data-nav="record"><span class="nz">记录</span><span class="nl">Record</span></button>
+  </nav>
+</div>
+
+<!-- study session -->
+<div class="session" id="session" role="dialog" aria-label="Study session">
+  <div class="ses-bar">
+    <button class="icon-btn" id="sesClose" aria-label="Close session">✕</button>
+    <span class="ses-prog"><i id="sesProg"></i></span>
+    <button class="muted-chip" id="muted" hidden title="Turn sound back on">🔇 sound off</button>
+    <span class="combo zero" id="combo"><span class="han">连对</span>0</span>
+    <span class="ses-count" id="sesCount"></span>
+  </div>
+  <div class="qtimer" id="qtimer" hidden><i></i></div>
+  <div class="ses-body" id="sesBody">
+    <div class="ses-inner" id="sesInner"></div>
+  </div>
+  <div class="ses-foot"><div class="ses-foot-inner" id="sesFoot"></div></div>
+</div>
+
+<!-- character / menu detail -->
+<div class="sheetview" id="charView" role="dialog" aria-label="Detail">
+  <div class="sv-bar">
+    <button class="icon-btn" id="svClose" aria-label="Back">←</button>
+    <span class="sv-title" id="svTitle"></span>
+  </div>
+  <div class="sv-body" id="svBody"></div>
+</div>
+
+<!-- flashcards -->
+<div class="flash" id="flash" role="dialog" aria-label="Flashcards">
+  <div class="flash-bar">
+    <button class="icon-btn" id="flashClose" aria-label="Close flashcards">✕</button>
+    <span class="sv-title" id="flashTitle"></span>
+    <span class="flash-count" id="flashCount"></span>
+  </div>
+  <div class="flash-stage" id="flashStage"></div>
+  <div class="flash-foot">
+    <div class="flash-foot-inner">
+      <button class="btn btn-ghost" id="flashPrev">Back</button>
+      <button class="btn" id="flashNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- first-run tour -->
+<div class="tour" id="tour" role="dialog" aria-label="Welcome">
+  <div class="tour-card">
+    <div class="tour-body" id="tourBody"></div>
+    <div class="tour-foot">
+      <button class="btn btn-ghost btn-sm" id="tourSkip">Skip</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" id="tourBack" hidden>Back</button>
+      <button class="btn btn-sm" id="tourNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- notebook -->
+<div class="flash" id="notebook" role="dialog" aria-label="Notebook">
+  <div class="flash-bar">
+    <button class="icon-btn" id="nbClose" aria-label="Close notebook">✕</button>
+    <span class="sv-title" id="nbTitle"></span>
+  </div>
+  <div class="flash-stage nb-stage" id="nbStage"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/strokes.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/srs.js"></script>
+<script src="js/app.js"></script>
