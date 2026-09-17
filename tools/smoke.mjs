@@ -43,6 +43,24 @@ const ok = (label, cond, detail = '') => {
 console.log('\ncontract');
 CONTRACT.forEach(n => ok(n, api[n] !== undefined));
 
+console.log('\nversion');
+{
+  /* The version is only useful if it can be trusted: a number on screen that
+     doesn't match the query strings would tell you the cache had cleared when
+     it hadn't. */
+  const html = read('index.html');
+  const declared = (html.match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+  ok('index.html declares a version', /^\d+\.\d+\.\d+$/.test(declared || ''), String(declared));
+  ok('and a date', /^\d{4}-\d{2}-\d{2}$/.test((html.match(/APP_DATE = "([^"]+)"/) || [])[1] || ''));
+  const stamped = [...html.matchAll(/\?v=([^"']+)/g)].map(m => m[1]);
+  ok('every local asset is stamped', stamped.length >= 6, stamped.length + ' stamped');
+  ok('and all stamps match the declared version',
+     stamped.every(v => v === declared), [...new Set(stamped.filter(v => v !== declared))].join(' '));
+  /* a path with no query string at all is one the bump script will miss */
+  const bare = [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"?]+)"/g)].map(m => m[1]);
+  ok('no local asset is left unstamped', !bare.length, bare.join(' '));
+}
+
 console.log('\ncurriculum');
 const { HQ, CHAR_INDEX, MENU, MENU_CHARS, STAGES } = api;
 ok(`${HQ.length} characters`, HQ.length > 0);

@@ -621,12 +621,46 @@ resets. The tracker also shows total days studied, which never resets.
     tools/make-audio.mjs      regenerates js/audio.js (needs macOS say/afconvert)
     tools/server.mjs          dev server (UTF-8; `node tools/server.mjs`)
     tools/smoke.mjs           run this after touching js/ — see below
+    tools/version.mjs         bump the version and re-stamp every asset URL
+
+## Versions, and why a push can be invisible
+
+A browser that has cached `js/app.js` keeps serving it until something about the
+URL changes. Nothing about a git push changes that URL, so the live site and the
+site you see can disagree for hours — which happened twice while building this,
+once with the save icon and once with the placement quiz's number keys. Both
+times the deploy was already correct.
+
+So every local asset carries `?v=<version>`, and the version lives in
+**`index.html` and nowhere else**: once in an inline script for the app to read,
+and once in each asset's query string. It is deliberately not in a `.js` file —
+a cached script asked what version it is would always give the reassuring
+answer. `index.html` carries no query string of its own and is the file browsers
+reliably revalidate.
+
+Read it in **Settings → Version**, and at the foot of **Record**. If that number
+doesn't match what you just published, you are looking at a cached copy.
+
+Bump it with one command — never by hand, since the number and the six query
+strings have to move together:
+
+    node tools/version.mjs            # show it, and check the stamps agree
+    node tools/version.mjs patch      # 1.0.0 -> 1.0.1
+    node tools/version.mjs minor      # 1.0.3 -> 1.1.0
+    node tools/version.mjs major      # 1.4.2 -> 2.0.0
+    node tools/version.mjs 2.1.0      # or set it outright
+
+It rewrites every stamp and sets `APP_DATE` to today. A smoke check fails if the
+declared version and the stamps ever disagree, or if a local asset is added
+without one — a half-done bump is worse than none, because the number on screen
+would claim a refresh that never happened.
 
 ## Before you ship a change
 
     node tools/smoke.mjs
     node tools/check-components.mjs
     node tools/check-strokes.mjs
+    node tools/version.mjs patch      # so the live site can be told apart
 
 There is no build step, so the four scripts share one global scope: a function
 removed from `srs.js` while `app.js` still calls it fails only at runtime, on

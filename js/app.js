@@ -2758,6 +2758,7 @@ function renderRecord() {
 
         <p class="note">The library stops at ${HQ.length} characters for now. The tiers above are the road out
           to 1,000 — the point where roughly nine characters in ten on an ordinary page are ones you know.</p>
+        <p class="note dim" style="font-size:.7rem">Hanzi Quest ${esc(appVersion())} · ${esc(appDate())}</p>
       </div>
 
       <div class="col-side">
@@ -2894,6 +2895,11 @@ function openSettings() {
         <div class="settings-row">
           <label>Reset everything<small>Clears your streak and all progress.</small></label>
           <button class="btn btn-ghost btn-sm" id="resetBtn">Reset</button>
+        </div>
+        <div class="settings-row">
+          <label>Version<small>If this doesn't match what you just published, you're looking at a cached copy —
+            reload with <kbd class="opt-n">⇧</kbd> held, or <kbd class="opt-n">⌘⇧R</kbd>.</small></label>
+          <span class="ver-tag" id="verTag">${esc(appVersion())} <span class="dim">· ${esc(appDate())}</span></span>
         </div>
       </div>
     </div>
@@ -3172,6 +3178,15 @@ function onKey(e) {
   if (e.key.toLowerCase() === "r") $("#earBtn")?.click();
   if (e.key.toLowerCase() === "t") { e.preventDefault(); $("#padW")?.click(); }
 }
+
+/* ---------- version ----------
+
+   Defined inline in index.html rather than in a script file, because a script
+   file is exactly the thing that gets cached — asking a stale js/app.js what
+   version it is would always get the reassuring answer. index.html carries no
+   query string of its own and is the one file browsers reliably revalidate. */
+const appVersion = () => (typeof APP_VERSION === "string" ? APP_VERSION : "dev");
+const appDate = () => (typeof APP_DATE === "string" ? APP_DATE : "—");
 
 /* ============================================================
    Finishing something

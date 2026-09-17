@@ -1567,6 +1567,11 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 
 /* ---------- tiers ---------- */
 
+.ver-tag {
+  font-family: var(--f-pin); font-size: .8rem; font-variant-numeric: tabular-nums;
+  color: var(--ink-2); white-space: nowrap;
+}
+
 .tier { margin-bottom: .7rem; }
 .tier-head {
   display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: .7rem;

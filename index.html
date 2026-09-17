@@ -1,8 +1,13 @@
 <title>Hanzi Quest</title>
+<!-- One version, stamped onto every asset URL below.
+     A browser that has cached js/app.js will keep serving it until something
+     about the URL changes, which is why a push can be live and invisible at
+     the same time. Bump with: node tools/version.mjs <next>  -->
+<script>const APP_VERSION = "1.0.0", APP_DATE = "2026-09-17";</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/app.css?v=1.0.0">
 
 <div class="app">
 
@@ -143,8 +148,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
-<script src="js/data.js"></script>
-<script src="js/strokes.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/srs.js"></script>
-<script src="js/app.js"></script>
+<script src="js/data.js?v=1.0.0"></script>
+<script src="js/strokes.js?v=1.0.0"></script>
+<script src="js/audio.js?v=1.0.0"></script>
+<script src="js/srs.js?v=1.0.0"></script>
+<script src="js/app.js?v=1.0.0"></script>
