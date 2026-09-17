@@ -2149,9 +2149,20 @@ function tallyRow(n, max = 6) {
 
 /* ---------- today ---------- */
 
+/* Characters you actually sat down and learnt today.
+
+   Placement credits happen today too — ensure() stamps `first` with today's
+   date whichever way a character arrives — so crediting 69 characters put all
+   69 in here, and Today's whole page followed: a "Learned today" strip of 69,
+   and a practice list that wanted you to write out and pronounce every one of
+   them. Being placed is not the same as having learnt them this morning, and
+   `placed` is exactly the flag that tells the two apart. */
 function learnedToday() {
   const k = dayKey();
-  return HQ.filter(ch => state.chars[ch.c] && state.chars[ch.c].first === k).map(ch => ch.c);
+  return HQ.filter(ch => {
+    const r = state.chars[ch.c];
+    return r && r.first === k && !r.placed;
+  }).map(ch => ch.c);
 }
 
 /* Today's practice list — everything here is scoped to the characters you
@@ -2163,8 +2174,9 @@ const TODAY_TASKS = [
   { id: "copy",   k: "抄写", name: "Write them out",       sub: "square by square",     copy: true }
 ];
 
-const taskAvailable = task => taskPool(task).length > 0;
-
+/* What ticking a task requires: today's characters, and only today's. Kept
+   deterministic so the "you already did this during another session" inference
+   in renderDone compares like with like. */
 function taskPool(task) {
   const got = learnedToday();
   if (task.copy) return got.filter(c => window.STROKE_DATA[c]);
@@ -2172,8 +2184,31 @@ function taskPool(task) {
   return got;
 }
 
+/* What the drill actually serves.
+
+   Identical to taskPool everywhere except reading. A character learnt an hour
+   ago usually has no sentence you can read yet — every other glyph in it is
+   still unknown — so scoping reading strictly to today left the row locked on
+   most days, which is the one task where the older characters are the point:
+   reading in context means reading the context, and the context is everything
+   you already know. So it leads with today's readable characters and tops up
+   from the ones you can already read. */
+const READ_ROUND = 8;
+
+function taskRound(task) {
+  const mine = taskPool(task);
+  if (task.kind !== "d") return mine;
+  const short = READ_ROUND - mine.length;
+  if (short <= 0) return mine;
+  const got = new Set(mine);
+  const older = knownChars().filter(c => !got.has(c) && readingMaterial(CHAR_INDEX[c]));
+  return [...mine, ...practicePool("r", short, older)];
+}
+
+const taskAvailable = task => taskRound(task).length > 0;
+
 function startTodayDrill(task) {
-  const pool = taskPool(task);
+  const pool = taskRound(task);
   if (!pool.length) return;
   /* alternate the kinds a task declares, so a pronunciation round actually
      plays characters aloud rather than only testing you on them silently */
@@ -2351,13 +2386,16 @@ function renderToday() {
       sub: `${got.length} learned${due ? ` · ${due} to review` : ""}`,
       ready: true, done: learnDone, now: newLeft + due > 0, go: newLeft + due > 0 ? "→" : "" },
     ...TODAY_TASKS.map(task => {
-      const n = taskPool(task).length;
+      const n = taskRound(task).length;
       const ready = n > 0, done = didToday(task.id);
       return {
         id: task.id, el: "button", k: task.k, name: task.name,
-        sub: ready ? `${task.sub} · ${n}`
-           : task.kind === "d" ? "Unlocks once a word or sentence uses today's characters"
-           : "Learn a character first",
+        sub: ready
+          ? (task.kind === "d" && taskPool(task).length < n
+              ? `${task.sub} · ${n}, including ones you already read`
+              : `${task.sub} · ${n}`)
+          : task.kind === "d" ? "Nothing readable yet — learn a few more characters"
+          : "Learn a character first",
         ready, done, now: false, go: ready ? (done ? "again" : "→") : "🔒"
       };
     })

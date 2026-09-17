@@ -260,6 +260,17 @@ console.log('\nplacement');
   ok('starting at the first one you missed', five[0] === fresh.HQ[7].c, five.join(' '));
   ok('and never re-offers one you knew', five.every(c => !got.includes(c)));
 
+  /* Placement credits land today, so `first` is today's date for all of them.
+     learnedToday() in app.js filters on `placed` to tell "credited this
+     morning" from "actually sat down and learnt it" — without that, being
+     placed at 69 put 69 characters in the Learned today strip and asked you to
+     write out and pronounce every one. This asserts the flag that hook needs. */
+  const k = fresh.dayKey();
+  const learntToday = got.filter(c => fresh.rec(c).first === k && !fresh.rec(c).placed);
+  ok('placed characters all carry today as their first day', got.every(c => fresh.rec(c).first === k));
+  ok('but none of them reads as learnt today', learntToday.length === 0);
+  ok('while still counting as known', got.every(c => fresh.isKnown(c)));
+
   /* retaking only adds */
   const before = fresh.rec(got[0]).due;
   fresh.rec(got[0]).lvl = 8;

@@ -427,6 +427,24 @@ characters, zero reviews**, starting at the first character you actually missed.
 A smoke check asserts `dueCount() === 0` immediately after placing, and that the
 first review is at least two days out.
 
+Because the credits land today, `ensure()` stamps `first` with today's date for
+all of them — which meant `learnedToday()` counted them, and being placed at 69
+filled the **Learned today** strip with 69 characters and asked you to write out
+and pronounce every one. It now filters on `placed`, which is precisely the flag
+that separates "credited this morning" from "actually sat down and learnt it".
+Miss three of your first 72 and Today shows those three plus the next two: five
+characters, the same as everybody else.
+
+Every task on the list is scoped to those five — with one exception.
+**Read them in context** tops up from characters you already read (`taskRound`,
+`READ_ROUND`). A character learnt an hour ago usually has no sentence you can
+read yet, since every other glyph in it is still unknown, so scoping reading
+strictly to today left the row locked on most days. It is also the one task
+where the older characters *are* the point: reading in context means reading the
+context, and the context is everything you already know. The row says so when it
+reaches wider. Ticking still requires only today's characters (`taskPool`), so
+the "you already did this elsewhere" inference stays deterministic.
+
 It is keyboard-driven like the rest of the app: **1-4** to answer, **space** for
 "I don't know this one", **Enter** to start on the result screen. A question
 locks the moment it is answered — the options are disabled on the way out but
