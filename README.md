@@ -4,6 +4,28 @@ A practice notebook for learning to read Chinese characters. 302 characters
 across seven core stages plus a kitchen topic pack, taught in an order where
 each one makes the next easier.
 
+## Picking this up again
+
+**Published at:** https://claude.ai/code/artifact/204c1b76-7d3c-4d96-95dd-9287e82f9938
+
+To keep updating that same page rather than creating a duplicate, the URL above
+has to be passed explicitly when publishing — a fresh conversation has no memory
+of it. Say something like:
+
+> Update the Hanzi Quest artifact at
+> https://claude.ai/code/artifact/204c1b76-7d3c-4d96-95dd-9287e82f9938 —
+> publish index.html with css/app.css and the four js/ files.
+
+Publishing without it makes a *new* artifact and you lose the link.
+
+The rest of the context lives here: this README explains the reasoning behind
+the decisions, not just what they are, and `git log` has the summary. Open a
+session in this folder and both are readable.
+
+Run the three checks before shipping anything (see **Before you ship a change**).
+They exist because they caught real problems: the component checker found 32 of
+302 "Built from" claims wrong.
+
 ## Running it
 
 No build step, no dependencies. Clone it and:
