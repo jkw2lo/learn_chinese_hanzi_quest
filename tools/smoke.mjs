@@ -53,7 +53,13 @@ console.log('\nversion');
   ok('index.html declares a version', /^\d+\.\d+\.\d+$/.test(declared || ''), String(declared));
   ok('and a date', /^\d{4}-\d{2}-\d{2}$/.test((html.match(/APP_DATE = "([^"]+)"/) || [])[1] || ''));
   const stamped = [...html.matchAll(/\?v=([^"']+)/g)].map(m => m[1]);
-  ok('every local asset is stamped', stamped.length >= 6, stamped.length + ' stamped');
+  ok('every local asset is stamped', stamped.length >= 5, stamped.length + ' stamped');
+  /* audio.js is fetched by app.js instead of being listed here, so it needs
+     its own stamp — from APP_VERSION, or it would cache forever */
+  const appjs = read('js/app.js');
+  ok('the deferred audio bundle is stamped too',
+     /js\/audio\.js\?v=\$\{appVersion\(\)\}/.test(appjs));
+  ok('and index.html no longer blocks on it', !/src="js\/audio\.js/.test(html));
   ok('and all stamps match the declared version',
      stamped.every(v => v === declared), [...new Set(stamped.filter(v => v !== declared))].join(' '));
   /* a path with no query string at all is one the bump script will miss */

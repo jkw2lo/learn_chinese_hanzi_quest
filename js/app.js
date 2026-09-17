@@ -109,7 +109,7 @@ function ensureAudioEl() {
 function unlockAudio() {
   if (audioUnlocked) return;
   const first = window.HQ_AUDIO && Object.values(window.HQ_AUDIO)[0];
-  if (!first) return;
+  if (!first) return;                  /* bundle still in flight — stay armed */
   audioUnlocked = true;
   const a = ensureAudioEl();
   try {
@@ -289,9 +289,27 @@ function say(text, force) {
   } catch { speechReset(); }
 }
 
-/* both unlocks want the first real gesture */
-addEventListener("pointerdown", unlockAudio, { capture: true, once: true });
-addEventListener("keydown", unlockAudio, { capture: true, once: true });
+/* Fetched after the first render rather than ahead of it: 859 KB gzipped of
+   base64 speech, loaded as a blocking <script>, meant nothing on the page drew
+   until it arrived. Everything that reads clips already guards on HQ_AUDIO
+   being there, so the seconds before it lands degrade to the system voice
+   rather than to an error. */
+function loadAudioBundle() {
+  if (window.HQ_AUDIO) return;
+  const el = document.createElement("script");
+  el.src = `js/audio.js?v=${appVersion()}`;
+  el.async = true;
+  el.onload = () => renderMuted();
+  document.head.appendChild(el);       /* a failure is Settings' story to tell */
+}
+
+/* Both unlocks want a real gesture — but NOT `once`, which is what this used
+   to be. A `once` listener is spent even on a call that returns early, so a
+   click landing before the bundle arrives would burn the only chance to unlock
+   the element and leave the whole visit silent. Staying armed costs an early
+   return per click. */
+addEventListener("pointerdown", unlockAudio, { capture: true });
+addEventListener("keydown", unlockAudio, { capture: true });
 
 if ("speechSynthesis" in window) {
   findVoice();
@@ -3897,6 +3915,7 @@ function boot() {
   $("#tourBack").onclick = () => { if (tourStep > 0) { tourStep--; renderTour(); } };
   $("#tourSkip").onclick = endTour;
   go("today");
+  loadAudioBundle();                   /* after the first render, never before */
   /* The chip and the save button are painted from state, and nothing else on
      the first frame does it — without this a six-day streak reads 🔥 0 until
      the first render triggered by something else. */

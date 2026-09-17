@@ -1,30 +1,48 @@
 # Hanzi Quest
 
-A practice notebook for learning to read Chinese characters. 348 characters
+A practice notebook for learning to read Chinese characters. 364 characters
 across eight core stages plus a kitchen topic pack, taught in an order where
 each one makes the next easier.
 
 ## Picking this up again
 
-**Published at:** https://claude.ai/code/artifact/204c1b76-7d3c-4d96-95dd-9287e82f9938
+**Live at:** https://jkw2lo.github.io/learn_chinese_hanzi_quest/
+**Repo:** https://github.com/jkw2lo/learn_chinese_hanzi_quest — `main`, over SSH
+(`git@github.com:...`). HTTPS has no credentials on this machine; the SSH key
+does.
 
-To keep updating that same page rather than creating a duplicate, the URL above
-has to be passed explicitly when publishing — a fresh conversation has no memory
-of it. Say something like:
+GitHub Pages serves `main` directly. There is no build step and no CI: pushing
+is deploying, and it goes live in under a minute.
 
-> Update the Hanzi Quest artifact at
-> https://claude.ai/code/artifact/204c1b76-7d3c-4d96-95dd-9287e82f9938 —
-> publish index.html with css/app.css and the four js/ files.
+### Shipping a change
 
-Publishing without it makes a *new* artifact and you lose the link.
+    node tools/smoke.mjs
+    node tools/check-components.mjs
+    node tools/check-strokes.mjs
+    node tools/version.mjs patch      # or minor / major
+    git add -A && git commit && git push
 
-The rest of the context lives here: this README explains the reasoning behind
-the decisions, not just what they are, and `git log` has the summary. Open a
-session in this folder and both are readable.
+**Bump the version every time.** A browser that has cached `js/app.js` keeps
+serving it until the URL changes, so without a bump a push is live and invisible
+at the same time — which wasted real time twice before the version existed, once
+on a changed icon and once on a keyboard shortcut. After pushing, open **Settings
+→ Version** on the live site: if it doesn't match, you are looking at a cache.
 
-Run the three checks before shipping anything (see **Before you ship a change**).
-They exist because they caught real problems: the component checker found 32 of
-302 "Built from" claims wrong.
+Run the three checks first, not last. They exist because they caught real
+problems: the component checker found 32 of 302 "Built from" claims wrong, and
+the smoke test has since caught a mute audio bundle, a placement quiz that
+credited characters it never asked about, and a version bump applied to half
+the assets.
+
+### Where the reasoning lives
+
+This README explains *why* the decisions are what they are, not just what they
+are — most sections lead with the thing that went wrong. `git log` carries the
+same in commit form. Open a session in this folder and both are readable.
+
+An early version of this was also published as a Claude Artifact. That copy is
+many versions stale and is not maintained; the GitHub Pages link above is the
+one that is.
 
 ## Running it
 
@@ -238,9 +256,22 @@ attempts at fixing the engine failed because the engine was never the fix.
 
 So `tools/make-audio.mjs` records **every character the app can be asked to
 say** with macOS `say` and bundles them as base64 AAC in `js/audio.js` (3.0 MB
-of audio, 4.0 MB encoded).
+of audio, 4.0 MB encoded — 859 KB over the wire, gzipped).
 
-That is 573 characters, not 348. It used to record the taught ones only, which
+**It is not loaded with the page.** As a blocking `<script>` it held up every
+view behind it: a first visit had to pull 1.33 MB before anything drew, and
+two-thirds of that was speech nothing needs in the first second. `app.js`
+fetches it after the first render instead. Everything that reads a clip already
+guards on `HQ_AUDIO` existing, so the gap degrades to the system voice rather
+than to an error.
+
+That change had a trap in it worth remembering: the unlock listeners were bound
+with `{once: true}`, and a `once` listener is spent even on a call that returns
+early. A click landing before the bundle arrived would have burned the only
+chance to unlock the audio element and left the whole visit silent. They stay
+armed now, at the cost of an early return per click.
+
+That is 575 characters, not 364. It used to record the taught ones only, which
 left every character that appears in an example word, a sentence or the menu
 without a clip — 金 in 现金, 第 in 第一, 儿 in 女儿, 225 of them in all. A word you
 can see is a word you can tap, and one missing clip made `sayPhrase` abandon
@@ -564,7 +595,7 @@ Under each tile is a bar split by how many passes each character has had —
 solid, two, one, untouched. Two passes on everything looks different from three
 on half of it, and both look different from nothing; a single fraction showed
 all three as the same. Record's Skills panel uses the same maths, over the
-characters you know rather than the whole 348-character library — a bar reading
+characters you know rather than the whole 364-character library — a bar reading
 3% when everything you've met is solid is describing the syllabus, not you.
 
 ## Asking before something irreversible
@@ -725,7 +756,7 @@ character, and that scheduling and the side quest behave.
 own graphics file — stroke count, each path, and in sequence. Because stroke
 *order* is simply the array order, matching the source is what makes the order
 right; it also catches a corrupted download and any character whose strokes
-and medians disagree. All 348 currently match exactly.
+and medians disagree. All 364 currently match exactly.
 
 `check-components.mjs` verifies every "Built from" claim against Make Me a
 Hanzi's decomposition dictionary. Hand-written decompositions drift in two
@@ -758,6 +789,22 @@ validates against Make Me a Hanzi's recursive decompositions, with squeezed
 radicals normalised to their free-standing forms (讠→言, 氵→水, ⺼→肉). If a
 character has no taught part worth naming, `comp:[]` is the honest answer;
 several of the best-known characters in the library have it.
+
+### Filling the gaps
+
+Sixteen characters were added later, after a check showed that **55 of 348
+example sentences could not be used as reading material** because they contained
+a character the library never taught. 没 was the worst of it: 没有 is among the
+commonest things anyone says in Chinese and it simply wasn't there, along with
+哪 which, 怎 how, and 吧, the particle that turns an order into a suggestion.
+
+They were inserted **where they belong**, not appended: 没 哪 怎 吧 into Sprout
+with the other negation and question words, 第 金 into Explorer with money and
+numbers, 儿 孩 先 岁 间 气 into Everyday with people and time, and 京 床 桌 力 into
+The World. Records key on the character rather than its index, so inserting
+mid-curriculum is safe; the `end` values in `STAGES` shift and nothing else does.
+
+Blocked sentences fell from 55 to 30.
 
 ### Stage 9 · 交流 Connect
 
