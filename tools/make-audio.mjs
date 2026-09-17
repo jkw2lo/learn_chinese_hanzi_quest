@@ -18,24 +18,54 @@ const BITRATE = '24000';
 const MIN_SECONDS = 0.15;          /* shorter than this means the voice is mute */
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const { HQ } = new Function(readFileSync(join(root, 'js/data.js'), 'utf8') + '\nreturn {HQ};')();
+const { HQ, MENU, INTERESTS, FESTIVALS } = new Function(
+  readFileSync(join(root, 'js/data.js'), 'utf8') + '\nreturn {HQ,MENU,INTERESTS,FESTIVALS};')();
 const work = mkdtempSync(join(tmpdir(), 'hq-audio-'));
+
+/* Every character the app can be asked to say — not just the taught ones.
+
+   This used to bundle HQ only, which left the 225 characters that appear in
+   example words, sentences and the menu without clips: 金 in 现金, 第 in 第一,
+   儿 in 女儿. One missing clip made sayPhrase give up on the whole word and
+   fall through to the system voice, so tapping 现金 was silent on any machine
+   without a Chinese voice installed. A word you can see is a word you can
+   tap, so everything visible gets recorded. */
+const speakable = () => {
+  const out = new Set();
+  const add = s => [...String(s || '')].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) out.add(c); });
+  HQ.forEach(ch => { add(ch.c); ch.words.forEach(w => add(w[0])); add(ch.sent[0]); });
+  if (MENU) {
+    add(MENU.title); add(MENU.name);
+    MENU.sections.forEach(s => { add(s.head); s.items.forEach(i => { add(i[0]); if (i[4]) add(i[4][0]); }); });
+    (MENU.phrases || []).forEach(p => add(p[0]));
+    if (MENU.specials) {
+      add(MENU.specials.head);
+      (MENU.specials.items || []).forEach(i => add(i[0]));
+      if (MENU.specials.note) add(MENU.specials.note[0]);
+    }
+  }
+  Object.values(INTERESTS || {}).forEach(c => c.words.forEach(w => add(w[0])));
+  (FESTIVALS || []).forEach(f => f.words.forEach(w => add(w[0])));
+  return [...out];
+};
 
 const clips = {};
 const silent = [];
 let bytes = 0;
 
-process.stdout.write(`speaking ${HQ.length} characters as ${VOICE}\n`);
-HQ.forEach((ch, i) => {
+const WANTED = speakable();
+process.stdout.write(`speaking ${WANTED.length} characters as ${VOICE}`);
+process.stdout.write(` (${HQ.length} taught, ${WANTED.length - HQ.length} from words, sentences and the menu)\n`);
+WANTED.forEach((c, i) => {
   const aiff = join(work, 'c.aiff'), m4a = join(work, 'c.m4a');
-  execFileSync('say', ['-v', VOICE, '-o', aiff, ch.c]);
+  execFileSync('say', ['-v', VOICE, '-o', aiff, c]);
   const info = execFileSync('afinfo', [aiff]).toString();
   const dur = parseFloat((info.match(/estimated duration: ([\d.]+)/) || [])[1] || '0');
-  if (dur < MIN_SECONDS) { silent.push(ch.c); return; }
+  if (dur < MIN_SECONDS) { silent.push(c); return; }
   execFileSync('afconvert', ['-f', 'm4af', '-d', 'aac', '-b', BITRATE, aiff, m4a]);
-  clips[ch.c] = readFileSync(m4a).toString('base64');
+  clips[c] = readFileSync(m4a).toString('base64');
   bytes += statSync(m4a).size;
-  if ((i + 1) % 40 === 0) process.stdout.write(`  ${i + 1}/${HQ.length}\n`);
+  if ((i + 1) % 50 === 0) process.stdout.write(`  ${i + 1}/${WANTED.length}\n`);
 });
 rmSync(work, { recursive: true, force: true });
 

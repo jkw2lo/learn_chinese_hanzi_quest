@@ -221,8 +221,17 @@ silence where `say -v Tingting` produces 0.84s. In both cases `speak()`
 queues, `speaking` goes true, and `start` never fires, with no error. Four
 attempts at fixing the engine failed because the engine was never the fix.
 
-So `tools/make-audio.mjs` records all 348 characters with macOS `say` and
-bundles them as base64 AAC in `js/audio.js` (1.8 MB of audio, 2.4 MB encoded).
+So `tools/make-audio.mjs` records **every character the app can be asked to
+say** with macOS `say` and bundles them as base64 AAC in `js/audio.js` (3.0 MB
+of audio, 4.0 MB encoded).
+
+That is 573 characters, not 348. It used to record the taught ones only, which
+left every character that appears in an example word, a sentence or the menu
+without a clip — 金 in 现金, 第 in 第一, 儿 in 女儿, 225 of them in all. A word you
+can see is a word you can tap, and one missing clip made `sayPhrase` abandon
+the whole word to the system voice, so 现金 was simply silent on a machine with
+no Chinese voice installed. A smoke check now walks every speakable string in
+the data and fails if anything in it has no clip.
 They play through one shared `<audio>` element, unlocked with a muted play on
 the first real click so later programmatic plays are allowed. **That file is
 committed**, because the app is only as good as its sound and a clone without
@@ -232,6 +241,9 @@ If the bundle is missing altogether — a clone that hasn't regenerated it,
 a deploy that dropped the file — `clipCount()` is zero and the Sound panel in
 Settings says so and gives the command to fix it, rather than leaving someone
 turning the volume up at a page that was never going to make a sound.
+
+`sayPhrase` also steps over a gap rather than stopping at one, so a bundle that
+has drifted from the data is merely imperfect instead of mute.
 
 Words and sentences aren't bundled — they'd multiply the weight — so
 `sayPhrase()` reads them **one character at a time from the clips** instead.
@@ -450,6 +462,13 @@ well past where you have reached, with a line about where it comes from. It is
 deliberately not a drill — never scheduled, graded, counted, or added to the
 review queue. The moment it becomes homework it stops being the thing that
 makes you want to keep going. The card says as much: *nothing to do here*.
+
+The meaning and the note stay **hidden until asked for**. Printing them
+immediately left nothing to do: you would read 音乐, start working it out from
+音 and 乐, and find the answer already underneath — and a good note names the
+characters it explains, so forty of the hundred-odd gave the game away twice
+over. The card now shows the word and its pinyin, and opens when you ask it to.
+It stays open for the rest of the week; a new word closes it again.
 
 `wordOfWeek()` seeds the pick from an ISO week key, so it is stable all week and
 survives reloads, and it won't repeat until everything in your chosen interests

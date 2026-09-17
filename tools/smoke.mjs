@@ -285,6 +285,40 @@ ok('week keys look like ISO weeks', /^\d{4}-W\d{2}$/.test(api.weekKey()));
 ok('and change from week to week',
    api.weekKey(new Date(2026, 0, 5)) !== api.weekKey(new Date(2026, 0, 15)));
 
+console.log('\neverything speakable has a clip');
+{
+  /* Clips used to be generated for the taught characters only, so 金 in 现金
+     and 第 in 第一 were silent — and one gap made sayPhrase abandon the whole
+     word to a system voice that may not exist. */
+  const want = new Set();
+  const add = t => [...String(t || '')].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) want.add(c); });
+  HQ.forEach(ch => { add(ch.c); ch.words.forEach(w => add(w[0])); add(ch.sent[0]); });
+  add(MENU.title); add(MENU.name);
+  MENU.sections.forEach(x => { add(x.head); x.items.forEach(i => { add(i[0]); if (i[4]) add(i[4][0]); }); });
+  (MENU.phrases || []).forEach(x => add(x[0]));
+  add(MENU.specials.head);
+  MENU.specials.items.forEach(i => add(i[0]));
+  add(MENU.specials.note[0]);
+  Object.values(api.INTERESTS).forEach(c => c.words.forEach(w => add(w[0])));
+  api.FESTIVALS.forEach(f => f.words.forEach(w => add(w[0])));
+
+  let bundled = null;
+  try {
+    const w = {};
+    new Function('window', read('js/audio.js'))(w);
+    bundled = new Set(Object.keys(w.HQ_AUDIO || {}));
+  } catch { /* not generated in this checkout */ }
+
+  if (!bundled) {
+    console.log('  – js/audio.js not present, skipping (run tools/make-audio.mjs)');
+  } else {
+    const missing = [...want].filter(c => !bundled.has(c));
+    ok(`${want.size} speakable characters`, want.size > HQ.length);
+    ok('every one of them has a clip', !missing.length,
+       missing.length + ' missing: ' + missing.slice(0, 30).join(''));
+  }
+}
+
 console.log('\nseasonal words');
 ok('every festival word is complete', api.FESTIVALS.every(f =>
   f.words.every(w => w.length === 4 && w.every(part => part && String(part).trim()))));

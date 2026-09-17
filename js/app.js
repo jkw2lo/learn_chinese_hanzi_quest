@@ -154,16 +154,29 @@ function sayPhrase(text, force) {
   if (!chars.length) return;
   stopPhrase();
   if (chars.length === 1) return say(chars[0], force);
-  if (!chars.every(clipFor)) return say(text, force);   /* fall back wholesale */
 
+  /* One missing clip used to abandon the whole word to the system voice, which
+     on a machine without a Chinese voice meant silence: 现金 said nothing
+     because 金 is never taught and so was never recorded. Words are free to use
+     characters outside the curriculum — 第一, 女儿, 桌子 — so the chain now
+     steps over a gap instead of giving up at it. Generating a clip for
+     everything speakable is the real fix (tools/make-audio.mjs); this is what
+     keeps a bundle that has drifted from the data merely imperfect rather than
+     mute. */
   lastSaid = text;
   const a = ensureAudioEl();
   let i = 0;
   const step = () => {
     if (i >= chars.length) { a.onended = null; return; }
     const c = chars[i++];
+    if (!clipFor(c)) {           /* nothing recorded for this one — carry on */
+      a.onended = null;
+      phraseTimer = setTimeout(step, 90);
+      return;
+    }
     a.onended = () => { phraseTimer = setTimeout(step, 110); };
-    playClip(c);
+    /* a clip that refuses to play would otherwise stall the chain for good */
+    if (!playClip(c)) { a.onended = null; phraseTimer = setTimeout(step, 90); }
   };
   step();
 }
@@ -222,7 +235,11 @@ function speechReset() {
 
 function say(text, force) {
   if ((!state.audio && !force) || !text) return;
-  if (audioEl) audioEl.onended = null;
+  /* Detaching onended is not enough to stop a phrase: a step already queued on
+     phraseTimer will still fire and play its own character over the top. In a
+     listening drill that means hearing the previous card's character and being
+     marked wrong for answering what you heard. stopPhrase clears both. */
+  stopPhrase();
   lastSaid = text;
   if (playClip(text)) return;               /* a recorded clip beats the engine */
   if (!("speechSynthesis" in window)) return;
@@ -619,7 +636,16 @@ function bindCard(root, ch, writerId) {
     });
     padStart($(".tian", root), $("#" + writerId, root), null);
   }
-  root.addEventListener("click", e => {
+  /* `root` here is #svBody or #sesInner — elements that live for the whole
+     session while only their innerHTML is swapped. Adding a listener per card
+     therefore stacked them: the second card you opened fired every click
+     twice, the third three times. Since each call starts by cancelling the
+     phrase the previous one just began, the audible result was a word that
+     played only its first character, or went silent altogether — worse the
+     longer you had been browsing. Bind once, and replace the handler rather
+     than piling another on. */
+  if (root.__cardClick) root.removeEventListener("click", root.__cardClick);
+  root.__cardClick = e => {
     const b = e.target.closest("[data-act]");
     if (b) {
       const act = b.dataset.act;
@@ -629,7 +655,8 @@ function bindCard(root, ch, writerId) {
     }
     const comp = e.target.closest("[data-comp]");
     if (comp && CHAR_INDEX[comp.dataset.comp]) openChar(comp.dataset.comp);
-  });
+  };
+  root.addEventListener("click", root.__cardClick);
 }
 
 /* ============================================================
@@ -785,6 +812,7 @@ function renderCombo() {
 
 function renderStep() {
   clearAdvance();
+  stopPhrase();                    /* the last card's audio does not belong to this one */
   const total = session.queue.length, done = session.idx;
   $("#sesProg").style.width = total ? `${(done / total) * 100}%` : "0%";
   $("#sesCount").textContent = `${Math.min(done + 1, total)} / ${total}`;
@@ -849,6 +877,26 @@ const KIND_LABEL = {
   d: ["阅读", "Read the sentence"]
 };
 const SKILL_OF = { r:"r", p:"p", l:"p", c:"c", s:"c", a:"c", d:"r", w:"w" };
+
+/* Four options that are genuinely four options.
+
+   Picking three distractors at random only guarantees they differ from the
+   answer — not from each other, and plenty of characters share a reading:
+   是, 事 and 试 are all shì, so 个 could be offered [shì, shì, shì, gè], which
+   gives the answer away and looks broken doing it. Deduplicating on the value
+   the learner actually compares is the fix. */
+function optionSet(answer, candidates, valueOf, n = 3) {
+  const seen = new Set([answer]);
+  const out = [];
+  for (const x of shuffle([...candidates])) {
+    if (out.length >= n) break;
+    const v = valueOf(x);
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
 
 function renderDrill(item, ch, body, foot) {
   const kind = item.kind;
@@ -980,12 +1028,14 @@ function renderDrill(item, ch, body, foot) {
   if (kind === "r") {
     prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
     correct = ch.m;
-    options = [ch.m, ...pick(pool, 3).map(x => x.m)].map(m => ({ v: m, html: esc(m) }));
+    options = [ch.m, ...optionSet(ch.m, pool, x => x.m)].map(m => ({ v: m, html: esc(m) }));
   } else if (kind === "p") {
     prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
     correct = ch.p;
     const near = pool.filter(x => x.p !== ch.p && (toneOf(x.p) === toneOf(ch.p) || x.p[0] === ch.p[0]));
-    options = [ch.p, ...pick(near.length >= 3 ? near : pool, 3).map(x => x.p)]
+    let others = optionSet(ch.p, near, x => x.p);
+    if (others.length < 3) others = [...others, ...optionSet(ch.p, pool, x => x.p, 3 - others.length)];
+    options = [ch.p, ...others]
       .map(p => ({ v: p, html: `<span class="pin">${esc(p)}</span> ${toneMark(p)}` }));
     grid2 = true;
   } else if (kind === "l") {
@@ -993,7 +1043,9 @@ function renderDrill(item, ch, body, foot) {
               <div class="drill-hint">Tap to hear it again</div>`;
     correct = ch.c;
     const near = pool.filter(x => toneOf(x.p) !== toneOf(ch.p) || x.p[0] !== ch.p[0]);
-    options = [ch.c, ...pick(near.length >= 3 ? near : pool, 3).map(x => x.c)]
+    let lc = optionSet(ch.c, near, x => x.c);
+    if (lc.length < 3) lc = [...lc, ...optionSet(ch.c, pool.filter(x => !lc.includes(x.c)), x => x.c, 3 - lc.length)];
+    options = [ch.c, ...lc]
       .map(c => ({ v: c, html: `<span class="big">${esc(c)}</span>` }));
     grid2 = true;
     autoSay = ch.c;
@@ -1002,7 +1054,9 @@ function renderDrill(item, ch, body, foot) {
               <div class="drill-hint">${esc(ch.m)}</div>`;
     correct = ch.c;
     const kin = pool.filter(x => x.comp.some(z => ch.comp.includes(z)));
-    options = [ch.c, ...pick(kin.length >= 3 ? kin : pool, 3).map(x => x.c)]
+    let kc = optionSet(ch.c, kin, x => x.c);
+    if (kc.length < 3) kc = [...kc, ...optionSet(ch.c, pool.filter(x => !kc.includes(x.c)), x => x.c, 3 - kc.length)];
+    options = [ch.c, ...kc]
       .map(c => ({ v: c, html: `<span class="big">${esc(c)}</span>` }));
     grid2 = true;
   } else if (kind === "d") {
@@ -1022,7 +1076,7 @@ function renderDrill(item, ch, body, foot) {
     prompt = `<div class="drill-sen">${[...w[0]].map(x => x === ch.c ? `<span class="gap">?</span>` : esc(x)).join("")}</div>
               <div class="drill-hint"><span class="pin">${esc(w[1])}</span> · ${esc(w[2])}</div>`;
     correct = ch.c;
-    options = [ch.c, ...pick(pool, 3).map(x => x.c)]
+    options = [ch.c, ...optionSet(ch.c, pool, x => x.c)]
       .map(c => ({ v: c, html: `<span class="big">${esc(c)}</span>` }));
     grid2 = true;
   }
@@ -2243,22 +2297,35 @@ function renderToday() {
     const [word, pin, mean, note] = entry.word;
     const glyphs = [...word].filter(c => /[\u4e00-\u9fff]/.test(c));
     const known = glyphs.filter(isKnown).length;
+    /* The meaning and the note stay hidden until asked for.
+
+       Printing them straight away left nothing to do: you would read 音乐,
+       start working it out from 音 and 乐, and find the answer already sitting
+       underneath — and the notes make it worse, because a good note names the
+       characters it is explaining. Forty of them do. So the card now shows the
+       word and its pinyin, gives you the beat in which to have a go, and opens
+       when you ask it to. It stays open for the rest of the week once you've
+       seen it; a new word closes it again. */
+    const open = state.wotwShown === wk.week;
     return `<div class="sheet wotw">
       <div class="pr-head">
         <span class="eyebrow">Word of the week <span class="han">每周一词</span></span>
         <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}${
           entry.festival ? ` <span class="han">${esc(cat.zh)}</span>` : ""}</span>
       </div>
+      ${entry.festival ? `<p class="wotw-when">It's ${esc(cat.name)} this week.</p>` : ""}
       <button class="wotw-word" id="wotwSay" title="Hear it">
         <span class="z">${renderZh(word)}</span>
         <span class="p">${esc(pin)}</span>
-        <span class="m">${esc(mean)}</span>
+        ${open ? `<span class="m">${esc(mean)}</span>` : ""}
       </button>
-      ${entry.festival ? `<p class="wotw-when">It's ${esc(cat.name)} this week.</p>` : ""}
-      <p class="wotw-note">${esc(note)}</p>
-      <p class="note dim">${known === glyphs.length
-        ? "You can already read every character in it."
-        : `${known} of ${glyphs.length} character${glyphs.length === 1 ? "" : "s"} are ones you know — the rest are ahead of you. Nothing to do here; it isn't a drill.`}</p>
+      ${open
+        ? `<p class="wotw-note">${esc(note)}</p>
+           <p class="note dim">${known === glyphs.length
+             ? "You can already read every character in it."
+             : `${known} of ${glyphs.length} character${glyphs.length === 1 ? "" : "s"} are ones you know — the rest are ahead of you. Nothing to do here; it isn't a drill.`}</p>`
+        : `<button class="btn btn-ghost btn-sm btn-block" id="wotwReveal">What does it mean?</button>
+           <p class="note dim">Have a guess from the characters first — that's the whole point of it.</p>`}
     </div>`;
   })();
 
@@ -2451,6 +2518,13 @@ function renderToday() {
   $("#wotwSay")?.addEventListener("click", () => {
     const e = wotwEntry(wk);
     if (e) sayPhrase(e.word[0], true);
+  });
+  $("#wotwReveal")?.addEventListener("click", () => {
+    state.wotwShown = wk.week;
+    save();
+    const e = wotwEntry(wk);
+    if (e) sayPhrase(e.word[0], true);
+    renderToday();
   });
   $("#startBtn")?.addEventListener("click", startSession);
   $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });

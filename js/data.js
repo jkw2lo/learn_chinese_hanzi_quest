@@ -802,7 +802,7 @@ const INTERESTS = {
     ["小笼包","xiǎolóngbāo","soup dumplings","Little basket bun. The soup gets inside by folding chilled aspic into the filling — it melts as it steams."],
     ["麻辣","málà","numbing-spicy","Two different sensations: 麻 is the buzz of Sichuan pepper, 辣 is chilli heat. Sichuan cooking is built on holding both at once."],
     ["下厨","xiàchú","to cook","To go down to the kitchen. Used of someone who does not usually cook doing it anyway."],
-    ["夜市","yèshì","night market","Night market. The 市 is the same one in 超市 supermarket and 城市 city — a place of trade."],
+    ["夜市","yèshì","night market","The 市 is the same one in 超市 supermarket and 城市 city — a place of trade."],
     ["家常菜","jiācháng cài","home cooking","Home-ordinary dishes. The highest praise a Chinese restaurant meal can get is that it tastes like this."],
     ["回锅肉","huíguōròu","twice-cooked pork","Returned-to-the-pot meat. Boiled, sliced, then fried again — the classic test of a Sichuan cook."],
     ["好吃","hǎochī","tasty","Good-eat. The parallel 好看 good-look and 好听 good-listen work exactly the same way."]
@@ -852,7 +852,7 @@ const INTERESTS = {
     ["小说","xiǎoshuō","novel","Small talk. Fiction was once thought the lesser form; the name stuck after it stopped being true."],
     ["诗","shī","poetry","The Tang dynasty produced so much of it that 唐诗 is its own category of thing."],
     ["成语","chéngyǔ","idiom","Set phrase. Almost always four characters, almost always compressing a whole story into them."],
-    ["笔画","bǐhuà","stroke","Brush-stroke. Every character has a fixed number and a fixed order, which is why the writing drills insist."],
+    ["笔画","bǐhuà","stroke","Every character has a fixed number of these and a fixed order for them, which is why the writing drills insist."],
     ["作家","zuòjiā","writer","Make-expert. The 家 suffix turns a craft into the person who practises it."],
     ["读者","dúzhě","reader","Reading-one. 者 makes a doer out of a verb, like -er in English."],
     ["翻译","fānyì","to translate","Turn-over and interpret. Also the noun: a translator."]
@@ -881,7 +881,7 @@ const INTERESTS = {
     ["艺术","yìshù","art","Skill-technique. Both halves once meant a practical craft."],
     ["国画","guóhuà","Chinese painting","National painting. Ink on paper or silk, named to distinguish it from oils."],
     ["水墨","shuǐmò","ink wash","Water-ink. The whole tradition rests on how much water is in the brush."],
-    ["颜色","yánsè","colour","Face-colour. 颜 is the complexion of a face; the word widened from there."],
+    ["颜色","yánsè","colour","颜 is the complexion of a face, 色 the shade of it. The word widened outwards from skin."],
     ["设计","shèjì","design","Set out a plan. Also the noun, and the verb to design."],
     ["印章","yìnzhāng","seal, chop","The red stamp on a painting. The 汉 in this app's own header is set in one."],
     ["对称","duìchèn","symmetry","Facing-balance. The organising principle of most Chinese characters."],
@@ -928,7 +928,7 @@ const FESTIVALS = [
   { key:"spring", icon:"🧧", name:"Spring Festival", zh:"春节", lunar:{
       2026:"02-17", 2027:"02-06", 2028:"01-26", 2029:"02-13", 2030:"02-03",
       2031:"01-23", 2032:"02-11", 2033:"01-31", 2034:"02-19", 2035:"02-08" }, words:[
-    ["春节","chūnjié","Spring Festival","Spring festival. The biggest annual human migration on earth happens around it."],
+    ["春节","chūnjié","Spring Festival","The biggest annual human migration on earth happens around it — 春运, the spring rush."],
     ["红包","hóngbāo","red envelope","Red packet. Cash, given by married people to unmarried ones — and now sent by phone."],
     ["年夜饭","niányèfàn","New Year's Eve dinner","Year-night-meal. The one meal of the year everyone is expected home for."],
     ["恭喜发财","gōngxǐ fācái","wishing you prosperity","Respectful-joy, make-wealth. Said with the hands cupped together."],
@@ -940,13 +940,13 @@ const FESTIVALS = [
     ["灯笼","dēnglóng","lantern","Lamp-cage. The red paper ones hung in pairs."],
     ["猜灯谜","cāi dēngmí","guessing lantern riddles","Riddles written on the lanterns; solving them is the evening's entertainment."],
     ["团圆","tuányuán","reunion","Round-round. Both characters are circles, which is the whole idea."],
-    ["满月","mǎnyuè","full moon","Full moon. The festival is fixed to the first one of the lunar year."]
+    ["满月","mǎnyuè","full moon","The festival is fixed to the first one of the lunar year, which is why it moves."]
   ]},
   { key:"qingming", icon:"🌿", name:"Qingming", zh:"清明节", on:"04-04", words:[
     ["清明","qīngmíng","Clear and Bright","The solar term and the festival. Families sweep ancestral graves and bring food."],
     ["扫墓","sǎomù","to sweep a grave","Sweep-tomb. The central act of the day."],
     ["祖先","zǔxiān","ancestors","Forebear-first. Remembered rather than mourned."],
-    ["春雨","chūnyǔ","spring rain","Spring rain. A Tang poem everyone knows opens with rain falling on this exact day."],
+    ["春雨","chūnyǔ","spring rain","A Tang poem every schoolchild learns opens with rain falling on this exact day."],
     ["踏青","tàqīng","a spring walk","Treading the green. The other half of the day: the living go walking."]
   ]},
   { key:"dragonboat", icon:"🐉", name:"Dragon Boat Festival", zh:"端午节", lunar:{
@@ -954,7 +954,7 @@ const FESTIVALS = [
       2031:"06-24", 2032:"06-12", 2033:"06-01", 2034:"06-20", 2035:"06-10" }, words:[
     ["端午节","duānwǔjié","Dragon Boat Festival","Upright-noon festival. Held on the fifth day of the fifth lunar month."],
     ["粽子","zòngzi","sticky rice dumplings","Glutinous rice wrapped in bamboo leaves. The sweet-versus-savoury argument is regional and heated."],
-    ["龙舟","lóngzhōu","dragon boat","Dragon boat. Twenty paddlers, a drummer, and a great deal of shouting."],
+    ["龙舟","lóngzhōu","dragon boat","Twenty paddlers, a drummer beating time in the bow, and a great deal of shouting."],
     ["屈原","Qū Yuán","Qu Yuan","The poet the festival commemorates, who drowned himself in 278 BC."],
     ["划船","huáchuán","to row a boat","Paddle-boat. Also just going out on the water."]
   ]},
@@ -969,7 +969,7 @@ const FESTIVALS = [
   ]},
   { key:"national", icon:"🇨🇳", name:"National Day", zh:"国庆节", on:"10-01", words:[
     ["国庆节","guóqìngjié","National Day","Nation-celebrate festival. The start of a week-long holiday known as 黄金周."],
-    ["黄金周","huángjīnzhōu","Golden Week","Golden week. Everyone travels at once; book early or don't go."],
+    ["黄金周","huángjīnzhōu","Golden Week","Everyone in the country travels at once. Book early, or don't go."],
     ["旅游","lǚyóu","tourism","Travel-roam. What the entire country does that week."],
     ["首都","shǒudū","capital city","Head-metropolis. Beijing, 北京, literally northern capital."],
     ["人民","rénmín","the people","People-folk. 人民币 the people's currency is the official name of the yuan."]
@@ -983,11 +983,11 @@ const FESTIVALS = [
   ]},
   { key:"christmas", icon:"🎄", name:"Christmas", zh:"圣诞节", on:"12-25", words:[
     ["圣诞节","shèngdànjié","Christmas","Holy-birth festival. Marked commercially across urban China, rarely religiously."],
-    ["圣诞树","shèngdànshù","Christmas tree","Christmas tree. 树 is one of the characters in stage 8."],
+    ["圣诞树","shèngdànshù","Christmas tree","树 you already know from stage 8; 圣诞 is the holy birth."],
     ["礼物","lǐwù","present, gift","Ceremony-thing. Also the word for any gift at all."],
     ["雪人","xuěrén","snowman","Snow person. Both characters are ones you already know."],
     ["平安夜","píng'ānyè","Christmas Eve","Peaceful night — the Chinese name for Silent Night, and for the evening itself."],
-    ["苹果","píngguǒ","apple","Apples are given on Christmas Eve in China, because 苹 sounds like the 平 in 平安, peace."]
+    ["苹果","píngguǒ","apple","Given on Christmas Eve in China, because 苹 sounds like the 平 in 平安夜, peaceful night."]
   ]}
 ];
 
