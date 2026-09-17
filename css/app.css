@@ -1673,7 +1673,13 @@ button.tier-head:hover { border-color: var(--ink-3); }
   background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r);
   padding: 1.1rem .6rem; cursor: pointer; transition: transform .12s, border-color .15s, background .15s;
 }
+.place-opt { position: relative; }
 .place-opt .han { font-family: var(--f-han); font-size: 2.6rem; line-height: 1; color: var(--ink); }
+/* the number sits in the corner so the character stays optically centred */
+.place-opt .opt-n { position: absolute; top: .4rem; left: .4rem; }
+.place-opt.right .opt-n { border-color: var(--jade); color: var(--jade); }
+.place-opt.wrong .opt-n { border-color: var(--seal); color: var(--seal); }
+#placeDunno .opt-n { margin-left: .35rem; }
 .place-opt:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--ink-3); box-shadow: var(--shadow); }
 .place-opt:disabled { cursor: default; }
 .place-opt.right { border-color: var(--jade); background: var(--jade-wash); }

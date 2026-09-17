@@ -3138,6 +3138,22 @@ function onKey(e) {
     return;
   }
 
+  /* the placement quiz: 1-4 to answer, space when you don't know it */
+  if ($("#place").classList.contains("on")) {
+    if (place.done) {
+      if (e.key === " " || e.key === "Enter") { e.preventDefault(); $("#placeGo")?.click(); }
+      return;
+    }
+    if (place.locked) { e.preventDefault(); return; }   /* mid-reveal: swallow it */
+    if (e.key === " ") { e.preventDefault(); $("#placeDunno")?.click(); return; }
+    if (/^[1-9]$/.test(e.key)) {
+      const opts = $$("#placeBody .place-opt:not(:disabled)");
+      const hit = opts[+e.key - 1];
+      if (hit) { e.preventDefault(); hit.click(); }
+    }
+    return;
+  }
+
   if (!session.active || pad.active) return;   /* the pad owns space */
 
   if (e.key === " " || e.key === "Enter") {
@@ -3315,13 +3331,13 @@ function openProfile(firstRun) {
    alike; a block of easy ones would place everybody at the end.
    ============================================================ */
 
-const place = { idx: 0, asked: 0, misses: 0, done: false, got: new Set(), result: 0 };
+const place = { idx: 0, asked: 0, misses: 0, done: false, got: new Set(), result: 0, locked: false };
 
 const MIN_BEFORE_STOP = 12;   /* questions before "that's enough" is offered */
 
 function openPlacement() {
   place.idx = 0; place.asked = 0; place.misses = 0; place.done = false;
-  place.got = new Set(); place.result = 0;
+  place.got = new Set(); place.result = 0; place.locked = false;
   $("#place").classList.add("on");
   document.body.style.overflow = "hidden";
   renderPlacement();
@@ -3364,9 +3380,10 @@ function renderPlacement() {
     <span class="eyebrow">Which character means</span>
     <h1 class="place-q">${esc(ch.m)}</h1>
     <div class="place-opts">
-      ${opts.map(o => `<button class="place-opt" data-c="${esc(o.c)}"><span class="han">${esc(o.c)}</span></button>`).join("")}
+      ${opts.map((o, i) => `<button class="place-opt" data-c="${esc(o.c)}">
+        <kbd class="opt-n">${i + 1}</kbd><span class="han">${esc(o.c)}</span></button>`).join("")}
     </div>
-    <button class="btn btn-ghost btn-sm" id="placeDunno">I don't know this one</button>
+    <button class="btn btn-ghost btn-sm" id="placeDunno">I don't know this one <kbd class="opt-n">space</kbd></button>
     <p class="note">Answer honestly. Every one you get right is marked as already known and skipped —
       ${place.misses
         ? `${left} more miss${left === 1 ? "" : "es"} and we'll stop here.`
@@ -3381,16 +3398,25 @@ function renderPlacement() {
 }
 
 function placementAnswer(ok, btn, c) {
+  /* One answer per question. The options are disabled on the way out, but the
+     "I don't know" button and its space shortcut are not — without this, space
+     held down through the reveal counts a miss per repeat and ends the quiz
+     several characters early. */
+  if (place.locked) return;
+  place.locked = true;
   place.asked++;
   if (ok) place.got.add(c); else place.misses++;
   $$("#placeBody .place-opt").forEach(b => {
     b.disabled = true;
     if (b.dataset.c === c) b.classList.add("right");
   });
+  const dunno = $("#placeDunno");
+  if (dunno) dunno.disabled = true;
   if (btn && !ok) btn.classList.add("wrong");
   say(c);
   setTimeout(() => {
     place.idx++;
+    place.locked = false;
     if (place.misses > PLACE_MISS_LIMIT) return finishPlacement();
     renderPlacement();
   }, ok ? 320 : 900);
@@ -3433,7 +3459,7 @@ function renderPlacementDone() {
 
     <div class="place-foot">
       <button class="btn btn-ghost" id="placeRedo">Take it again</button>
-      <button class="btn btn-seal" id="placeGo">${n ? "Start here" : "Start from the beginning"}</button>
+      <button class="btn btn-seal" id="placeGo">${n ? "Start here" : "Start from the beginning"} <kbd class="opt-n">↵</kbd></button>
     </div>
     <p class="note dim">You can re-place from Settings at any time. It only ever adds.</p>
   </div>`;

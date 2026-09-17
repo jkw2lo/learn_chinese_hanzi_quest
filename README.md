@@ -278,6 +278,12 @@ to two-up, still numbered in order.
 `esc` leaves. In flashcards `space` flips and the arrows navigate. Space is
 ignored while the trackpad holds it for inking.
 
+The **placement quiz** takes the same keys: `1`–`4` to answer, `space` for "I
+don't know this one", `enter` to start from the result screen. A question latches
+on answer (`place.locked`), because the options are disabled on the way out but
+the skip button is not — without it, a held space counted one miss per key repeat
+and ended the quiz several characters early.
+
 ## Backup
 
 The **💾 button in the top bar** saves progress *and* the practice diary as one
@@ -408,6 +414,12 @@ So day one after placement is the same day one everybody gets: **five new
 characters, zero reviews**, starting at the first character you actually missed.
 A smoke check asserts `dueCount() === 0` immediately after placing, and that the
 first review is at least two days out.
+
+It is keyboard-driven like the rest of the app: **1-4** to answer, **space** for
+"I don't know this one", **Enter** to start on the result screen. A question
+locks the moment it is answered — the options are disabled on the way out but
+the skip button is not, so without the latch a held space counted a miss per
+repeat and ended the quiz several characters early.
 
 Questions are **meaning → character**. Recognising 山 among four English words is
 easy to fake by elimination; picking 山 out of four plausible characters is not.
