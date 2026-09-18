@@ -356,6 +356,29 @@ entirely for handwriting: the input is slow by nature, and reaching for the
 Trackpad button shouldn't look like hesitation. Settings has a
 switch.
 
+## The audio unlock, and the first character you write
+
+Browsers refuse audio a page starts on its own, so the first real click primes
+the `<audio>` element by loading a clip and playing it muted. The permission is
+granted **per element**, so it has to be the element we will actually use — a
+throwaway one would unlock nothing.
+
+The tidying afterwards was the bug. `unlockAudio()` paused and rewound the
+element once its primer finished, and if you completed a character before that
+promise settled, the cleanup paused the clip that had taken over in the
+meantime. The first thing you wrote was silent, and everything after it worked:
+`play()` for that character came back **AbortError**, which is what the trace
+showed.
+
+`audioOwner` is a counter bumped whenever real audio claims the element. The
+primer records its own number and only cleans up if it still holds it. Measured
+from a cold start, a five-character notebook line now plays all five.
+
+An `AbortError` is also no longer reported as blocked sound. It means we
+interrupted ourselves by starting the next clip — normal in a phrase chain — and
+treating it as a refusal put "tap to allow sound" on screen while the audio was
+working perfectly.
+
 ## Keyboard
 
 On screens from 820px the four short-answer options sit in **one row**, so
@@ -365,6 +388,16 @@ to two-up, still numbered in order.
 `1`–`9` answer (options are numbered on screen), `space` or `enter` moves on,
 `esc` leaves. In flashcards `space` flips and the arrows navigate. Space is
 ignored while the trackpad holds it for inking.
+
+In a **writing drill**, `S` shows the strokes and `T` writes — the same two keys
+from either side, so stepping between looking at the character and trying it
+needs no thought. `S` again replays the animation; `T` while the trackpad is on
+turns it off, as it does in the notebook. Both are printed on the buttons.
+
+`onKey` used to bail out entirely while the trackpad held the pointer (`the pad
+owns space`), which meant that once you were writing there was no way back with
+the keyboard at all — `T` could not turn it off and nothing could show you the
+strokes. The pad still owns space for inking; it no longer owns the mode keys.
 
 The **placement quiz** takes the same keys: `1`–`4` to answer, `space` for "I
 don't know this one", `enter` to start from the result screen. A question latches

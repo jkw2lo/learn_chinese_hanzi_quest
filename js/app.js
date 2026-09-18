@@ -106,18 +106,34 @@ function ensureAudioEl() {
 /* One muted play inside the first real click unlocks the element for the rest
    of the visit, so later programmatic plays — from a card that advances
    itself, say — are allowed. */
+/* Which playback currently owns the shared <audio> element.
+
+   The unlock has to prime the very element we will use later — the permission
+   is granted per element — so it loads a real clip, plays it muted, and tidies
+   up afterwards. The tidying was the problem: if a character was finished
+   before the primer's play() promise settled, the cleanup paused the clip that
+   had taken over in the meantime, and the first thing you wrote was silent.
+   Bumping a counter whenever real audio claims the element lets the primer
+   recognise that it no longer owns it. */
+let audioOwner = 0;
+
 function unlockAudio() {
   if (audioUnlocked) return;
   const first = window.HQ_AUDIO && Object.values(window.HQ_AUDIO)[0];
   if (!first) return;                  /* bundle still in flight — stay armed */
   audioUnlocked = true;
   const a = ensureAudioEl();
+  const mine = ++audioOwner;
   try {
     a.muted = true;
     a.src = "data:audio/mp4;base64," + first;
     const p = a.play();
-    const done = () => { try { a.pause(); a.currentTime = 0; } catch {} a.muted = false; };
-    if (p && p.then) p.then(done, () => { a.muted = false; }); else done();
+    const done = () => {
+      /* stand down if a real clip has taken the element since */
+      if (audioOwner === mine) { try { a.pause(); a.currentTime = 0; } catch {} }
+      a.muted = false;
+    };
+    if (p && p.then) p.then(done, done); else done();
   } catch { a.muted = false; }
 }
 
@@ -126,12 +142,20 @@ function playClip(text) {
   if (!b64) return false;
   const a = ensureAudioEl();
   try {
+    audioOwner++;                      /* this playback owns the element now */
     a.pause();
     a.muted = false;
     a.src = "data:audio/mp4;base64," + b64;
     a.currentTime = 0;
     const p = a.play();
-    if (p && p.catch) p.catch(() => { speechBlocked = true; renderMuted(); });
+    /* An AbortError means we interrupted ourselves by starting the next clip —
+       normal, and not the browser refusing us. Reporting that as blocked sound
+       would put "tap to allow sound" on screen for a chain that is working. */
+    if (p && p.catch) p.catch(e => {
+      if (e && e.name === "AbortError") return;
+      speechBlocked = true;
+      renderMuted();
+    });
     if (speechBlocked) { speechBlocked = false; renderMuted(); }
     return true;
   } catch { return false; }
@@ -1023,8 +1047,8 @@ function renderDrill(item, ch, body, foot) {
       w.showCharacter();
       w.animateCharacter();
       tools.innerHTML = `
-        <button class="btn btn-sm" id="tryW">Now you try</button>
-        <button class="btn btn-ghost btn-sm" id="againW">Show again</button>
+        <button class="btn btn-sm" id="tryW">Now you try <kbd class="opt-n">T</kbd></button>
+        <button class="btn btn-ghost btn-sm" id="againW">Show again <kbd class="opt-n">S</kbd></button>
         <button class="btn btn-ghost btn-sm" id="moveW">Move on</button>`;
       $("#againW").onclick = () => w.animateCharacter();
       $("#moveW").onclick = () => settle(item, ch, false, foot, null, -1);
@@ -1036,8 +1060,8 @@ function renderDrill(item, ch, body, foot) {
       w.cancelQuiz();
       w.hideCharacter();
       tools.innerHTML = `
-        ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="padW"><span class="han">触控</span> Trackpad</button>` : ""}
-        <button class="btn btn-ghost btn-sm" id="skipW">${peeked ? "Show me again" : "Show me the strokes"}</button>`;
+        ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="padW"><span class="han">触控</span> Trackpad <kbd class="opt-n">T</kbd></button>` : ""}
+        <button class="btn btn-ghost btn-sm" id="skipW">${peeked ? "Show me again" : "Show me the strokes"} <kbd class="opt-n">S</kbd></button>`;
       bindPad();
       /* scoped and guarded, like the replay button: a global lookup would find
          a stale control from another view, and throw if none existed */
@@ -3413,7 +3437,24 @@ function onKey(e) {
     return;
   }
 
-  if (!session.active || pad.active) return;   /* the pad owns space */
+  if (!session.active) return;
+
+  /* The pad owns space, for inking — but not the mode keys.
+
+     This used to bail out entirely while the trackpad was live, so once you
+     were writing there was no way back out with the keyboard: T couldn't turn
+     it off and nothing could show you the strokes. Stepping between writing and
+     looking at the character is the most common thing to want mid-drill, so
+     both keys work from either side. */
+  if (pad.active) {
+    const k = e.key.toLowerCase();
+    if (k === "s") { e.preventDefault(); ($("#skipW") || $("#againW"))?.click(); }
+    /* T toggles, as it does in the notebook — the drill's 触控 button only ever
+       started the pad and disabled itself, so there was no way back to the
+       mouse without Escape */
+    if (k === "t") { e.preventDefault(); padStop(); }
+    return;
+  }
 
   if (e.key === " " || e.key === "Enter") {
     const go2 = $("#cont") || $("#gotIt") || $("#fin") || $("#again") || $("#skipW");
@@ -3429,7 +3470,10 @@ function onKey(e) {
     return;
   }
   if (e.key.toLowerCase() === "r") $("#earBtn")?.click();
-  if (e.key.toLowerCase() === "t") { e.preventDefault(); $("#padW")?.click(); }
+  /* S shows the strokes, or shows them again; T puts you back to writing.
+     The same two keys either way round, so switching needs no thought. */
+  if (e.key.toLowerCase() === "s") { e.preventDefault(); ($("#skipW") || $("#againW"))?.click(); }
+  if (e.key.toLowerCase() === "t") { e.preventDefault(); ($("#padW") || $("#tryW"))?.click(); }
 }
 
 /* ---------- version ----------
