@@ -1,7 +1,7 @@
 # Hanzi Quest
 
-A practice notebook for learning to read Chinese characters. 600 characters
-across eleven core stages plus a kitchen topic pack, taught in an order where
+A practice notebook for learning to read Chinese characters. 763 characters
+across twelve core stages plus a kitchen topic pack, taught in an order where
 each one makes the next easier.
 
 ## Picking this up again
@@ -256,7 +256,7 @@ attempts at fixing the engine failed because the engine was never the fix.
 
 So `tools/make-audio.mjs` records **every character the app can be asked to
 say** with macOS `say` and bundles them as base64 AAC in `js/audio.js` (3.0 MB
-of audio, 5.8 MB encoded — about 1.2 MB over the wire, gzipped).
+of audio, 6.8 MB encoded — about 1.4 MB over the wire, gzipped).
 
 **It is not loaded with the page.** As a blocking `<script>` it held up every
 view behind it: a first visit had to pull 1.33 MB before anything drew, and
@@ -271,7 +271,7 @@ early. A click landing before the bundle arrived would have burned the only
 chance to unlock the audio element and left the whole visit silent. They stay
 armed now, at the cost of an early return per click.
 
-That is 830 characters, not 600. It used to record the taught ones only, which
+That is 980 characters, not 763. It used to record the taught ones only, which
 left every character that appears in an example word, a sentence or the menu
 without a clip — 金 in 现金, 第 in 第一, 儿 in 女儿, 225 of them in all. A word you
 can see is a word you can tap, and one missing clip made `sayPhrase` abandon
@@ -595,7 +595,7 @@ Under each tile is a bar split by how many passes each character has had —
 solid, two, one, untouched. Two passes on everything looks different from three
 on half of it, and both look different from nothing; a single fraction showed
 all three as the same. Record's Skills panel uses the same maths, over the
-characters you know rather than the whole 600-character library — a bar reading
+characters you know rather than the whole 763-character library — a bar reading
 3% when everything you've met is solid is describing the syllabus, not you.
 
 ## Asking before something irreversible
@@ -813,7 +813,7 @@ character, and that scheduling and the side quest behave.
 own graphics file — stroke count, each path, and in sequence. Because stroke
 *order* is simply the array order, matching the source is what makes the order
 right; it also catches a corrupted download and any character whose strokes
-and medians disagree. All 600 currently match exactly.
+and medians disagree. All 763 currently match exactly.
 
 `check-components.mjs` verifies every "Built from" claim against Make Me a
 Hanzi's decomposition dictionary. Hand-written decompositions drift in two
@@ -862,6 +862,32 @@ The World. Records key on the character rather than its index, so inserting
 mid-curriculum is safe; the `end` values in `STAGES` shift and nothing else does.
 
 Blocked sentences fell from 55 to 30.
+
+### Stage 13 · 通读 Fluent reading
+
+The remaining 163 of the top 627, taking the library to **763**. With this the
+frequency list the whole curriculum was built against is finished; what is left
+is the long tail.
+
+The verification pass earned its keep more than any previous one:
+
+- **42 component claims were wrong** — a third of the batch. 包 claimed 己 where
+  the glyph has 巳, 射 claimed 土/十/二 where it is simply 身 + 寸, 陈 claimed 车
+  where it is 阝 + 东. All corrected against the real decompositions; `check-
+  components.mjs` is the only reason they didn't ship.
+- **26 sentences used untaught characters**; all rewritten.
+- **22 characters listed themselves as a word** — the same lazy shortcut as
+  before, caught by the check added for it last time.
+- **Three stray non-Chinese fragments** had crept into the text: an English
+  word inside a Chinese pairing, and Cyrillic and a stray 原 inside two
+  etymologies.
+- **Pinyin**: 162 of 163 match Make Me a Hanzi. The one disagreement is 似,
+  where the dictionary lists only `shì` but glosses it "resembling, similar to"
+  — which is the `sì` reading, the one in 类似, 相似 and 似乎. Ours stands; the
+  reference is incomplete, as it was for 离.
+
+Blocked sentences are now **19 of 763**, and every character still has a
+drillable pairing. 2,136 pairings, 980 clips.
 
 ### Stage 12 · 读报 Reading the news
 
