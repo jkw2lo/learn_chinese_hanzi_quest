@@ -1,8 +1,8 @@
 # Hanzi Quest
 
-A practice notebook for learning to read Chinese characters. 364 characters
-across eight core stages plus a kitchen topic pack, taught in an order where
-each one makes the next easier.
+A practice notebook for learning to read Chinese characters. 466 characters
+across ten core stages plus a kitchen topic pack, taught in an order where each
+one makes the next easier.
 
 ## Picking this up again
 
@@ -256,7 +256,7 @@ attempts at fixing the engine failed because the engine was never the fix.
 
 So `tools/make-audio.mjs` records **every character the app can be asked to
 say** with macOS `say` and bundles them as base64 AAC in `js/audio.js` (3.0 MB
-of audio, 4.0 MB encoded — 859 KB over the wire, gzipped).
+of audio, 4.8 MB encoded — about 1 MB over the wire, gzipped).
 
 **It is not loaded with the page.** As a blocking `<script>` it held up every
 view behind it: a first visit had to pull 1.33 MB before anything drew, and
@@ -271,7 +271,7 @@ early. A click landing before the bundle arrived would have burned the only
 chance to unlock the audio element and left the whole visit silent. They stay
 armed now, at the cost of an early return per click.
 
-That is 575 characters, not 364. It used to record the taught ones only, which
+That is 688 characters, not 466. It used to record the taught ones only, which
 left every character that appears in an example word, a sentence or the menu
 without a clip — 金 in 现金, 第 in 第一, 儿 in 女儿, 225 of them in all. A word you
 can see is a word you can tap, and one missing clip made `sayPhrase` abandon
@@ -595,7 +595,7 @@ Under each tile is a bar split by how many passes each character has had —
 solid, two, one, untouched. Two passes on everything looks different from three
 on half of it, and both look different from nothing; a single fraction showed
 all three as the same. Record's Skills panel uses the same maths, over the
-characters you know rather than the whole 364-character library — a bar reading
+characters you know rather than the whole 466-character library — a bar reading
 3% when everything you've met is solid is describing the syllabus, not you.
 
 ## Asking before something irreversible
@@ -756,7 +756,7 @@ character, and that scheduling and the side quest behave.
 own graphics file — stroke count, each path, and in sequence. Because stroke
 *order* is simply the array order, matching the source is what makes the order
 right; it also catches a corrupted download and any character whose strokes
-and medians disagree. All 364 currently match exactly.
+and medians disagree. All 466 currently match exactly.
 
 `check-components.mjs` verifies every "Built from" claim against Make Me a
 Hanzi's decomposition dictionary. Hand-written decompositions drift in two
@@ -805,6 +805,38 @@ The World. Records key on the character rather than its index, so inserting
 mid-curriculum is safe; the `end` values in `STAGES` shift and nothing else does.
 
 Blocked sentences fell from 55 to 30.
+
+### Stages 10 and 11 · the next hundred
+
+Chosen against a frequency list rather than by feel. A diff of the library
+against the **top 627 characters of written Chinese** showed 228 present and 399
+missing, so the next 102 were taken straight off the top of that gap: ranks
+66-230 became **Groundwork 常用** (50) and 231-350 became **Wider world 广用**
+(52). Groundwork is the less concrete of the two on purpose — 又, 当, 相, 全, 变,
+结 are words that hold a sentence together rather than name things, and they are
+what stops you reading anything real.
+
+Everything in the batch was checked rather than recalled:
+
+- **Pinyin** — all 102 cross-checked against Make Me a Hanzi's readings. All match.
+- **Meanings** — compared against the same dictionary's definitions. Eight
+  looked divergent; seven were my heuristic tripping over synonyms, and the
+  eighth (离) is a genuine split: the dictionary gives the archaic "rare beast"
+  where modern 离 means to leave. Ours is right for the language people speak.
+- **Components** — `check-components.mjs`, all 466 still hold.
+- **Strokes** — regenerated and compared stroke-for-stroke against upstream.
+- **Audio** — regenerated; 688 clips, every one present and none suspiciously
+  short.
+- **Sentences** — 34 of the 102 first drafts used a character the library
+  doesn't teach, which makes them useless as reading material. All rewritten to
+  use only taught characters. Library-wide, blocked sentences fell from 8.2% to
+  5.4%.
+- **Etymologies** — two (运, 达) described the *simplified* form as if it were
+  the origin. Both now say plainly that 云 and 大 are stand-ins introduced by
+  simplification, and what the full forms 運 and 達 actually contain.
+
+Each character carries two or three real pairings, which is what the words deck
+feeds on: it went from 257 entries to 491.
 
 ### Stage 9 · 交流 Connect
 
