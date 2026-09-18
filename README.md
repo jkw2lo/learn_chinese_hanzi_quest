@@ -1,8 +1,8 @@
 # Hanzi Quest
 
-A practice notebook for learning to read Chinese characters. 466 characters
-across ten core stages plus a kitchen topic pack, taught in an order where each
-one makes the next easier.
+A practice notebook for learning to read Chinese characters. 600 characters
+across eleven core stages plus a kitchen topic pack, taught in an order where
+each one makes the next easier.
 
 ## Picking this up again
 
@@ -256,7 +256,7 @@ attempts at fixing the engine failed because the engine was never the fix.
 
 So `tools/make-audio.mjs` records **every character the app can be asked to
 say** with macOS `say` and bundles them as base64 AAC in `js/audio.js` (3.0 MB
-of audio, 4.8 MB encoded — about 1 MB over the wire, gzipped).
+of audio, 5.8 MB encoded — about 1.2 MB over the wire, gzipped).
 
 **It is not loaded with the page.** As a blocking `<script>` it held up every
 view behind it: a first visit had to pull 1.33 MB before anything drew, and
@@ -271,7 +271,7 @@ early. A click landing before the bundle arrived would have burned the only
 chance to unlock the audio element and left the whole visit silent. They stay
 armed now, at the cost of an early return per click.
 
-That is 688 characters, not 466. It used to record the taught ones only, which
+That is 830 characters, not 600. It used to record the taught ones only, which
 left every character that appears in an example word, a sentence or the menu
 without a clip — 金 in 现金, 第 in 第一, 儿 in 女儿, 225 of them in all. A word you
 can see is a word you can tap, and one missing clip made `sayPhrase` abandon
@@ -595,7 +595,7 @@ Under each tile is a bar split by how many passes each character has had —
 solid, two, one, untouched. Two passes on everything looks different from three
 on half of it, and both look different from nothing; a single fraction showed
 all three as the same. Record's Skills panel uses the same maths, over the
-characters you know rather than the whole 466-character library — a bar reading
+characters you know rather than the whole 600-character library — a bar reading
 3% when everything you've met is solid is describing the syllabus, not you.
 
 ## Asking before something irreversible
@@ -756,7 +756,7 @@ character, and that scheduling and the side quest behave.
 own graphics file — stroke count, each path, and in sequence. Because stroke
 *order* is simply the array order, matching the source is what makes the order
 right; it also catches a corrupted download and any character whose strokes
-and medians disagree. All 466 currently match exactly.
+and medians disagree. All 600 currently match exactly.
 
 `check-components.mjs` verifies every "Built from" claim against Make Me a
 Hanzi's decomposition dictionary. Hand-written decompositions drift in two
@@ -805,6 +805,36 @@ The World. Records key on the character rather than its index, so inserting
 mid-curriculum is safe; the `end` values in `STAGES` shift and nothing else does.
 
 Blocked sentences fell from 55 to 30.
+
+### Stage 12 · 读报 Reading the news
+
+Another 134, ranks 350-470, taking the library to **600** — which completes the
+Independent tier at 300/300 and opens Fluent. This is the batch where a learner
+crosses from reading signs and menus to reading *prose*: 政府, 社会, 经济, 问题,
+情况, 结构 are in the first paragraph of almost any article, and none of them
+name a thing you can point at. Abstract and unavoidable.
+
+Verified the same way, and it caught the same class of problem again:
+
+- **Pinyin** — all 134 match Make Me a Hanzi exactly.
+- **Meanings** — 14 flagged, all synonym mismatches in the comparison rather
+  than errors (义 "righteousness" against "right conduct, propriety"), each
+  checked by hand.
+- **Components and strokes** — clean across all 600; strokes regenerated and
+  compared upstream stroke for stroke.
+- **Audio** — 830 clips, all present, none short.
+- **Sentences** — 24 of 134 first drafts used an untaught character. All
+  rewritten. Library-wide, blocked sentences are now **3.8%**, down from 8.2%
+  before any of this.
+- **Three stray `g:0` fields** left in by a slip of the hand, caught by a check
+  that every entry carries exactly the expected keys — worth keeping.
+
+Readable words rose from 622 to **1,160**, and the words deck from 491 to 810.
+
+The tier smoke checks needed loosening here, not because behaviour changed but
+because they had hard-coded assumptions that only held while the library stopped
+inside tier 2 — `unlockedCeiling() === HQ.length` stops being true the moment
+anything is written past 500. They are expressed against tier boundaries now.
 
 ### Stages 10 and 11 · the next hundred
 

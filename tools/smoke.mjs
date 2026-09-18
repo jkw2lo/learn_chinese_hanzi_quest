@@ -409,11 +409,20 @@ console.log('\ntiers gate the library');
   /* learn enough of tier 1 and the door opens */
   fresh.HQ.slice(0, Math.ceil(200 * fresh.TIER_UNLOCK)).forEach(ch => fresh.introduce(ch.c));
   ok('reaching the threshold unlocks the next tier', fresh.tierUnlocked(fresh.TIERS[1]));
-  ok('and the ceiling moves with it', fresh.unlockedCeiling() === fresh.HQ.length);
+  /* the ceiling stops at the end of the last OPEN tier, or the end of what is
+     written — whichever comes first. Pinning it to HQ.length was only right
+     while the library stopped inside tier 2. */
+  ok('and the ceiling moves with it',
+     fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length),
+     String(fresh.unlockedCeiling()));
   ok('what was locked no longer is', !fresh.isLocked(fresh.HQ[250].c));
-  ok('tier 3 stays shut — nothing is written there', !fresh.tierUnlocked(fresh.TIERS[2]));
-  ok('an unwritten tier reports nothing built', fresh.tierProgress(fresh.TIERS[2]).built === 0);
-  ok('but still knows what it is aiming at', fresh.tierProgress(fresh.TIERS[2]).planned === 500);
+  ok('the tier after that stays shut', !fresh.tierUnlocked(fresh.TIERS[2]));
+  ok('and anything inside it is still locked',
+     fresh.HQ.length <= fresh.TIERS[1].to || fresh.isLocked(fresh.HQ[fresh.TIERS[1].to + 1].c));
+  ok('a tier knows what it is aiming at even before it is written',
+     fresh.tierProgress(fresh.TIERS[2]).planned === fresh.TIERS[2].to - fresh.TIERS[1].to);
+  ok('and never reports more built than planned',
+     fresh.TIERS.every(t => fresh.tierProgress(t).built <= fresh.tierProgress(t).planned));
 }
 {
   /* placement credits past a gate, and that is what opens it */
@@ -423,7 +432,8 @@ console.log('\ntiers gate the library');
   fresh.load();
   fresh.placeKnown(fresh.HQ.slice(0, 300).map(ch => ch.c));
   ok('a placement past tier 1 opens tier 2', fresh.tierUnlocked(fresh.TIERS[1]));
-  ok('and the ceiling follows', fresh.unlockedCeiling() === fresh.HQ.length);
+  ok('and the ceiling follows',
+     fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
 }
 
 console.log('\nstreak safety');
