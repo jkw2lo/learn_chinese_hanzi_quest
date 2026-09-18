@@ -20,12 +20,16 @@ const CONTRACT = [
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
-  'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay',
+  'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay', 'dayReps',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
   'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
-  'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied'
+  'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied',
+  'sprintState', 'sprintMark', 'sprintMarkOf', 'sprintHits', 'sprintMisses', 'sprintByMode',
+  'sprintTrouble', 'sprintFluent', 'sprintForget', 'rightRun', 'troubleScore',
+  'recordRun', 'sheetKey', 'sprintBests', 'sprintRecent', 'tallySprint', 'sprintTotal',
+  'SPRINT_WINDOW', 'SPRINT_TROUBLE', 'SPRINT_CLEAR', 'SPRINT_FLUENT'
 ];
 
 /* typeof guards so a missing name reports cleanly instead of crashing */
@@ -633,6 +637,145 @@ ok('no key outlives the reset', !strays.length, strays.join(' '));
 const stored = JSON.parse(globalThis.localStorage.getItem('hanzi-quest-v1'));
 ok('and the stored copy matches', !Object.keys(stored).some(k => !(k in api.blank())));
 ok('the tour is due again', fresh.tour === false);
+
+/* ---------- sprint ----------
+
+   js/sprint.js is DOM-free at the top level — every line of it that touches
+   the page is inside a function — so it runs here alongside the other two,
+   which is what lets the cross-file names be pinned rather than hoped for. */
+
+console.log('\nsprint: the record behind the sheets');
+{
+  const sprintSrc = read('js/sprint.js');
+  const appSrc = read('js/app.js');
+  const fresh = new Function(read('js/data.js') + '\n' + read('js/srs.js') + '\n' + sprintSrc +
+    '\nreturn {HQ,state,load,save,introduce,grade,rec,dayKey,addDays,knownChars,' +
+    'sprintState,sprintMark,sprintTrouble,sprintFluent,sprintForget,rightRun,sprintMisses,sprintHits,' +
+    'sprintByMode,recordRun,sheetKey,sprintBests,sprintRecent,tallySprint,sprintToday,' +
+    'SPRINT,WRITE_STYLES,SPRINT_WINDOW,SPRINT_CLEAR,SPRINT_TROUBLE,SPRINT_FLUENT,SPRINT_MINUTES,' +
+    'SPRINT_COUNTS,SPRINT_MIN_POOL,sprintGrade,sprintPar,sprintDeal,fmtClock,sprintPick,liveStreak,today,' +
+    'dayReps,daysStudied};')();
+  globalThis.localStorage._d = {};
+  fresh.load();
+  const chars = fresh.HQ.slice(0, 20).map(c => c.c);
+  chars.forEach(fresh.introduce);
+  const a = chars[0], b = chars[1];
+
+  ok('a fresh record carries a sprint block', !!fresh.state.sprint && !!fresh.state.sprint.marks);
+
+  /* marks */
+  fresh.sprintMark(a, 'r', false);
+  fresh.sprintMark(a, 'r', false);
+  ok('misses are counted per mode', fresh.sprintMisses(a) === 2);
+  ok('and the recent string records them', fresh.sprintState().marks[a].s === '00');
+  ok('two misses put it in the 错字本', fresh.sprintTrouble().includes(a));
+  fresh.sprintMark(a, 'l', true);
+  fresh.sprintMark(a, 'r', true);
+  ok('two right answers are not enough to leave', fresh.sprintTrouble().includes(a));
+  ok('and the run is counted across modes', fresh.rightRun(a) === 2);
+  fresh.sprintMark(a, 'r', true);
+  ok(`${fresh.SPRINT_CLEAR} in a row clears it`, !fresh.sprintTrouble().includes(a));
+  ok('but the history is kept', fresh.sprintMisses(a) === 2 && fresh.sprintHits(a) === 3);
+  ok('the per-mode split survives', fresh.sprintByMode(a).find(x => x.mode === 'l').hit === 1);
+
+  /* the recent string is what keeps the record from growing without limit */
+  for (let i = 0; i < 40; i++) fresh.sprintMark(b, 'r', i % 2 === 0);
+  ok('the recent window is capped', fresh.sprintState().marks[b].s.length === fresh.SPRINT_WINDOW);
+
+  /* dismissing, and the evidence against it */
+  const c = chars[2];
+  fresh.sprintMark(c, 'w', false); fresh.sprintMark(c, 'w', false);
+  ok('a third character is on the page', fresh.sprintTrouble().includes(c));
+  fresh.sprintForget(c);
+  ok('dismissing takes it off', !fresh.sprintTrouble().includes(c));
+  fresh.sprintMark(c, 'w', false);
+  ok('and missing it again puts it back', fresh.sprintTrouble().includes(c));
+
+  /* fluent */
+  const d = chars[3];
+  for (let i = 0; i < fresh.SPRINT_FLUENT; i++) fresh.sprintMark(d, 'r', true);
+  ok('a long clean run reads as fluent', fresh.sprintFluent().includes(d));
+  fresh.sprintMark(d, 'r', false);
+  ok('and one miss ends that', !fresh.sprintFluent().includes(d));
+
+  /* a sprint must never make tomorrow worse */
+  const e = chars[4];
+  const before = { lvl: fresh.rec(e).lvl, due: fresh.rec(e).due };
+  fresh.grade(e, false, 'r', { speed: true });
+  ok('a sprint miss leaves the level alone', fresh.rec(e).lvl === before.lvl);
+  ok('and leaves the review date alone', fresh.rec(e).due === before.due);
+  ok('but it is still counted as a miss', fresh.rec(e).wrong === 1);
+  fresh.grade(e, true, 'r', { speed: true });
+  ok('a sprint hit gives skill credit', fresh.rec(e).skills.r === 1);
+  ok('without pushing the review out', fresh.rec(e).due === before.due);
+
+  /* sheets and the board */
+  const run1 = { mode: 'r', style: null, n: 40, secs: 120, right: 31, answered: 40, done: true, ms: 96000 };
+  ok('the first run on a sheet is a best', fresh.recordRun(run1).best);
+  const worse = { ...run1, right: 28, ms: 90000 };
+  ok('a lower score is not', !fresh.recordRun(worse).best);
+  const faster = { ...run1, ms: 80000 };
+  ok('the same score, quicker, is', fresh.recordRun(faster).best);
+  const bigger = { ...run1, right: 33, ms: 119000 };
+  ok('and more right beats quicker', fresh.recordRun(bigger).best);
+  ok('the board keeps the best of them', fresh.sprintState().best['r:40:120'].right === 33);
+  ok('a different size is a different sheet',
+     fresh.recordRun({ ...run1, n: 60 }).best && Object.keys(fresh.sprintState().best).length === 2);
+  ok('and so is a different writing style',
+     fresh.sheetKey({ mode: 'w', n: 40, secs: 120, style: 'type' })
+     !== fresh.sheetKey({ mode: 'w', n: 40, secs: 120, style: 'spot' }));
+  ok('the picker remembers the last sheet', fresh.sprintPick('r').n === 60);
+  ok('recent runs are listed newest first', fresh.sprintRecent('r')[0].n === 60);
+
+  /* the day, and the streak */
+  const day = fresh.today();
+  fresh.tallySprint(40);
+  ok('sprint answers keep a streak alive', fresh.liveStreak() >= 1);
+  ok('and are counted', fresh.sprintToday() === 40);
+  ok('a sprint-only day counts as a day studied', fresh.daysStudied() === 1);
+  ok("but stay out of today's checklist", day.new === 0 && day.rev === 0);
+  ok('and still ink the day', fresh.dayReps(day) === 40);
+
+  /* dealing a sheet */
+  const pool = chars.slice(0, 5);
+  const dealt = fresh.sprintDeal(pool, 100);
+  ok('a sheet is always the length asked for', dealt.length === 100);
+  ok('and never repeats a character back to back',
+     dealt.every((x, i) => i === 0 || x !== dealt[i - 1]));
+  const counts = pool.map(c => dealt.filter(x => x === c).length);
+  ok('and spreads them evenly', Math.max(...counts) - Math.min(...counts) <= 1,
+     counts.join(' '));
+
+  /* difficulty is relative to the mode, which is the whole point of having par */
+  ok('the same pace is harder to type than to read',
+     fresh.sprintPar('w', 'type') > fresh.sprintPar('r'));
+  ok('a generous sheet reads as steady', fresh.sprintGrade('r', 20, 300).zh === '慢');
+  ok('and a brutal one does not', fresh.sprintGrade('r', 100, 60).zh === '狂');
+  ok('the clock formats as minutes and seconds', fresh.fmtClock(95000) === '1:35');
+
+  /* the cross-file contract, both ways */
+  const needsFromApp = ['startRepair', 'REPAIR_SIZE', 'esc', 'bare', 'searchable', 'optionSet',
+                        'say', 'stopPhrase', 'toneMark', 'clipFor', 'clipCount', 'openChar',
+                        'renderAll', 'celebrate', 'one', 'pick'];
+  const missingInApp = needsFromApp.filter(n =>
+    !new RegExp(`(const|let|function)\\s+${n}\\b`).test(appSrc));
+  ok('everything sprint.js calls in app.js is declared there', !missingInApp.length, missingInApp.join(' '));
+  const needsFromSprint = ['renderSprint', 'sprintOpen', 'sprintClose', 'sprintPause', 'sprintResume', 'sp'];
+  const missingInSprint = needsFromSprint.filter(n =>
+    !new RegExp(`(const|let|function)\\s+${n}\\b`).test(sprintSrc));
+  ok('and everything app.js calls in sprint.js is declared there', !missingInSprint.length, missingInSprint.join(' '));
+  ok('app.js renders the sprint tab', /RENDER = \{[^}]*sprint: renderSprint/.test(appSrc));
+  ok('index.html loads sprint.js before app.js', (() => {
+    const h = read('index.html');
+    /* the tags, not the prose — index.html explains the cache in a comment
+       that names js/app.js long before anything loads it */
+    return h.indexOf('src="js/sprint.js') > 0
+        && h.indexOf('src="js/sprint.js') < h.indexOf('src="js/app.js');
+  })());
+  ok('and gives it a tab in both navs', (read('index.html').match(/data-nav="sprint"/g) || []).length === 2);
+  ok('the mistake notebook has somewhere to send you',
+     /function startRepair/.test(appSrc) && /REPAIR_MODE/.test(appSrc));
+}
 
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');
 process.exit(failures ? 1 : 0);

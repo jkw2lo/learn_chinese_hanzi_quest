@@ -756,7 +756,7 @@ function bindCard(root, ch, writerId) {
 
 const session = { queue: [], idx: 0, right: 0, wrong: 0, learned: 0, reviewed: 0,
                   combo: 0, bestCombo: 0, active: false, questAtStart: 0, practice: null, todo: null, got: {},
-                  qStart: 0, times: [], quick: 0 };
+                  qStart: 0, times: [], quick: 0, repair: null };
 
 /* A question is "quick" if it lands while the bar still has some drain left.
    Running out costs nothing — the bar is there to add pace, not a penalty. */
@@ -812,6 +812,54 @@ function startPractice(mode) {
   session.questAtStart = menuProgress().known;
   session.practice = mode;
   session.todo = null;
+  session.repair = null;
+  session.active = true;
+  $("#session").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderStep();
+}
+
+/* ---------- 错字本 repair rounds ----------
+
+   What the mistake notebook is for. A character gets on that page by being
+   missed repeatedly under time, and the one thing that will not shift it is
+   another timed drill of the same kind — you already know you can't do this
+   one in two seconds.
+
+   So a repair round is the opposite of a sprint in every respect. No clock.
+   Few characters. And each one approached from every side in turn, because a
+   character you keep missing is usually one where a single thread has come
+   loose — you know the shape and not the sound, or the sound and not which of
+   three shapes it belongs to — and the round has to find out which.
+
+   Three passes. Read the card and then read it back; hear it and name it;
+   produce the form from the meaning. Three right answers in a row take it off
+   the page, and those answers count wherever you get them — here, or in a
+   sprint, or in tomorrow's session. */
+
+const REPAIR_SIZE = 5;
+
+/* Which sprint mode a drill kind speaks for, so answers in a repair round
+   count towards clearing the same character they would in a sprint. */
+const REPAIR_MODE = { r: "r", d: "r", p: "l", l: "l", c: "w", s: "w", a: "w", w: "w" };
+
+function startRepair(chars) {
+  const cs = [...new Set(chars)].filter(c => CHAR_INDEX[c] && isKnown(c)).slice(0, REPAIR_SIZE);
+  if (!cs.length) return;
+  const items = [];
+  cs.forEach(c => { items.push({ t: "intro", c }); items.push({ t: "drill", c, kind: "r" }); });
+  shuffle([...cs]).forEach(c => items.push({ t: "drill", c, kind: state.audio ? "l" : "p" }));
+  shuffle([...cs]).forEach(c => items.push({ t: "drill", c, kind: "c" }));
+  session.queue = items;
+  session.idx = 0;
+  session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.combo = session.bestCombo = 0;
+  session.got = {};
+  session.times = []; session.quick = 0;
+  session.questAtStart = menuProgress().known;
+  session.practice = null;
+  session.todo = null;
+  session.repair = cs;
   session.active = true;
   $("#session").classList.add("on");
   document.body.style.overflow = "hidden";
@@ -839,6 +887,7 @@ function buildSession() {
   session.questAtStart = menuProgress().known;
   session.practice = null;
   session.todo = null;
+  session.repair = null;
   return items;
 }
 
@@ -1232,10 +1281,13 @@ function settle(item, ch, ok, foot, extra, slips) {
   if (quick) session.quick++;
   $("#qtimer")?.classList.add("spent");
   session.qStart = 0;
-  grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice, gentle: writing });
+  grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice || !!session.repair, gentle: writing });
+  /* A right answer here is worth exactly what a right answer in a sprint is
+     worth, and it is the only way a character gets off the 错字本 page. */
+  if (session.repair) sprintMark(ch.c, REPAIR_MODE[item.kind] || "r", ok);
   if (!item.fresh) { tally("rev", ch.c); session.reviewed++; }
   /* a rep in Go deeper, as opposed to a row on today's list */
-  if (session.practice && !session.todo) tallyExtra();
+  if ((session.practice || session.repair) && !session.todo) tallyExtra();
   if (ok) {
     session.right++; session.combo++;
     session.bestCombo = Math.max(session.bestCombo, session.combo);
@@ -1298,8 +1350,10 @@ function renderDone() {
   const qp = menuProgress();
   const gained = qp.known - session.questAtStart;
   const prac = session.practice ? PRACTICE[session.practice] : null;
+  const fixing = session.repair;
+  const cleared = fixing ? fixing.filter(c => rightRun(c) >= SPRINT_CLEAR) : [];
   if (session.todo) markDone(session.todo);
-  else if (!session.practice) markDone("learn");
+  else if (!session.practice && !session.repair) markDone("learn");
   /* Doing the work counts wherever you did it: if every one of today's
      characters was answered correctly in a task's drill during this session,
      that task is done — even if you started it from Go deeper. */
@@ -1316,13 +1370,18 @@ function renderDone() {
       <div class="grade-seal">${mark}</div>
       <span class="grade-note">${esc(gradeNote)} · ${acc}% correct</span>
       <div class="stack" style="gap:.3rem">
-        <h1>${task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
-        <p class="muted" style="font-size:.9rem">${prac
+        <h1>${fixing ? "Repair round done." : task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
+        <p class="muted" style="font-size:.9rem">${fixing
+          ? (cleared.length
+              ? `${cleared.length} of ${fixing.length} off the 错字本 — ${cleared.map(esc).join(" ")}.`
+                + (cleared.length < fixing.length ? ` The rest need ${SPRINT_CLEAR} right in a row.` : "")
+              : `None cleared yet — a character leaves the page after ${SPRINT_CLEAR} right answers running, and they count wherever you get them.`)
+          : prac
           ? `${answered} rep${answered === 1 ? "" : "s"}. Your reviews are untouched — this was extra.`
           : `${liveStreak()} day${liveStreak() === 1 ? "" : "s"} in a row.`}</p>
       </div>
       <div class="done-stats">
-        ${prac ? `<div><b>${session.right}</b><small>right</small></div>
+        ${prac || fixing ? `<div><b>${session.right}</b><small>right</small></div>
                  <div><b>${session.wrong}</b><small>missed</small></div>`
                : `<div><b>${session.learned}</b><small>learned</small></div>
                  <div><b>${session.reviewed}</b><small>reviewed</small></div>`}
@@ -1330,7 +1389,8 @@ function renderDone() {
         ${session.times.length ? `<div><b>${(session.times.reduce((a, b) => a + b, 0) / session.times.length / 1000).toFixed(1)}s</b><small>average</small></div>
         <div><b>${session.quick}</b><small><span class="han">快</span> under ${QUICK_MS / 1000}s</small></div>` : ""}
       </div>
-      ${prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
+      ${fixing ? `<button class="btn btn-ghost" id="againFix">Take the next five</button>`
+      : prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
       : `<div class="quest-bump">
         <div class="lbl"><span>🍜 Read a Menu</span><span>${qp.known} / ${qp.total}</span></div>
         <div class="bar ${qp.done ? "gold" : ""}"><i style="width:${(qp.pct * 100).toFixed(1)}%"></i></div>
@@ -1339,7 +1399,11 @@ function renderDone() {
       </div>`}
     </div>`;
   $("#again")?.addEventListener("click", () => startPractice(session.practice));
-  $("#sesFoot").innerHTML = prac
+  $("#againFix")?.addEventListener("click", () => {
+    const next = sprintTrouble().slice(0, REPAIR_SIZE);
+    if (next.length) startRepair(next); else endSession();
+  });
+  $("#sesFoot").innerHTML = prac || fixing
     ? `<button class="btn btn-block" id="fin">Done</button>`
     : qp.done
     ? `<div class="split"><button class="btn btn-ghost" id="fin">Close</button>
@@ -2251,7 +2315,7 @@ function renderTracker() {
   const start = new Date(); start.setDate(start.getDate() - days + 1);
   for (let i = 0; i < days; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
-    const k = dayKey(d), r = state.days[k], n = r ? r.new + r.rev : 0;
+    const k = dayKey(d), r = state.days[k], n = dayReps(r);
     const lvl = n === 0 ? "" : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
     cells.push(`<span class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></span>`);
   }
@@ -2754,7 +2818,7 @@ function calendar(days) {
   for (let i = 0, pad = (start.getDay() + 6) % 7; i < pad; i++) cells.push(`<div class="day blank"></div>`);
   for (let i = 0; i < days; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
-    const k = dayKey(d), r = state.days[k], n = r ? r.new + r.rev : 0;
+    const k = dayKey(d), r = state.days[k], n = dayReps(r);
     const lvl = n === 0 ? "" : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
     cells.push(`<div class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></div>`);
   }
@@ -3407,6 +3471,26 @@ function onKey(e) {
     return;
   }
 
+  /* A sprint. Digits answer, R replays, 0 hands the question in blank. The
+     typing style runs its own keydown on the input, and the guard above has
+     already bowed out of anything typed into one. */
+  if (sp.active) {
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      if (e.key === "0") { $("#spSkip")?.click(); return; }
+      $$("#spInner .sp-opt, #spInner .sp-cand")[+e.key - 1]?.click();
+      return;
+    }
+    if (e.key.toLowerCase() === "r") { e.preventDefault(); $("#spEar")?.click(); }
+    return;
+  }
+
+  /* a marked sheet, still on screen: space closes it like any other verdict */
+  if ($("#sprintRun").classList.contains("on")) {
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); $("#spAgain")?.click(); }
+    return;
+  }
+
   /* the notebook: T for the trackpad */
   if ($("#notebook").classList.contains("on")) {
     if (e.key.toLowerCase() === "t") { e.preventDefault(); nbPad(); }
@@ -3501,7 +3585,8 @@ const appDate = () => (typeof APP_DATE === "string" ? APP_DATE : "—");
 
 const CHEERS = {
   day:  { seal: "成", zh: "今日功课已毕", en: "Today's page is filled.", notes: [523.25, 587.33, 659.25, 783.99, 880] },
-  deep: { seal: "圆", zh: "圆满", en: "Every character solid, every mode.", notes: [523.25, 659.25, 783.99, 1046.5, 1318.5] }
+  deep: { seal: "圆", zh: "圆满", en: "Every character solid, every mode.", notes: [523.25, 659.25, 783.99, 1046.5, 1318.5] },
+  record: { seal: "破", zh: "破纪录", en: "A new best on that sheet.", notes: [659.25, 783.99, 880, 1046.5, 1318.5] }
 };
 
 function cheerSound(notes) {
@@ -3844,6 +3929,10 @@ const TOUR = [
     body: `One character a day from a real restaurant menu. The ones you know are inked
            in; the rest stay grey. Learn them all and you can read the whole thing —
            hover any character for its meaning while you get there.` },
+  { k: "速练", title: "A minute, against the clock",
+    body: `The 速练 tab is a timed sheet — so many questions, so many minutes, and nothing
+           marked until you hand it in. Reading, writing and listening each keep their own
+           board, and whatever you keep missing goes into a 错字本 to be worked on properly.` },
   { k: "写字", title: "Writing, two ways",
     body: `Trace characters stroke by stroke with a mouse, a finger or the trackpad
            (press <kbd class="opt-n">T</kbd>). Or open the 练字 tab for a blank exercise
@@ -3915,8 +4004,8 @@ function renderTour() {
    ============================================================ */
 
 let view = "today";
-const RENDER = { today: renderToday, library: renderLibrary, write: renderWrite,
-                 radicals: renderRadicals, record: renderRecord };
+const RENDER = { today: renderToday, sprint: renderSprint, library: renderLibrary,
+                 write: renderWrite, radicals: renderRadicals, record: renderRecord };
 
 function go(v) {
   view = v;
@@ -3979,6 +4068,19 @@ function boot() {
     endSession();
   };
   $("#svClose").onclick = closeSheet;
+  /* Abandoning a sheet halfway is a decision, not a slip of the finger — but
+     once it is marked there is nothing left to lose by closing it. */
+  $("#spClose").onclick = async () => {
+    sprintPause();
+    if (sp.active && sp.idx > 0 && !await askConfirm({
+          k: "作废",
+          title: "Give up on this sheet?",
+          body: `${sp.idx} of ${sp.n} answered. Those answers are already counted, but the sheet won't be `
+              + "scored and won't reach the board.",
+          yes: "Give up", no: "Keep going"
+        })) return sprintResume();
+    sprintClose();
+  };
   $("#muted").onclick = () => {
     /* this tap is the gesture the engine was waiting for */
     state.audio = true; speechBlocked = false; speechPrimed = false; audioUnlocked = false;
@@ -3993,6 +4095,7 @@ function boot() {
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
+    if ($("#sprintRun").classList.contains("on")) { e.preventDefault(); $("#spClose").click(); return; }
     if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();

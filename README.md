@@ -64,6 +64,9 @@ either. See **Audio** below.
 
 - **今天 Today** — the day's session, what you've learned today, and the
   menu side quest.
+- **速练 Sprint** — timed sheets: so many questions in so many minutes, for
+  reading, writing and listening, with a board each and a 错字本 for whatever
+  you keep missing.
 - **字库 Library** — every character, grouped into three tiers and filterable;
   tap any to study or restudy. Tiers past the one you're in stay shut.
 - **部首 Radicals** — 27 radicals taught properly, each with the characters
@@ -399,6 +402,12 @@ owns space`), which meant that once you were writing there was no way back with
 the keyboard at all — `T` could not turn it off and nothing could show you the
 strokes. The pad still owns space for inking; it no longer owns the mode keys.
 
+A **sprint** takes `1`–`9` for the options, `R` to hear the clip again, `esc` to
+give up (it asks first, unless the sheet is already marked). The typing style
+runs its own handler on the input — `1`–`9` pick a candidate, `enter` takes the
+first the way an IME does, `0` hands the question in blank — and `onKey` bows
+out of anything typed into an input before it can fight over the digits.
+
 The **placement quiz** takes the same keys: `1`–`4` to answer, `space` for "I
 don't know this one", `enter` to start from the result screen. A question latches
 on answer (`place.locked`), because the options are disabled on the way out but
@@ -459,6 +468,143 @@ everything else: `tallyExtra()` fires only when `session.practice` is set and
 `session.todo` is not, so a row from today's list never inflates them, and a
 rep never counts as a character revised or ticks anything off. A smoke check
 holds both directions.
+
+Sealed off from the checklist, though — not from *practice*. The heatmaps and
+"days studied" used to count `new + rev` alone, so a day spent entirely in Go
+deeper kept your streak and still left the square blank: 🔥 1 printed beside
+"0 days studied", the app disagreeing with itself. Sprint made that easy to
+produce, since a whole tab can now be used without touching the queue. `dayReps`
+is the one place that answers "did you practise on this day" — new, revised,
+extra and sprint answers together — and the ink and the totals go through it.
+What counts as *done* still counts only `new + rev`, which is the distinction
+that was worth keeping.
+
+## 速练 Sprint — minute math, for characters
+
+Borrowed wholesale from the timed arithmetic sheets primary schools hand out: a
+fixed number of questions, a fixed number of minutes, and two separate things to
+be proud of. First, did you finish inside the time. Then, and only then, how many
+you got right.
+
+Three things follow from that, and they are the reason this is not the daily
+session with a clock bolted on.
+
+**Nothing is marked while you work.** A verdict after every question is the right
+design for learning a character and the wrong one for finding out how fast you can
+read: it breaks the rhythm, and knowing you missed number 7 does nothing for you at
+number 8 except cost you number 9. The strip along the top bar shows *where you
+are* and never *how you are doing*; the colours arrive all at once when the sheet is
+handed in, the way they do on a real one.
+
+**The sheet exists before the clock starts.** Every question and every option is
+built during the three-second 预备 countdown, so no question can be slower to
+appear than another and a slow frame cannot cost you a run.
+
+**A miss never touches your review schedule.** Racing produces slips that say
+nothing about whether you know a character — you knew it, you were 200ms late
+reading the fourth option. `grade(..., { speed: true })` counts the answer and
+gives skill credit for a right one, and changes neither `lvl` nor `due` either
+way. Same rule as Go deeper, for the same reason: a mode you choose to do extra
+must never be able to make tomorrow worse. Misses go to the 错字本 instead.
+
+### The three modes, and what "writing" means without strokes
+
+| | what you're given | what you do | credits |
+|---|---|---|---|
+| **认读 Reading** | the character | pick the meaning | `r` recognise |
+| **默写 Writing** | the meaning | produce the character | `c` recall the form |
+| **听力 Listening** | the sound | pick the character | `p` pronounce |
+
+Writing is the one that needed thought. Drawing strokes is far too slow for a
+timed sheet — a single character takes longer than a whole reading question — but
+a multiple-choice "which character is this" is just reading backwards. So there
+are two input styles, and both are genuine production:
+
+**打字 Type it** is how Chinese is actually written on a phone or a laptop. You are
+shown the English only, you type the pinyin (tones not needed, `nv` works for `nǚ`),
+and candidates appear filtered by the prefix, commonest first, exactly as an input
+method does. Homophones are the test: typing `shi` correctly is half the answer,
+and the other half is knowing which of the shapes on screen means what you were
+asked for. The answer is always reachable when the sound is right — if it falls
+outside the nine candidates on show it takes the last slot, which is what paging
+would have done.
+
+**辨形 Spot it** gives you the pinyin and meaning and six characters that share
+its parts — the look-alikes, then the homophones, then whatever is left. Faster,
+and the one to reach for when you want pace over production.
+
+Both credit `c`, *recall the form*, and neither credits `w`. Handwriting is a
+separate skill and nothing here asks you to draw a stroke, so filling the 笔顺
+bar from a sprint would be a lie told to yourself.
+
+### Difficulty is relative to the mode
+
+Two seconds a question is brisk reading and impossible typing, so a single table
+of seconds would call them the same thing. Each mode has a **par** in seconds per
+question — reading 2.4, listening 3.2, spotting 3.0, typing 4.6 — and the grade
+comes from the ratio: 慢 Steady, 稳 Even, 快 Quick, 疾 Fast, 狂 Furious. Sheets
+run 20–100 questions over 1–5 minutes, and a count that would make a sheet loop
+through your whole library more than six times is disabled rather than offered.
+
+Characters are **dealt** from a shuffled deck rather than drawn at random: a
+hundred random draws from forty characters shows some five times and others never,
+and puts the same one back-to-back often enough to look broken. Dealing and
+reshuffling spreads the sheet evenly, and the card either side of a reshuffle is
+swapped so the seam can't repeat.
+
+### The boards
+
+There is no server, so there is no one else on the board. What there is: a best
+per **sheet**, where a sheet is the mode, the count, the minutes and — for writing
+— the style. 40 questions in two minutes and 100 in two minutes are not the same
+test and one board for both would be nonsense. More right beats faster; a tie goes
+to the quicker run. Not finishing isn't ranked separately, because an unanswered
+question is not a right answer.
+
+### 错字本 — the mistake notebook
+
+The real thing Chinese students keep. Two numbers are held per character per mode,
+right and wrong **under time**, and they are deliberately not the numbers the
+review schedule keeps: a character you read correctly at leisure every time and
+miss every time at two seconds a question is not a character you know, and nothing
+in the main record could tell you that, because nothing in the main record is
+timed. Alongside them is `s`, the last twelve answers as a string of 1s and 0s
+merged across all three modes — the counts say what has happened over months, the
+string says what is happening now.
+
+A character earns its page by being missed twice under time, or by being a
+sticking point in the main record (`isLeech`), which is the same problem arrived
+at from the other direction. It loses the page by being answered right **three
+times running**, wherever those answers happen. The ✓ on each chip dismisses one
+by hand; missing it again brings it straight back, because that is the evidence
+against the claim.
+
+The counterweight is 熟字: everything answered right five or more times running
+under the clock. The question "what do I keep getting wrong" is only half
+interesting on its own.
+
+**Repair rounds** are what the page is for. Untimed, five characters, and each
+one approached from every side in turn — read the card and read it back, hear it
+and name it, produce the form from the meaning — because a character you keep
+missing usually has one thread loose (the shape but not the sound, or the sound
+but not which of three shapes) and the round has to find out which. Another timed
+drill of the same kind will not shift it; you already know you can't do this one
+in two seconds.
+
+Sprint answers count as reps and keep a **streak** alive — they are real practice
+— but like Go deeper they stay out of today's checklist, which is a finishable
+list of the day's characters and not a place to pile up reps. They are tallied in
+`days[k].sp` and `days[k].spr`.
+
+### Where it lives
+
+`js/sprint.js` holds the tab and the run; the record-keeping is in `js/srs.js`
+with everything else that has to survive a reload. It loads **before** `app.js`,
+because `app.js` names `renderSprint` in its `RENDER` map at load time and a
+`const` in the temporal dead zone would take the whole app down. Every line of
+`sprint.js` that touches the page is inside a function, so the smoke test can
+evaluate all three files together and pin the cross-file names in both
+directions — which is how the contract list stays honest as the files move.
 
 ## Tiers — the gates on the library
 
@@ -871,8 +1017,9 @@ resets. The tracker also shows total days studied, which never resets.
     js/data.js        curriculum, radicals, the menu, interests — all the content
     js/strokes.js     bundled stroke-order data (generated, do not hand-edit)
     js/audio.js       bundled spoken clips (generated, do not hand-edit)
-    js/srs.js         scheduling, streaks, the menu day-pick, storage
-    js/app.js         views, the study session, flashcards
+    js/srs.js         scheduling, streaks, the menu day-pick, sprint records, storage
+    js/sprint.js      the 速练 tab: timed sheets, the boards, the 错字本
+    js/app.js         views, the study session, flashcards, repair rounds
     tools/fetch-strokes.mjs   regenerates js/strokes.js
     tools/make-audio.mjs      regenerates js/audio.js (needs macOS say/afconvert)
     tools/server.mjs          dev server (UTF-8; `node tools/server.mjs`)
