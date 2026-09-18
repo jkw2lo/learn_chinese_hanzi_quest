@@ -538,8 +538,29 @@ function padStop() {
   pad.dot = pad.hint = pad.svg = pad.box = pad.lockEl = null;
   pad.onDraw = null;
   pad.quiet = false;
+  /* Release the lock as well as our own state.
+
+     This was missing, and `document.exitPointerLock()` appeared in exactly one
+     place in the file: the Escape handler. So finishing a character tore down
+     the brush, the hint and the listeners but left the cursor captured — the
+     only way out was the key the browser itself handles. The listener above is
+     already detached by this point, so exiting here cannot re-enter padStop. */
+  try { document.exitPointerLock?.(); } catch { /* already released */ }
   const cb = pad.onEnd; pad.onEnd = null;
   cb?.();
+}
+
+/* Move the brush to a new writing surface, arming it if it isn't already.
+
+   Everywhere a fresh square appears — the next word in the notebook, a second
+   go on a character card — the old code called padStop() and then padStart(),
+   which drops the lock and immediately asks for it back. Browsers rate-limit
+   exactly that: a re-request landing in the cooldown after an unlock is
+   refused, and the trackpad silently stopped working. Since the lock lives on
+   a container that survives the re-render, the fix is not to let go of it. */
+function padHandoff(box, mount, onEnd, lockEl) {
+  if (pad.active) return padRetarget(mount, box);
+  return padAuto(box, mount, onEnd, null, lockEl);
 }
 
 /* ---------- sentence rendering: known characters light up ---------- */
@@ -667,14 +688,20 @@ function bindCard(root, ch, writerId) {
   function startWriting() {
     mount();
     if (!writer) return;
-    padStop();
+    const box = $(".tian", root), mountEl = $("#" + writerId, root);
+    /* already inked in on this very box: keep the lock and just reset the brush */
+    const holding = pad.active && pad.box === box;
+    if (!holding) padStop();
     writer.cancelQuiz();
     writer.hideCharacter();
     writer.quiz({
       showHintAfterMisses: 2,
+      /* finishing releases the trackpad and gives the cursor back, so a
+         completed character doesn't leave you pressing Escape */
       onComplete: () => { padStop(); say(ch.c, true); }
     });
-    padStart($(".tian", root), $("#" + writerId, root), null);
+    if (holding) padRetarget(mountEl, box);
+    else padStart(box, mountEl, null);
   }
   /* `root` here is #svBody or #sesInner — elements that live for the whole
      session while only their innerHTML is swapped. Adding a listener per card
@@ -980,8 +1007,10 @@ function renderDrill(item, ch, body, foot) {
       if (!padStart($(".tian", body), $("#" + wid, body), () => { btn.disabled = false; })) btn.disabled = false;
     });
 
-    /* with the setting on, the box arms itself as it appears */
-    const autoPad = () => padAuto($(".tian", body), $("#" + wid, body), () => {
+    /* With the setting on, the box arms itself as it appears — and on a second
+       go, after peeking at the strokes, the brush is handed to the rebuilt
+       writer rather than the lock being dropped and asked for again. */
+    const autoPad = () => padHandoff($(".tian", body), $("#" + wid, body), () => {
       const btn = $("#padW"); if (btn) btn.disabled = false;
     });
 
@@ -1686,10 +1715,12 @@ function renderNotebook() {
     if (w && i === nb.idx && !nb.done[i]) startSquare(i);
   });
 
+  /* Changing exercise keeps the lock: #nbStage holds it and survives the
+     re-render, so the brush only needs re-pointing at the new first square. */
   $$("#nbStage [data-nbsrc]").forEach(b => b.onclick = () => {
-    padStop(); nb.word = null; nbSetSource(b.dataset.nbsrc); renderNotebook();
+    nb.word = null; nbSetSource(b.dataset.nbsrc); renderNotebook(); nbFollow();
   });
-  $("#nbNew").onclick = () => { padStop(); nbSetSource(nb.source); renderNotebook(); };
+  $("#nbNew").onclick = () => { nbSetSource(nb.source); renderNotebook(); nbFollow(); };
   $("#nbPad").onclick = () => nbPad();
   $$("#nbStage .nb-sq").forEach(sq => sq.addEventListener("click", () => {
     const i = +sq.dataset.sq;
@@ -1770,7 +1801,7 @@ function nbAutoPad() {
   const sq = $(`#nbStage .nb-sq[data-sq="${nb.idx}"]`);
   const mount = $("#nbw" + nb.idx);
   if (!sq || !mount || !mount.querySelector("svg")) return;
-  if (padAuto($(".tian", sq), mount, renderNotebookPadState, null, $("#nbStage"))) {
+  if (padHandoff($(".tian", sq), mount, renderNotebookPadState, $("#nbStage"))) {
     setTimeout(renderNotebookPadState, 60);
   }
 }

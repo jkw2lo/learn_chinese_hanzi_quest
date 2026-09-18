@@ -392,6 +392,31 @@ console.log('\nno drill shows a character you have not met');
   ok('and pinyin syllables line up with characters', !odd.length, odd.slice(0, 6).join(' '));
 }
 
+console.log('\nthe trackpad lets go');
+{
+  /* Pointer lock is the browser's, not ours. padStop() used to tear down the
+     brush, the hint and every listener while leaving the lock held, so the
+     cursor stayed captured and the only way out was Escape — the key the
+     browser handles itself. None of this can run under node, so what is
+     asserted is the shape of the code that fixes it. */
+  const app = read('js/app.js');
+  const stop = app.slice(app.indexOf('function padStop()'));
+  const body = stop.slice(0, stop.indexOf('\n}'));
+  ok('padStop releases the pointer lock', /exitPointerLock/.test(body));
+  ok('and detaches its change listener before doing so',
+     body.indexOf('removeEventListener("pointerlockchange"') < body.indexOf('exitPointerLock'));
+  /* Handing the brush to a new square must not drop the lock and ask for it
+     back: browsers rate-limit a re-request landing in the cooldown after an
+     unlock, and re-requesting a lock already held fires no event at all, so
+     padArm never runs and the trackpad goes dead. */
+  ok('a handoff retargets instead of restarting', /function padHandoff/.test(app));
+  ok('and the notebook hands off rather than stopping',
+     /padHandoff\(\$\("\.tian", sq\)/.test(app));
+  const nbSwitch = app.slice(app.indexOf('data-nbsrc]').valueOf());
+  ok('changing exercise no longer tears the lock down',
+     !/padStop\(\); nb\.word = null/.test(app));
+}
+
 console.log('\npinyin on the pairings');
 {
   /* A pairing's pinyin should be the readings of its own characters, in order.

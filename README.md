@@ -236,6 +236,36 @@ suggests opening in its own tab.
 appears, instead of waiting for the 触控 button or `T`. It is off by default,
 because pointer lock hides the cursor and doing that unasked is startling.
 
+### Letting go of the lock
+
+`document.exitPointerLock()` appeared in exactly one place in this file: the
+Escape handler. `padStop()` tore down the brush, the hint and every listener —
+and left the lock held. So finishing a character released nothing the browser
+knew about, the cursor stayed captured, and the only way out was the key the
+browser handles itself. It releases now, after detaching its own
+`pointerlockchange` listener so the exit can't re-enter it.
+
+### Handing off, not restarting
+
+Anywhere a new writing surface appears, the old code called `padStop()` then
+`padStart()` — drop the lock, immediately ask for it back. That fails twice
+over. Browsers **rate-limit** a re-request landing in the cooldown after an
+unlock; and re-requesting a lock you already hold fires **no event at all**, so
+`padArm()` never runs and `pad.active` stays false while the cursor is still
+captured. The trackpad appeared simply dead. That is what broke the notebook
+when moving from one word to the next.
+
+`padHandoff()` replaces the pattern: if the pad is live, `padRetarget()` points
+the brush at the new square and the lock is never disturbed; only when it is
+idle does it arm from scratch. The lock lives on a container that survives the
+re-render — `#nbStage` for the notebook — which is what makes this possible.
+Measured across four consecutive word changes: **zero lock calls**, brush and
+dot correctly re-attached each time.
+
+The genuine exits still stop properly: leaving a session, closing the notebook,
+peeking at the strokes (you need the cursor back to click), and finishing a
+character. Every request is matched by an exit.
+
 Auto-arming goes through `padAuto()`, which is allowed to fail. Pointer lock
 generally wants a user gesture and a drill card that arrives on the auto-advance
 timer hasn't got one, so a refusal here is expected rather than exceptional: it
