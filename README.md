@@ -636,6 +636,63 @@ Three things live outside `state` and have to be cleared by hand:
 The theme is deliberately *not* reset: it's a display preference in its own
 localStorage key, not progress.
 
+## No drill shows a character you haven't met
+
+A drill that puts an unseen character in front of you is worse than no drill:
+the wrong answers stop being choices and become noise, and there is no way to
+reason your way to the right one. An audit across five points in the curriculum
+found two places where that was happening.
+
+**Build the word (`a`) leaked in 99 rounds out of 100.** It filtered its target
+word on `CHAR_INDEX` — *is this in the library* — rather than `isKnown` — *have
+you met it*; and its distractor tiles came from the whole library regardless.
+A beginner assembling 大人 was picking it out of 笑, 完 and 便.
+
+**Fill the gap (`s`) leaked in about 4%**, by falling back to an unreadable word
+when none of a character's words qualified: 木 with a gap, offered as 树.
+
+Both now require a word every character of which is known, `a` draws its tiles
+from `knownChars()`, and `drillKind()` doesn't offer either kind unless such a
+word exists — so the fallback inside `renderDrill` is a backstop rather than the
+normal path. Re-measured: **0 leaks in 35,400 drills** across learners who know
+20, 60, 150, 350 and 600 characters, with all eight drill kinds still appearing
+at healthy rates. Writing practice was already correct: `writableWords()` gated
+on `isKnown` and stroke data from the start.
+
+That fix makes a character with no readable pairing *quieter* rather than wrong
+— it simply gets fewer kinds of drill. So the second half of the work was making
+sure no character stays quiet for long:
+
+| how soon a character gets a word it can be drilled with | |
+|---|---|
+| immediately | 573 |
+| within 3 more characters | 17 |
+| within 10 | 6 |
+| within 30 | 4 |
+| never | **0** |
+
+Thirty-eight pairings were added to get there, each one built only from
+characters already taught at that point — 山水 for 水, 好人 for 好, 前后 for 后,
+黑白 for 黑, 电力 for 电. The worst wait went from **270 characters to 15**, and
+辣 went from never having one at all to having 辣子 immediately. Every pairing
+was verified before insertion: real word, contains its character, no duplicate,
+and every glyph taught at or before that point.
+
+Four further faults fell out of writing the checks down:
+
+- **物 listed 东西 as one of its words**, which does not contain 物.
+- **Six characters listed themselves as a word** (布, 深, 省, 养, 派, 却) — a
+  pairing that teaches nothing and can't drive a gap or build drill.
+- **却 listed 忘却 twice.**
+- The listen drill looked up its replay button with a document-wide `$("#earBtn")`
+  and assigned to it without checking — a global lookup that would find a stale
+  button from another view, and throw outright if none existed.
+
+The smoke test now holds all of it: every character has a multi-character
+pairing made of taught characters, none waits more than 30, over 90% have one
+immediately, no word is missing its own character or duplicated, and pinyin
+syllables line up with character counts.
+
 ## What a practice round draws on
 
 Sorting the whole library by weakness and taking the top N stopped working once

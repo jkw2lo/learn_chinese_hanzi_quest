@@ -336,6 +336,62 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\nno drill shows a character you have not met');
+{
+  /* The build-the-word drill filtered its target on CHAR_INDEX — is this in
+     the library — rather than isKnown, and drew its distractor tiles from the
+     whole library regardless. Ninety-nine rounds in a hundred put at least one
+     unseen character in front of the learner, which makes the wrong answers
+     noise rather than choices. The gap drill had the same fault more quietly.
+
+     This can only be checked properly in the browser, where renderDrill lives.
+     What is asserted here is the data condition it relies on: that every
+     character has a word it can be drilled with, and soon. */
+  const cjk = t => [...String(t)].filter(c => /[\u4e00-\u9fff]/.test(c));
+  const at = new Map(HQ.map((c, i) => [c.c, i]));
+  const waits = HQ.map((ch, i) => {
+    let best = Infinity;
+    for (const w of ch.words) {
+      const g = cjk(w[0]);
+      if (!g.every(x => at.has(x))) continue;
+      best = Math.min(best, Math.max(0, Math.max(...g.map(x => at.get(x))) - i));
+    }
+    return best;
+  });
+  ok('every character eventually has a word made only of taught characters',
+     waits.every(w => w !== Infinity),
+     HQ.filter((_, i) => waits[i] === Infinity).map(c => c.c).join(''));
+  const slow = HQ.filter((_, i) => waits[i] > 30);
+  ok('and none waits more than 30 characters for it', !slow.length,
+     slow.map((c, i) => c.c).join(''));
+  const now = waits.filter(w => w === 0).length;
+  ok('most have one the moment they are taught', now > HQ.length * 0.9,
+     now + ' of ' + HQ.length);
+  /* a word is only useful as a drill if it actually contains its character */
+  const off = HQ.filter(ch => ch.words.some(w => !w[0].includes(ch.c)));
+  ok('every word listed under a character contains it', !off.length,
+     off.slice(0, 8).map(c => c.c).join(''));
+  /* a character listed as its own word teaches nothing as a pairing, and the
+     gap and build drills both need two characters to work with */
+  const selfy = HQ.filter(ch => ch.words.some(w => w[0] === ch.c));
+  ok('and none is just the character over again', !selfy.length,
+     selfy.map(c => c.c).join(''));
+  const dupes = HQ.filter(ch => new Set(ch.words.map(w => w[0])).size !== ch.words.length);
+  ok('no character lists the same word twice', !dupes.length,
+     dupes.map(c => c.c).join(''));
+  const multi = HQ.filter(ch => !ch.words.some(w => cjk(w[0]).length > 1));
+  ok('every character has at least one multi-character pairing', !multi.length,
+     multi.map(c => c.c).join(''));
+  /* the pinyin should have roughly one syllable per character */
+  const odd = [];
+  HQ.forEach(ch => ch.words.forEach(w => {
+    const n = cjk(w[0]).length;
+    const v = (w[1].match(/[aeiou\u00e0-\u01dc]+/gi) || []).length;
+    if (v && Math.abs(v - n) > 1) odd.push(ch.c + ' ' + w[0] + '=' + w[1]);
+  }));
+  ok('and pinyin syllables line up with characters', !odd.length, odd.slice(0, 6).join(' '));
+}
+
 console.log('\nseasonal words');
 ok('every festival word is complete', api.FESTIVALS.every(f =>
   f.words.every(w => w.length === 4 && w.every(part => part && String(part).trim()))));

@@ -809,7 +809,13 @@ function drillKind(c) {
 
   const bag = ["r", "p"];
   if (lvl >= 2) bag.push("c", "l");
-  if (lvl >= 3) { if (ch.words.length) bag.push("s"); if (ch.words.some(w => w[0].length > 1)) bag.push("a"); }
+  /* offered only when there is something readable to build them from —
+     otherwise renderDrill has to bail out to recognition at the last moment */
+  if (lvl >= 3) {
+    const readable = ch.words.filter(w => canRead(w[0]));
+    if (readable.length) bag.push("s");
+    if (readable.some(w => cjkOf(w[0]).length > 1)) bag.push("a");
+  }
   if (lvl >= 4) { if (readingMaterial(ch)) bag.push("d"); if (canWrite) bag.push("w", "w"); }
   return one(bag);
 }
@@ -1024,12 +1030,19 @@ function renderDrill(item, ch, body, foot) {
 
   /* --- build the word from tiles --- */
   if (kind === "a") {
-    /* Prefer a word you can actually read — every character already taught. */
-    const multi = ch.words.filter(x => x[0].length > 1);
-    const readable = multi.filter(x => [...x[0]].every(z => CHAR_INDEX[z]));
-    const w = one(readable.length ? readable : multi) || ch.words[0];
+    /* Every tile has to be a character you have actually learnt.
+
+       The word was filtered on CHAR_INDEX — is this in the library — rather
+       than isKnown — have you met it. And the distractor tiles came from the
+       whole library regardless, so a beginner assembling 大人 was picking it
+       out of 笑, 完 and 便. Ninety-nine rounds in a hundred showed at least one
+       character the learner had never seen, which makes the wrong answers
+       noise rather than choices. */
+    const readable = ch.words.filter(x => cjkOf(x[0]).length > 1 && canRead(x[0]));
+    if (!readable.length) return renderDrill(Object.assign({}, item, { kind: "r" }), ch, body, foot);
+    const w = one(readable);
     const target = [...w[0]];
-    const distract = pick(pool.map(x => x.c).filter(c => !target.includes(c)), 3);
+    const distract = pick(knownChars().filter(c => !target.includes(c)), 3);
     const tiles = shuffle([...target, ...distract]);
     body.innerHTML = `<div class="drill">
       <div class="drill-prompt sheet">${head}
@@ -1111,8 +1124,11 @@ function renderDrill(item, ch, body, foot) {
       : pick(pool.flatMap(x => x.words.filter(w => w[0].length > 1)), 3).map(w => w[2]);
     options = [mat.en, ...others.filter(o => o !== mat.en)].slice(0, 4).map(m => ({ v: m, html: esc(m) }));
   } else { /* s — gap in a word */
+    /* Same rule: no readable word, no gap drill. Falling back to an unreadable
+       one showed a character the learner could not possibly fill in. */
     const readable = ch.words.filter(x => canRead(x[0]));
-    const w = one(readable.length ? readable : ch.words);
+    if (!readable.length) return renderDrill(Object.assign({}, item, { kind: "r" }), ch, body, foot);
+    const w = one(readable);
     prompt = `<div class="drill-sen">${[...w[0]].map(x => x === ch.c ? `<span class="gap">?</span>` : esc(x)).join("")}</div>
               <div class="drill-hint"><span class="pin">${esc(w[1])}</span> · ${esc(w[2])}</div>`;
     correct = ch.c;
@@ -1132,7 +1148,10 @@ function renderDrill(item, ch, body, foot) {
 
   if (autoSay) {
     say(autoSay, true);
-    $("#earBtn").onclick = () => say(autoSay, true);
+    /* scoped to this drill's body, and optional: a global lookup would find a
+       stale button from another view, and throw outright if none existed */
+    const ear = $("#earBtn", body);
+    if (ear) ear.onclick = () => say(autoSay, true);
   }
 
   $$(".opt", body).forEach(btn => btn.onclick = () => {
