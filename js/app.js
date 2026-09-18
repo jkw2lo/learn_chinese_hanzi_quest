@@ -1010,7 +1010,10 @@ function renderDrill(item, ch, body, foot) {
         ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="padW"><span class="han">触控</span> Trackpad</button>` : ""}
         <button class="btn btn-ghost btn-sm" id="skipW">${peeked ? "Show me again" : "Show me the strokes"}</button>`;
       bindPad();
-      $("#skipW").onclick = showStrokes;
+      /* scoped and guarded, like the replay button: a global lookup would find
+         a stale control from another view, and throw if none existed */
+      const skip = $("#skipW", tools);
+      if (skip) skip.onclick = showStrokes;
       autoPad();
       w.quiz({
         showHintAfterMisses: 2,

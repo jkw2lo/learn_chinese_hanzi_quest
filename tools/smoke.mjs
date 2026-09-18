@@ -392,6 +392,99 @@ console.log('\nno drill shows a character you have not met');
   ok('and pinyin syllables line up with characters', !odd.length, odd.slice(0, 6).join(' '));
 }
 
+console.log('\npinyin on the pairings');
+{
+  /* A pairing's pinyin should be the readings of its own characters, in order.
+     Typing 1,600-odd of them by hand, that is the kind of slip nothing else
+     would catch — and the one thing a learner has no way to sanity-check. */
+  const dict = new Map();
+  for (const line of read('tools/.mmah-dictionary.txt').split('\n')) {
+    if (!line.trim()) continue;
+    const o = JSON.parse(line);
+    dict.set(o.character, o);
+  }
+  /* Characters with more than one reading, which neither our own entry nor the
+     dictionary reliably lists in full. 儿 carries the empty string and "r" for
+     erhua, where it fuses onto the syllable before it: 这儿 is zhèr. */
+  const ALT = JSON.parse(read('tools/alt-readings.json'));
+  const bare = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/\u00fc/g, 'v').replace(/[^a-z]/g, '');
+  const cjk = t => [...String(t)].filter(c => /[\u4e00-\u9fff]/.test(c));
+
+  const readings = new Map();
+  HQ.forEach(c => {
+    const set = new Set([bare(c.p)]);
+    (dict.get(c.c)?.pinyin || []).forEach(x => set.add(bare(x)));
+    (ALT[c.c] || []).forEach(x => set.add(bare(x)));
+    readings.set(c.c, set);
+  });
+
+  const bad = [];
+  let checked = 0;
+  HQ.forEach(ch => ch.words.forEach(w => {
+    const gl = cjk(w[0]);
+    if (!gl.every(g => readings.has(g))) return;      /* has an untaught character */
+    let rest = bare(w[1]), ok = true;
+    for (const g of gl) {
+      const hit = [...readings.get(g)].sort((a, b) => b.length - a.length)
+        .find(o => rest.startsWith(o));
+      if (hit === undefined) { ok = false; break; }
+      rest = rest.slice(hit.length);
+    }
+    checked++;
+    if (!ok || rest.length) bad.push(ch.c + ' ' + w[0] + ' "' + w[1] + '"');
+  }));
+  ok(`${checked} pairings have checkable pinyin`, checked > HQ.length);
+  ok('and every one reads as its own characters do', !bad.length, bad.slice(0, 6).join('  '));
+}
+
+console.log('\nnothing gives the answer away');
+{
+  const cjk = t => [...String(t)].filter(c => /[\u4e00-\u9fff]/.test(c));
+  /* The recall and writing drills show a character's meaning as the hint and
+     ask you to produce the character. A meaning with Chinese in it therefore
+     hands over the answer — 什 was glossed "what (in 什么)". */
+  const leaky = HQ.filter(ch => cjk(ch.m).length);
+  ok('no character meaning contains Chinese', !leaky.length,
+     leaky.map(c => c.c + '=' + c.m).join(' '));
+  /* The build-the-word drill shows the English meaning and asks you to
+     assemble the characters. */
+  const wordy = [];
+  HQ.forEach(ch => ch.words.forEach(w => { if (cjk(w[2]).length) wordy.push(w[0] + '=' + w[2]); }));
+  ok('no pairing meaning contains Chinese', !wordy.length, wordy.slice(0, 6).join(' '));
+  /* A definition that is only the romanisation teaches nothing: 北京 glossed
+     "Beijing" says no more than the pinyin already showing above it. Proper
+     nouns are allowed one, but should carry a literal sense as well. */
+  const bareOf = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z]/g, '');
+  const echo = [];
+  HQ.forEach(ch => ch.words.forEach(w => {
+    const p = bareOf(w[1]), m = bareOf(w[2]);
+    if (p.length > 3 && m === p) echo.push(w[0] + ' ' + w[1] + ' = ' + w[2]);
+  }));
+  ok('and none is purely its own romanisation', !echo.length, echo.slice(0, 6).join('  '));
+
+  /* A word is listed under every character it contains, so the same word is
+     written out two or three times. Those copies drifted apart: 北京 was
+     "Beijing (northern capital)" under 北 and plain "Beijing" under 京, and
+     汉字 was capitalised under one and not the other. A learner meeting the
+     same word twice should meet the same word. */
+  const byWord = new Map();
+  HQ.forEach(ch => ch.words.forEach(w => {
+    const e = byWord.get(w[0]) || [];
+    e.push({ under: ch.c, pin: w[1], mean: w[2] });
+    byWord.set(w[0], e);
+  }));
+  const repeated = [...byWord.entries()].filter(([, v]) => v.length > 1);
+  const pinSplit = repeated.filter(([, v]) => new Set(v.map(x => x.pin)).size > 1);
+  const meanSplit = repeated.filter(([, v]) => new Set(v.map(x => x.mean)).size > 1);
+  ok(`${repeated.length} words are listed under more than one character`, repeated.length > 0);
+  ok('and each reads the same wherever it appears', !pinSplit.length,
+     pinSplit.slice(0, 5).map(([w, v]) => w + ' ' + v.map(x => x.pin).join('/')).join('  '));
+  ok('and means the same wherever it appears', !meanSplit.length,
+     meanSplit.slice(0, 5).map(([w, v]) => w + ' ' + v.map(x => JSON.stringify(x.mean)).join('/')).join('  '));
+}
+
 console.log('\nseasonal words');
 ok('every festival word is complete', api.FESTIVALS.every(f =>
   f.words.every(w => w.length === 4 && w.every(part => part && String(part).trim()))));

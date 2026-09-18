@@ -636,6 +636,59 @@ Three things live outside `state` and have to be cleared by hand:
 The theme is deliberately *not* reset: it's a display preference in its own
 localStorage key, not progress.
 
+## Auditing the data itself
+
+A pass with no new characters in it, checking what is already there. Four
+audits, and each one found something.
+
+### Does every pairing's pinyin match its own characters?
+
+2,136 pairings were typed by hand, and a wrong syllable in one is invisible —
+the learner has no way to know. So the check reads each word's pinyin as a
+sequence and tries to account for it with the readings of its characters, in
+order. **1,952 were checkable and every one of them reads correctly.**
+
+Making it usable took two additions. Plenty of characters have more than one
+reading and neither our entry nor Make Me a Hanzi lists them all — 着 is
+zhe/zháo, 行 is xíng/háng, 乐 is lè/yuè, 调 is diào/tiáo. Those live in
+`tools/alt-readings.json`. And **erhua** needed handling: in 这儿 zhèr the 儿
+fuses onto the syllable before it rather than being one of its own.
+
+### Is the audio real?
+
+Every clip was decoded rather than merely counted. **980 clips: all valid m4a
+containers, none malformed, none duplicated, byte sizes in a tight band of
+4.7–6.1 KB.** A sample of 24 across the library measured 0.25–0.40s, which is
+right for a single spoken syllable and well clear of the 0.15s threshold that
+means a mute voice produced silence.
+
+### Does anything give the answer away?
+
+**Two characters printed themselves inside their own meaning.** 什 was glossed
+"what (in 什么)" and 候 "wait; time (in 时候)". The recall and writing drills show
+that meaning as the hint and ask you to produce the character — so both handed
+the answer straight over. Fixed, and a check now forbids Chinese in any meaning.
+
+Nine proper nouns were glossed as nothing but their own romanisation: 北京 as
+"Beijing" says no more than the pinyin printed above it. They now carry a
+literal sense too — 云南 "south of the clouds", 上海 "upon the sea".
+
+### Do repeated words agree with each other?
+
+A word is listed under every character it contains, so **336 of them are written
+out two or three times** — and the copies had drifted apart. Five disagreed on
+**pinyin**: 汉字 was capitalised under one character and not the other, 哪里 had
+a full tone under one and a neutral under the other, and three differed only in
+spacing. Eighty-two disagreed on **meaning** — 我们 was "we; us" under 我 and
+just "we" under 们. All unified to the fuller gloss, with a few overridden by
+hand where fuller was not better (十分 is "very, extremely", not "ten minutes").
+
+All four are now smoke checks, so none of it can drift back. One more
+fragility went with them: the writing drill assigned to `$("#skipW")` with a
+document-wide lookup and no guard, exactly as the listen drill did with its
+replay button — it would find a stale control from another view and throw if
+none existed.
+
 ## No drill shows a character you haven't met
 
 A drill that puts an unseen character in front of you is worse than no drill:
@@ -762,6 +815,8 @@ resets. The tracker also shows total days studied, which never resets.
     tools/server.mjs          dev server (UTF-8; `node tools/server.mjs`)
     tools/smoke.mjs           run this after touching js/ — see below
     tools/version.mjs         bump the version and re-stamp every asset URL
+    tools/alt-readings.json   characters with more than one reading, for the
+                              pinyin check — add to it when a 多音字 arrives
 
 ## Versions, and why a push can be invisible
 
