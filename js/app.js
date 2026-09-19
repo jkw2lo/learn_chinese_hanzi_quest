@@ -1551,10 +1551,10 @@ function renderDone() {
       ${fixing ? `<button class="btn btn-ghost" id="againFix">Take the next five</button>`
       : prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
       : `<div class="quest-bump">
-        <div class="lbl"><span>🍜 Read a Menu</span><span>${qp.known} / ${qp.total}</span></div>
-        <div class="bar ${qp.done ? "gold" : ""}"><i style="width:${(qp.pct * 100).toFixed(1)}%"></i></div>
-        <div class="lbl"><span>${gained > 0 ? `+${gained} from today` : "No menu characters today"}</span>
-          <span>${qp.done ? "Complete" : `${qp.total - qp.known} to go`}</span></div>
+        <div class="lbl"><span>🍜 Read a Menu</span><span>${Math.round(qp.pct * 100)}% legible</span></div>
+        ${menuBar(qp)}
+        <div class="lbl"><span>${gained > 0 ? `+${gained} character${gained === 1 ? "" : "s"} from today` : "No menu characters today"}</span>
+          <span>${qp.done ? "Complete" : `${qp.known} of ${qp.total} on the card`}</span></div>
       </div>`}
     </div>`;
   $("#again")?.addEventListener("click", () => startPractice(session.practice));
@@ -1694,22 +1694,77 @@ function openChar(c) {
   if (ln) ln.onclick = () => { introduce(c); tally("new"); closeSheet(); };
 }
 
+/* The bar answers "how much of this can I read", so it is drawn in ink — see
+   menuProgress(). `capped` marks a card the curriculum cannot finish: the tick
+   sits where the fill has to stop, and the line underneath says why, because a
+   bar that halts with no explanation reads as broken. This menu is taught
+   end to end, so nothing is drawn; the concept stays for the card that isn't. */
+function menuBar(p) {
+  return `<div class="bar ${p.done ? "gold" : ""}"><i style="width:${(p.pct * 100).toFixed(1)}%"></i>${
+    p.capped ? `<u class="cap" style="left:${(p.ceilingPct * 100).toFixed(1)}%"></u>` : ""}</div>`;
+}
+
+/* The quest's own number, and only when it says something the one before it
+   didn't — "1 of 54, 1 of them learned here" is the same fact twice. */
+function menuOwnClause(p, own) {
+  if (!own) return "";
+  if (own === p.known) return own === 1 ? ", and you learned it right here" : ", every one learned right here";
+  return `, ${own} of them learned right here`;
+}
+
+/* One sentence, one number you can check by looking, one thing to do.
+
+   The number has to be the one in front of them. 54 is the whole card and it
+   stays the bar's denominator — a denominator that shrank and grew as levels
+   arrived would have the learner apparently losing ground on being promoted —
+   but nobody can count 54 against a menu printing 26 of them. So the level
+   line carries the countable pair. */
+function menuLevelLine(p) {
+  const t = menuTier(), top = t.n >= MENU_TIERS.length;
+  const head = `Level ${t.n} of ${MENU_TIERS.length} — ${esc(t.label.toLowerCase())}.`;
+  if (top) return `${head} This is a card you could be handed in Chengdu.`;
+  const left = p.wallTotal - p.wallKnown;
+  return `${head} That is ${p.wallTotal} of them, and you can read ${p.wallKnown}. `
+    + `Read the last ${left === 1 ? "one" : left} and level ${t.n + 1} arrives: `
+    + `<b>${esc(MENU_TIERS[t.n].label.toLowerCase())}</b>.`;
+}
+
 function openQuest(id) {
   const q = QUESTS.find(x => x.id === id);
   if (!q || q.locked) return;
   const p = menuProgress();
+  const own = menuOwn();
   const pick = menuToday();
-  const target = pick.c && !isKnown(pick.c) ? pick.c : null;
+  const target = pick.c && !menuCanRead(pick.c) ? pick.c : null;
 
   openSheet(`🍜 Read a Menu <span class="dim" style="font-weight:400;font-size:.85rem">看菜单</span>`,
     `<div class="wrap"><div class="section">
       <div class="today-head">
         <h1>${p.done ? "You can read this." : "The menu you're working towards."}</h1>
         <p class="note">${p.done
-          ? "Every character here is one you've learned. Hover any of them for a reminder."
-          : `${p.known} of ${p.total} characters are yours so far. The rest are greyed out — hover any of them to see what you're missing.`}</p>
+          ? `Every one of the ${p.total} characters printed here is one you can read`
+            + `${own ? ` — ${own} of them learned right here` : ""}. Hover any of them for a reminder.`
+          : `<b>${p.known}</b> of the <b>${p.total}</b> characters printed on this menu${menuOwnClause(p, own)}. `
+            + `All of them are in the curriculum, so this card goes all the way to readable — `
+            + `the grey ones are ahead of you, not out of reach.`}</p>
       </div>
-      <div class="bar ${p.done ? "gold" : ""}"><i style="width:${(p.pct * 100).toFixed(1)}%"></i></div>
+      ${menuBar(p)}
+      <p class="note dim menu-read"><b>${Math.round(p.pct * 100)}%</b> of the ink on the card
+        — ${p.ink} of its ${p.inkTotal} characters, repeats and all, because 面 in five dishes
+        is five characters of wall that light up at once.${
+          p.capped ? ` The mark at ${Math.round(p.ceilingPct * 100)}% is where this stops: `
+                   + `the other ${p.inkTotal - p.ceiling} are dish names the curriculum never teaches.` : ""}</p>
+      <p class="note dim menu-read">${menuLevelLine(p)}</p>
+      <!-- Two inks, and two is the right number here: every character printed
+           on this card is one the curriculum teaches, so "not yet" is always
+           true of the grey ones. A menu that outgrew the library would need a
+           third — lighter again, for the ones it will never teach — because
+           inking those the same grey as a character you simply have not
+           reached puts the wall further from readable than it is. -->
+      <div class="menu-legend">
+        <span><b class="g known">读</b> you can read it</span>
+        <span><b class="g">未</b> not yet — hover for the gloss</span>
+      </div>
       ${renderMenuCard(target, true)}
       <div class="sheet block">
         <div class="block-head"><span class="k">口语</span><span class="t">Say it out loud</span></div>
@@ -1739,20 +1794,22 @@ function ringSvg(pct, done) {
 
 /* ---------- the menu, rendered as print ---------- */
 
-/* Every Chinese glyph becomes hoverable. */
+/* Every Chinese glyph becomes hoverable.
+
+   The ink asks `menuCanRead`, not `isKnown` — a character the quest itself
+   taught never entered the library, and reading the wrong book here left it
+   printed in grey on the page that had just taught it. */
 function glyphs(str, target) {
   return [...str].map(c => {
     if (!/[\u4e00-\u9fff]/.test(c)) return esc(c);
-    const cls = c === target ? "target" : isKnown(c) ? "known" : "";
+    const cls = c === target ? "target" : menuCanRead(c) ? "known" : "";
     return `<span class="g ${cls}" data-ch="${esc(c)}">${esc(c)}</span>`;
   }).join("");
 }
 
-/* How grown-up a menu you can cope with right now. */
-function menuTier() {
-  const k = menuProgress().known;
-  return MENU_TIERS.filter(t => k >= t.at).pop() || MENU_TIERS[0];
-}
+/* menuTier() used to live here. It moved to srs.js, because menuToday() has to
+   know the level to pick a character that is actually printed, and srs.js
+   cannot reach into app.js. */
 
 function renderMenuCard(target, tall) {
   const m = MENU, tier = menuTier().n;
@@ -3127,31 +3184,33 @@ function renderToday() {
   const mp = menuProgress();
   const pick2 = menuToday();
   const pch = pick2.c ? CHAR_INDEX[pick2.c] : null;
-  const learnedIt = pick2.c ? isKnown(pick2.c) : true;
+  /* menuCanRead, not isKnown: the quest's own book is the one that says
+     whether today's character is done, and a character it taught never reaches
+     the library. Reading isKnown here meant today's pick never looked finished
+     and was offered again tomorrow. */
+  const learnedIt = pick2.c ? menuCanRead(pick2.c) : true;
 
   const sideQuest = `<div class="sheet sq">
     <div class="sq-top">
       <span class="sq-icon">🍜</span>
       <span class="sq-name"><b>Read a Menu</b><span class="zh">看菜单</span></span>
-      <span class="sq-frac">${mp.known}/${mp.total}</span>
+      <span class="sq-frac">${Math.round(mp.pct * 100)}% legible</span>
     </div>
-    <div class="bar ${mp.done ? "gold" : ""}"><i style="width:${(mp.pct * 100).toFixed(1)}%"></i></div>
-    <p class="note">Menu level ${menuTier().n} of ${MENU_TIERS.length} — ${esc(menuTier().label.toLowerCase())}.${
-      menuTier().n < MENU_TIERS.length
-        ? ` ${MENU_TIERS[menuTier().n].at - mp.known} more character${MENU_TIERS[menuTier().n].at - mp.known === 1 ? "" : "s"} and it gets harder.`
-        : " This is a menu you could be handed in Chengdu."}</p>
+    ${menuBar(mp)}
+    <p class="note">${mp.known} of the ${mp.total} characters printed on the card.
+      ${menuLevelLine(mp)}</p>
 
     ${pch ? `<div class="sq-target ${learnedIt ? "done" : ""}">
       <span class="sq-glyph">${esc(pch.c)}</span>
       <span class="sq-info">
         <span class="t">${learnedIt ? "Today's menu character — learned" : "Today's menu character"}</span>
-        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}` : "One character a day. Find it on the menu below."}</span>
+        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}` : "One character a day, and it is printed on the menu as it stands."}</span>
         ${learnedIt ? `<span class="p">Next one tomorrow.</span>` : `<span class="p">${esc(pch.words[0][0])} · ${esc(pch.words[0][2])}</span>`}
       </span>
     </div>` : `<div class="sq-target done">
       <span class="sq-glyph">✓</span>
       <span class="sq-info"><span class="t">Quest complete</span>
-      <span class="m">You can read every character on this menu.</span></span>
+      <span class="m">You can read every character printed on this menu — all ${mp.total} of them.</span></span>
     </div>`}
 
     <div class="sq-actions">
@@ -3213,7 +3272,14 @@ function renderToday() {
      this button, in srs.js beside the rest of the quest's bookkeeping, and it
      was dead for the same reason: nothing called it. The block above this
      button already prints the character, its reading, its meaning and a word
-     it appears in, so tapping it is the lesson. */
+     it appears in, so tapping it is the lesson.
+
+     And a lesson is all it is: menuLearned() writes to state.menuTaught and
+     stops. It used to call introduce() and tally("new"), which put a character
+     you picked up on an errand into today's rail, counted it against the day's
+     goal and moved the ring — so "5 learned" meant six, on a day you had not
+     opened a session. No drill either: a drill would grade it, and grading is
+     the schedule. */
   $("#learnMenu")?.addEventListener("click", () => { menuLearned(); renderToday(); });
   $("#ltMore")?.addEventListener("click", () => { todayOpen = !todayOpen; renderToday(); });
   $$("#viewToday .lt-arrow").forEach(b => b.onclick = () => {

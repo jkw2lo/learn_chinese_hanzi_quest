@@ -16,6 +16,8 @@ const CONTRACT = [
   'TIERS', 'TIER_UNLOCK', 'tierOf', 'tierChars', 'tierFrom', 'tierProgress',
   'tierUnlocked', 'tierNeeds', 'unlockedCeiling', 'isLocked',
   'POS_LABEL', 'MENU', 'MENU_CHARS', 'EXTRA_GLOSS',
+  'MENU_READ', 'MENU_LEVELS', 'MENU_PRINTED', 'MENU_SPOKEN_ONLY',
+  'MENU_INK', 'MENU_INK_CEILING',
   'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote', 'capName',
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
@@ -27,6 +29,7 @@ const CONTRACT = [
   'MILESTONES', 'milestoneDue', 'markMilestone', 'hailed',
   'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
+  'menuLearn', 'menuCanRead', 'taughtHere', 'menuTier', 'menuOnWall', 'menuOwn',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied',
   'sprintState', 'sprintMark', 'sprintMarkOf', 'sprintHits', 'sprintMisses', 'sprintByMode',
   'sprintTrouble', 'sprintFluent', 'sprintForget', 'rightRun', 'troubleScore',
@@ -96,7 +99,7 @@ console.log('\nversion');
 }
 
 console.log('\ncurriculum');
-const { HQ, CHAR_INDEX, MENU, MENU_CHARS, STAGES } = api;
+const { HQ, CHAR_INDEX, MENU, MENU_CHARS, MENU_READ, MENU_PRINTED, STAGES } = api;
 ok(`${HQ.length} characters`, HQ.length > 0);
 ok('no duplicates', new Set(HQ.map(c => c.c)).size === HQ.length);
 const missing = HQ.filter(c => !c.c || !c.p || !c.m || !c.story || !c.o || !c.pos?.length || !c.words?.length || c.sent?.length !== 3);
@@ -107,16 +110,55 @@ ok('every character lands in a stage', HQ.every(c => STAGES.some(s => s.n === c.
 
 console.log('\nmenu');
 const cjk = s => [...s].filter(c => /[一-鿿]/.test(c));
-const onMenu = new Set([...cjk(MENU.title), ...cjk(MENU.name),
+/* what renderMenuCard actually prints, level by level — the checks below are
+   the independent second opinion on MENU_READ, so they are spelled out from
+   MENU here rather than read back off the thing under test */
+const print1 = new Set([...cjk(MENU.title), ...cjk(MENU.name),
   ...MENU.sections.flatMap(s => [...cjk(s.head), ...s.items.flatMap(i => cjk(i[0]))])]);
+const print2 = new Set([...print1,
+  ...MENU.sections.flatMap(s => s.items.flatMap(i => i[4] ? cjk(i[4][0]) : []))]);
+const print3 = new Set([...print2, ...cjk(MENU.specials.head), ...cjk(MENU.specials.note[0]),
+  ...MENU.specials.items.flatMap(i => cjk(i[0]))]);
+const onMenu = print3;
 const spoken = new Set(MENU.phrases.flatMap(p => cjk(p[0])));
 ok('every printed glyph is a taught character', [...onMenu].every(c => CHAR_INDEX[c]),
    [...onMenu].filter(c => !CHAR_INDEX[c]).join(' '));
 ok('every spoken glyph is a taught character', [...spoken].every(c => CHAR_INDEX[c]),
    [...spoken].filter(c => !CHAR_INDEX[c]).join(' '));
 ok('quest covers the whole menu', [...onMenu, ...spoken].every(c => MENU_CHARS.includes(c)));
-ok('printed characters come first', MENU_CHARS.slice(0, onMenu.size).every(c => onMenu.has(c)),
+ok('printed characters come first', MENU_CHARS.slice(0, MENU_PRINTED.length).every(c => onMenu.has(c)),
    'so day one lights up a visible dish');
+
+/* The card is not all on the wall at once, and the model has to know it. */
+ok(`level 1 prints ${print1.size} characters`, MENU_READ[1].length === print1.size,
+   `model says ${MENU_READ[1].length}`);
+ok('level 2 adds the small print', MENU_READ[2].length === print2.size,
+   `model says ${MENU_READ[2].length}, card prints ${print2.size}`);
+ok(`level 3 adds the board — ${print3.size} in all`, MENU_READ[3].length === print3.size,
+   `model says ${MENU_READ[3].length}`);
+ok('each level contains the one below it',
+   MENU_READ[1].every(c => MENU_READ[2].includes(c)) && MENU_READ[2].every(c => MENU_READ[3].includes(c)));
+ok('the quest counts the whole card, not the dish names',
+   MENU_PRINTED.length === print3.size && [...print3].every(c => MENU_PRINTED.includes(c)));
+/* Six characters live in the ordering phrases and nowhere on the card. A
+   seventh is a deliberate decision, not a silent one. */
+ok('exactly 6 characters are spoken-only', api.MENU_SPOKEN_ONLY.length === 6,
+   api.MENU_SPOKEN_ONLY.join(' '));
+ok('and none of them is printed anywhere',
+   api.MENU_SPOKEN_ONLY.every(c => !print3.has(c) && spoken.has(c)));
+/* Ink, not vocabulary: the wall with repeats. */
+ok(`the card is ${api.MENU_INK.length} characters of ink`,
+   api.MENU_INK.length > MENU_PRINTED.length,
+   `${api.MENU_INK.length} printed vs ${MENU_PRINTED.length} distinct`);
+ok('every level of a tier has a label', api.MENU_TIERS.every(t => t.n && t.label));
+ok('and no threshold — the gate is not a count',
+   api.MENU_TIERS.every(t => t.at === undefined && t.by === undefined));
+/* This menu is taught end to end, so the bar runs to 100 and draws no tick.
+   If a dish ever arrives that the curriculum does not teach, this fails and
+   the bar needs the ceiling mark turned on — and the grey needs a third ink. */
+ok('the curriculum teaches every character on the card',
+   api.MENU_INK_CEILING === api.MENU_INK.length,
+   `${api.MENU_INK.length - api.MENU_INK_CEILING} printed characters are never taught`);
 
 console.log('\nscheduling');
 api.load();
@@ -136,10 +178,67 @@ const pick = api.menuToday();
 ok('picks a character', !!pick.c);
 ok('the pick is stable within the day', api.menuToday().c === pick.c);
 ok('the pick is printed on the menu', onMenu.has(pick.c), pick.c);
-const before = api.menuProgress().known;
-api.menuLearned();
-ok('learning it advances the quest', api.menuProgress().known === before + 1);
-ok('and it joins the flashcard deck', api.menuKnown().includes(pick.c));
+/* The one that matters: printed on the menu AS IT STANDS. A pick off a level
+   you cannot see yet is red ink above a card that does not contain it. */
+ok('and printed at the level you are on', api.menuOnWall().includes(pick.c),
+   `${pick.c} is not on the level ${api.menuTier().n} wall`);
+ok('the wall is this level and no more',
+   api.menuOnWall().length === MENU_READ[api.menuTier().n].length);
+
+/* Cross-reference in, progression out. Learning here must leave the library,
+   the review queue and the day record exactly where they were. */
+{
+  const charsBefore = JSON.stringify(api.state.chars);
+  const dueBefore = api.dueList().slice().sort().join(' ');
+  const dayBefore = JSON.stringify(api.state.days[api.dayKey()] || null);
+  const before = api.menuProgress().known;
+  const ownBefore = api.menuOwn();
+  api.menuLearned();
+  ok('learning it advances the quest', api.menuProgress().known === before + 1);
+  ok('and it joins the flashcard deck', api.menuKnown().includes(pick.c));
+  ok('and the quest counts it as its own', api.menuOwn() === ownBefore + 1);
+  ok('and the menu can read it', api.menuCanRead(pick.c) && api.taughtHere(pick.c));
+  ok('but the library never heard of it', !api.isKnown(pick.c),
+     'a menu character is recognition, not retention');
+  ok('state.chars is untouched', JSON.stringify(api.state.chars) === charsBefore);
+  ok('the review queue is untouched', api.dueList().slice().sort().join(' ') === dueBefore);
+  ok("the day's record is untouched",
+     JSON.stringify(api.state.days[api.dayKey()] || null) === dayBefore,
+     'an errand is not part of the day\u2019s list');
+  ok('and the pick still reads as done today', api.menuToday().c === pick.c);
+}
+
+/* A character learned the ordinary way still inks the menu in — that is the
+   whole point of the page. */
+{
+  const other = MENU_PRINTED.find(c => !api.menuCanRead(c));
+  api.introduce(other);
+  ok('a character learned anywhere else inks the menu in', api.menuCanRead(other), other);
+}
+
+/* Gate three: you get the next menu when you can read this one. Nothing on
+   another tab can spring it, and clearing the wall promotes you on the spot —
+   so "level exhausted, card unfinished" is a state that cannot happen. */
+{
+  const save = api.state.menuTaught.slice();
+  api.state.menuTaught = MENU_READ[1].slice();
+  ok('reading level 1 promotes you to level 2', api.menuTier().n === 2);
+  api.state.menuTaught = MENU_READ[2].slice();
+  ok('reading level 2 promotes you to level 3', api.menuTier().n === 3);
+  ok('and the wall is now the whole card', api.menuOnWall().length === MENU_PRINTED.length);
+  /* a stale pick from a level you have left is repaired, not honoured */
+  api.state.menuPick = { d: api.dayKey(), c: '\u4e0d\u5b58\u5728'[0], done: false };
+  const repaired = api.menuToday();
+  ok('a pick that is no longer on the wall gets re-picked',
+     repaired.c === null || api.menuOnWall().includes(repaired.c), String(repaired.c));
+  api.state.menuTaught = MENU_PRINTED.slice();
+  api.state.menuPick = null;
+  const fin = api.menuToday();
+  ok('reading the whole card finishes the quest', fin.c === null && fin.done);
+  ok('and the bar says so', api.menuProgress().done && api.menuProgress().pct === 1);
+  api.state.menuTaught = save;
+  api.state.menuPick = null;
+}
 
 console.log('\npractice');
 const someone = api.knownChars();
@@ -162,14 +261,24 @@ ok('a missed stroke never demotes the character', api.rec(hw).lvl === lvlBefore)
 ok('and never drags it back to today', api.rec(hw).due > api.dayKey());
 ok('but the attempt is recorded', api.rec(hw).wrong > 0);
 ok('and no writing credit is given', (api.rec(hw).skills.w || 0) === 0);
-const lvl2 = api.rec(hw).lvl;
+const lvlAfterStroke = api.rec(hw).lvl;
 api.grade(hw, false, 'r');
-ok('a missed RECOGNITION still costs a level', api.rec(hw).lvl < lvl2);
+ok('a missed RECOGNITION still costs a level', api.rec(hw).lvl < lvlAfterStroke);
 
 console.log('\nmenu tiers');
 ok('three tiers defined', api.MENU_TIERS.length === 3);
-ok('tier 1 needs nothing', api.MENU_TIERS[0].at === 0);
-ok('tiers ascend', api.MENU_TIERS.every((t, i, a) => !i || t.at > a[i - 1].at));
+ok('tiers are numbered in order', api.MENU_TIERS.every((t, i) => t.n === i + 1));
+/* There is no `at` to ascend any more. The old checks pinned a threshold
+   gate — level 2 at 15 menu characters, level 3 at 30 — which let the specials
+   board arrive because of work done on the Today tab. What replaced it is
+   checked up in `side quest`: you get the next menu when you can read this one. */
+ok('a fresh record starts at level 1', (() => {
+  const save = api.state.menuTaught, chars = api.state.chars;
+  api.state.menuTaught = []; api.state.chars = {};
+  const n = api.menuTier().n;
+  api.state.menuTaught = save; api.state.chars = chars;
+  return n === 1;
+})());
 const withDesc = MENU.sections.flatMap(s => s.items).filter(i => i[4]);
 ok('every dish has a description for tier 2', withDesc.length === MENU.sections.flatMap(s => s.items).length);
 const tierGlyphs = [...withDesc.flatMap(i => cjk(i[4][0])),
@@ -1785,6 +1894,7 @@ console.log('\nreset leaves nothing behind');
    anything the record grew afterwards survived a "reset everything". */
 api.nextNew(3).forEach(api.introduce);
 api.state.menuPick = { d: api.dayKey(), c: api.MENU_CHARS[0], done: false };
+api.state.menuTaught = [api.MENU_CHARS[1]];
 api.state.lastBackup = 1;
 api.state.somethingAddedLater = 'still here';
 api.save();
@@ -1793,6 +1903,7 @@ const fresh = api.resetProgress();
 ok('characters are gone', Object.keys(fresh.chars).length === 0);
 ok('days are gone', Object.keys(fresh.days).length === 0);
 ok('the streak is gone', fresh.streak.cur === 0 && fresh.streak.last === null);
+ok("the side quest's own book is gone too", !fresh.menuTaught.length && !fresh.menuPick);
 ok('settings are back to their defaults', fresh.goalNew === api.blank().goalNew);
 const strays = Object.keys(fresh).filter(k => !(k in api.blank()));
 ok('no key outlives the reset', !strays.length, strays.join(' '));

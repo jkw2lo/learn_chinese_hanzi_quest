@@ -1210,24 +1210,92 @@ const MENU = {
   ]
 };
 
-/* Every distinct character the quest covers, derived from the menu above so
-   editing it keeps the quest honest. Characters actually PRINTED on the menu
-   come first: learning one should visibly light up a dish, not a phrase you
-   can't see. Ordering-phrase characters follow, each tier in teaching order. */
-const MENU_CHARS = (() => {
-  const printed = new Set(), spoken = new Set();
-  const add = (str, set) => [...str].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) set.add(c); });
-  add(MENU.title, printed); add(MENU.name, printed);
-  MENU.sections.forEach(s => { add(s.head, printed); s.items.forEach(i => add(i[0], printed)); });
-  MENU.phrases.forEach(p => add(p[0], spoken));
-  return HQ.filter(ch => printed.has(ch.c) || spoken.has(ch.c))
-           .map((ch, n) => ({ c: ch.c, tier: printed.has(ch.c) ? 0 : 1, n }))
-           .sort((a, b) => a.tier - b.tier || a.n - b.n)
-           .map(x => x.c);
+/* ---------- what the card shows, and when ----------
+
+   "On the menu" is not one set of characters. `renderMenuCard` prints the
+   masthead, the section heads and the dish names from the start, a dish's
+   small print from level 2, and the specials board from level 3. The model
+   used to know none of that. It derived one flat list from the dish names and
+   the ordering phrases, which got it wrong in both directions: the six
+   characters that live only in the spoken phrases were in the list and could
+   be offered under the words "find it on the menu below", where there is
+   nothing to find; and the seventeen that live in the small print and on the
+   board were not in it at all, so the quest neither taught them nor counted
+   them and called the card finished with seventeen glyphs still grey.
+
+   So the levels are derived from MENU itself. MENU_READ[n] is every character
+   legible at level n — cumulative, and in the order the eye meets it going
+   down the card, which puts the board first because the board is printed above
+   the sections. MENU_LEVELS[n] is the same list as a Set. Both are 1-indexed
+   by menu level; index 0 is empty so `MENU_READ[tier.n]` needs no arithmetic.
+
+   Only characters the library teaches go in. Everything printed here happens
+   to be taught, so the filter removes nothing today — it is what keeps the
+   quest honest the day somebody adds a dish. */
+const MENU_READ = [[]], MENU_LEVELS = [new Set()];
+
+/* Every character printed on the card at full size, WITH repeats — 面 in five
+   dishes is five characters of wall that light up when you learn it. This is
+   the denominator for "how much of this can I read", which is the question the
+   quest is named after; a set would answer a question about vocabulary. */
+const MENU_INK = [];
+
+const MENU_SPOKEN_ONLY = [];
+
+(() => {
+  const han = s => [...String(s)].filter(c => /[\u4e00-\u9fff]/.test(c));
+
+  /* The card, read top to bottom, as it stands at level `lvl`. */
+  const walk = lvl => {
+    const out = [...han(MENU.title), ...han(MENU.name)];
+    if (lvl >= 3) {
+      out.push(...han(MENU.specials.head));
+      MENU.specials.items.forEach(i => out.push(...han(i[0])));
+      out.push(...han(MENU.specials.note[0]));
+    }
+    MENU.sections.forEach(s => {
+      out.push(...han(s.head));
+      s.items.forEach(i => {
+        out.push(...han(i[0]));
+        if (lvl >= 2 && i[4]) out.push(...han(i[4][0]));
+      });
+    });
+    return out;
+  };
+
+  for (let n = 1; n <= 3; n++) {
+    const seen = new Set(), list = [];
+    for (const c of walk(n)) if (CHAR_INDEX[c] && !seen.has(c)) { seen.add(c); list.push(c); }
+    MENU_READ[n] = list; MENU_LEVELS[n] = seen;
+  }
+  MENU_INK.push(...walk(3));
+
+  /* The ordering phrases are spoken, not printed. Six characters appear only
+     there — 这 少 给 服 务 员 — and the quest may not point at them, because
+     there is nowhere on the card to point. They still get the hover gloss and
+     the say-it-out-loud row; they are simply not what the bar is counting. */
+  const printed = MENU_LEVELS[3];
+  const seen = new Set();
+  MENU.phrases.forEach(p => han(p[0]).forEach(c => {
+    if (!printed.has(c) && CHAR_INDEX[c] && !seen.has(c)) { seen.add(c); MENU_SPOKEN_ONLY.push(c); }
+  }));
 })();
 
-/* The menu grows up as you do: names first, then descriptions, then a
-   specials board with longer dish names and a line from the kitchen. */
+/* The whole card — the quest's books, and the bar's countable denominator. */
+const MENU_PRINTED = MENU_READ[3];
+
+/* The ceiling on legibility: the printed characters this library teaches,
+   counted with repeats like MENU_INK. Here that is all of them, so the ceiling
+   is 100% and the bar's tick has nothing to mark — see `menuProgress`, which
+   only draws it when the two differ. A menu with a dish name no curriculum
+   this size would teach would land short, and the bar would have to say so
+   rather than quietly stopping. */
+const MENU_INK_CEILING = MENU_INK.filter(c => CHAR_INDEX[c]).length;
+
+/* Everything the quest page shows you, printed first. The chip on a teaching
+   card reads from this. */
+const MENU_CHARS = [...MENU_PRINTED, ...MENU_SPOKEN_ONLY];
+
 /* ============================================================
    Interests — what the word of the week is drawn from
 
@@ -1440,10 +1508,23 @@ const FESTIVALS = [
   ]}
 ];
 
+/* How grown-up a menu you get. A tier is a number and a label and nothing
+   else: there is no threshold here, because the gate is not a count.
+
+   Three gates were tried. A count of menu characters (level 2 at 15, level 3
+   at 30) looked reasonable and was not: menu characters bunch — most of this
+   card is taught in the Kitchen stage — so the board could arrive in a week
+   while three quarters of the dish names were still grey. Adding an overall
+   character total on top fixed the pacing and broke something worse: the card
+   would then grow because of work done on the Today tab, which is a promise
+   that the menu gets harder for reasons having nothing to do with the menu.
+
+   The gate that survives is the obvious one: you get the next menu when you
+   can read this one. See `menuTier` in srs.js. */
 const MENU_TIERS = [
-  { n: 1, at: 0,  label: "Dish names only" },
-  { n: 2, at: 15, label: "With descriptions" },
-  { n: 3, at: 30, label: "Full menu, specials board and all" }
+  { n: 1, label: "Dish names only" },
+  { n: 2, label: "With descriptions" },
+  { n: 3, label: "Full menu, specials board and all" }
 ];
 
 const QUESTS = [

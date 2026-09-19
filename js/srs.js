@@ -58,6 +58,7 @@ const blank = () => ({
   writeDrills: true,
   padAuto: false,
   hailed: [],           /* milestones already celebrated — see MILESTONES */
+  menuTaught: [],       /* the side quest's own book — see menuCanRead() */
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
   name: "",
   interests: [],
@@ -86,6 +87,9 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) state = Object.assign(blank(), JSON.parse(raw));
     if (!(state.goalNew >= GOAL_MIN && state.goalNew <= GOAL_MAX)) state.goalNew = blank().goalNew;
+    /* An imported backup is whatever was in the file; the quest reads this on
+       every render and a non-array would take the dashboard down with it. */
+    if (!Array.isArray(state.menuTaught)) state.menuTaught = [];
     if (state.name) state.name = capName(state.name);
     fillInterests();
   } catch { /* private mode, cleared storage — carry on with a fresh record */ }
@@ -728,37 +732,138 @@ const dayReps = d => d ? (d.new || 0) + (d.rev || 0) + (d.extra || 0) + (d.sp ||
 /* Days you actually studied — this never resets, unlike the streak. */
 const daysStudied = () => Object.values(state.days).filter(d => dayReps(d) > 0).length;
 
-/* ---------- the menu side quest: one character a day ---------- */
+/* ---------- the menu side quest: one character a day ----------
+
+   The quest keeps its own books. It used to run entirely on the main library:
+   what you could read was `isKnown`, the daily character was the next unknown
+   in curriculum order, and learning one called `introduce`. Three things were
+   wrong with that, and they were all the same thing — the side quest was not
+   on the side.
+
+   It marched in step with Today, so a placement check could tell somebody who
+   had never opened the quest that they could read the whole menu. Learning a
+   character here fed the same schedule as everything else, so an aside became
+   another obligation. And finishing a menu lesson ticked off "learn today's
+   characters" — a task about the day's five, completed from another page.
+
+   So: cross-reference in, progression out. `state.menuTaught` is what the menu
+   itself has taught. `menuCanRead` asks both books, because a character
+   learned anywhere still inks in, which is the whole point of the page.
+   `menuLearn` records and nothing else.
+
+   The trade-off, stated plainly: a character met on the menu is not scheduled
+   for review. It is recognition and immersion, not retention. That is fine
+   here because every character on this card is in the curriculum and will come
+   round properly in its own time.
+
+   It also means nothing has to be kept out of the day's list — a menu
+   character never enters the library, so `learnedToday` has nothing to exclude
+   and the ring cannot move behind your back. */
 
 function menuQuest() { return QUESTS.find(q => q.id === "menu"); }
 
-function menuProgress() {
-  const known = MENU_CHARS.filter(isKnown).length;
-  return { known, total: MENU_CHARS.length, pct: known / MENU_CHARS.length,
-           done: known === MENU_CHARS.length };
+/* What the quest taught you, as opposed to what the curriculum did. */
+const taughtHere = c => (state.menuTaught || []).includes(c);
+const menuCanRead = c => isKnown(c) || taughtHere(c);
+
+/* How grown-up a menu you can cope with right now: you get the next one when
+   you can read this one. Nothing on another tab can spring this gate, and
+   nothing on another tab is required to pass it.
+
+   It cannot strand anybody either. MENU_READ holds only characters the library
+   teaches, and the quest offers one a day from the level you are standing on,
+   so the worst case is 26 days to clear level 1 and every one of those days
+   moves you a character closer. Which is also why "this level is exhausted but
+   the card is not finished" does not exist: clearing the wall promotes you on
+   the spot. */
+function menuTier() {
+  let n = 1;
+  while (n < MENU_TIERS.length && MENU_READ[n].every(menuCanRead)) n++;
+  return MENU_TIERS[n - 1];
 }
 
-/* Today's menu character, fixed once chosen so it can't shift underfoot. */
+/* What is actually on the wall in front of you, at the level you are on. */
+const menuOnWall = () => MENU_READ[menuTier().n];
+
+/* Count the ink, not the vocabulary.
+
+   The bar used to answer "how many of a list of 54 do I know". Nobody standing
+   in a restaurant asks that. The question the quest is named after is how much
+   of this can I read, and the denominator for it is the card with repeats: 面
+   appears in five dishes, and learning it lights up five characters of wall.
+   That weights common characters the way the wall does, and it moves every
+   session rather than only when a menu character comes up, which is most of
+   why it is worth looking at.
+
+   `known` / `total` stay alongside it as the countable pair — the number you
+   can check by looking at the card — and the wall pair is the one the level
+   copy needs. */
+function menuProgress() {
+  const known = MENU_PRINTED.filter(menuCanRead).length;
+  const ink   = MENU_INK.filter(menuCanRead).length;
+  const wall  = menuOnWall();
+  const wallKnown = wall.filter(menuCanRead).length;
+  return {
+    known, total: MENU_PRINTED.length,
+    ink, inkTotal: MENU_INK.length,
+    pct: ink / MENU_INK.length,
+    /* The tick on the track, and whether there is anything for it to mark.
+       Every printed character here is taught, so `capped` is false and the bar
+       runs to the end — but a card that outgrew the curriculum would stop
+       short, and a bar that quietly halts reads as broken. */
+    ceiling: MENU_INK_CEILING,
+    ceilingPct: MENU_INK_CEILING / MENU_INK.length,
+    capped: MENU_INK_CEILING < MENU_INK.length,
+    wallKnown, wallTotal: wall.length,
+    done: known === MENU_PRINTED.length
+  };
+}
+
+/* "N of 54 learned right here" — the only number the quest itself controls. */
+const menuOwn = () => MENU_PRINTED.filter(taughtHere).length;
+
+/* Today's menu character, picked off the wall you can actually see.
+
+   Fixed once chosen so it can't shift underfoot — but a pick the wall no
+   longer shows is a repair rather than a shift. Anyone holding a character
+   from a level they have since dropped below would otherwise spend the rest of
+   the day hunting for something that is not printed. */
 function menuToday() {
   const k = dayKey();
-  if (state.menuPick && state.menuPick.d === k) return state.menuPick;
-  const next = MENU_CHARS.find(c => !isKnown(c)) || null;
+  const wall = menuOnWall();
+  const p = state.menuPick;
+  const stillThere = p && p.d === k &&
+    (p.c ? wall.includes(p.c) : !wall.some(c => !menuCanRead(c)));
+  if (stillThere) return p;
+  const next = wall.find(c => !menuCanRead(c)) || null;
   state.menuPick = { d: k, c: next, done: !next };
   save();
   return state.menuPick;
 }
 
+/* Records it in the quest's own book and nothing else: no `introduce`, no
+   review date, no day count, no tally. */
+function menuLearn(c) {
+  if (!c || !CHAR_INDEX[c]) return;
+  if (!Array.isArray(state.menuTaught)) state.menuTaught = [];
+  if (!state.menuTaught.includes(c)) state.menuTaught.push(c);
+  save();
+}
+
 function menuLearned() {
   const p = menuToday();
   if (!p.c) return;
-  introduce(p.c);
-  tally("new");
+  menuLearn(p.c);
   p.done = true;
   save();
 }
 
-/* The menu characters you can already read — the flashcard deck. */
-const menuKnown = () => MENU_CHARS.filter(isKnown);
+/* The menu characters you can already read — the flashcard deck. Reads
+   `menuCanRead`, not `isKnown`: when you decouple a store, every reader of the
+   old one has to be found. This one and `glyphs()` in app.js were the two that
+   were missed the first time, and the second left a character the quest had
+   just taught still printed in grey. */
+const menuKnown = () => MENU_PRINTED.filter(menuCanRead);
 
 function stageProgress(stageNo) {
   const inStage = HQ.filter(c => c.stage === stageNo);
