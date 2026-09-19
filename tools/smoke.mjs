@@ -967,6 +967,63 @@ console.log('\nsprint: the record behind the sheets');
   ok('and a brutal one does not', fresh.sprintGrade('r', 100, 60).zh === '狂');
   ok('the clock formats as minutes and seconds', fresh.fmtClock(95000) === '1:35');
 
+  /* ---- every button goes somewhere ----
+
+     Cantonese Quest's Menu had a "Learn 個" button calling openMenuLesson(), a
+     name that appeared exactly once in the whole repository: at the call site.
+     The click threw a ReferenceError and the button did nothing, and nothing
+     caught it — smoke can load srs.js and data.js because they are DOM-free,
+     but app.js is not.
+
+     A general "is every called name declared" scan was tried there and
+     abandoned: it read prose inside string literals as calls (o:"A person (人)
+     with..." is person(); CSS var(--seal) is var()) and cried wolf 132 times.
+     Scoped to handler bodies — which is where a dead name actually hides — it
+     is exact and has no false-positive surface.
+
+     The whole handler body, not just its first call. The first version
+     matched one call per handler, which is fine for `onclick = () => foo()`
+     and blind to everything after the first line of a braced body; the
+     function it was meant to catch was called on line three. */
+  const OPEN = /(?:\.onclick\s*=|addEventListener\(\s*["'][a-z]+["']\s*,)\s*(?:async\s*)?(?:\(\s*[\w$,\s]*\)|[\w$]+)?\s*=>\s*/g;
+  const DIRECT = /\.onclick\s*=\s*([A-Za-z_$][\w$]*)\s*;/g;
+  const called = new Set();
+  for (const m of appSrc.matchAll(DIRECT)) called.add(m[1]);
+  for (const m of appSrc.matchAll(OPEN)) {
+    let i = m.index + m[0].length;
+    let body;
+    if (appSrc[i] === "{") {
+      /* walk to the matching brace so the whole body is covered */
+      let depth = 0, j = i;
+      for (; j < appSrc.length; j++) {
+        if (appSrc[j] === "{") depth++;
+        else if (appSrc[j] === "}") { depth--; if (!depth) break; }
+      }
+      body = appSrc.slice(i, j + 1);
+    } else {
+      body = appSrc.slice(i, appSrc.indexOf("\n", i) + 1 || undefined);
+    }
+    for (const c of body.matchAll(/(^|[^\w$.])([A-Za-z_$][\w$]*)\s*\(/g)) called.add(c[2]);
+  }
+  /* `if` and friends open a handler body and are not calls; the rest the
+     browser supplies. */
+  const NOT_A_CALL = new Set(['if', 'for', 'while', 'switch', 'return', 'typeof', 'await', 'catch',
+                              'function', 'else', 'do', 'new', 'delete', 'void', 'in', 'of', 'try', 'throw',
+                              'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'confirm',
+                              'alert', 'fetch', 'requestAnimationFrame', 'Promise', 'Object', 'Array',
+                              'Math', 'JSON', 'Set', 'Map', 'Date', 'Number', 'String', 'Boolean', 'Error',
+                              'RegExp', 'KeyboardEvent', 'CustomEvent', 'Event', 'IntersectionObserver',
+                              'getComputedStyle', 'addEventListener', 'removeEventListener', 'scrollTo',
+                              'SpeechSynthesisUtterance', 'matchMedia', 'structuredClone', 'queueMicrotask']);
+  /* A name declared in any of the four counts: app.js is loaded last and
+     shares the global scope with data.js, srs.js and sprint.js. */
+  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js');
+  const isDeclared = n => new RegExp(
+    `(?:const|let|var|function)\\s+${n.replace(/\$/g, '\\$')}(?![\\w$])`).test(declaredIn);
+  const dead = [...called].filter(n => !NOT_A_CALL.has(n) && !isDeclared(n));
+  ok(`every handler in app.js calls something that exists (${called.size} checked)`,
+     !dead.length, dead.join(' '));
+
   /* the cross-file contract, both ways */
   const needsFromApp = ['startRepair', 'REPAIR_SIZE', 'esc', 'bare', 'searchable', 'optionSet',
                         'say', 'stopPhrase', 'toneMark', 'clipFor', 'clipCount', 'openChar',

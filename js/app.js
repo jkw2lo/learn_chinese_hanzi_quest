@@ -2826,7 +2826,14 @@ function renderToday() {
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
   $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
   $("#openMenuFull")?.addEventListener("click", () => openQuest("menu"));
-  $("#learnMenu")?.addEventListener("click", () => openMenuLesson(pick2.c));
+  /* openMenuLesson() never existed — the name appeared exactly once in the
+     repository, at this call site, so "Learn 山" threw a ReferenceError and
+     did nothing at all. menuLearned() is the function that was written for
+     this button, in srs.js beside the rest of the quest's bookkeeping, and it
+     was dead for the same reason: nothing called it. The block above this
+     button already prints the character, its reading, its meaning and a word
+     it appears in, so tapping it is the lesson. */
+  $("#learnMenu")?.addEventListener("click", () => { menuLearned(); renderToday(); });
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
   $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
   $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
