@@ -18,6 +18,7 @@ const CONTRACT = [
   'POS_LABEL', 'MENU', 'MENU_CHARS', 'EXTRA_GLOSS',
   'MENU_READ', 'MENU_LEVELS', 'MENU_PRINTED', 'MENU_SPOKEN_ONLY',
   'MENU_INK', 'MENU_INK_CEILING',
+  'mergeState', 'mergeChar', 'mergeDay', 'mergeSprint', 'useRemote', 'dropRemote',
   'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote', 'capName',
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
@@ -2179,6 +2180,289 @@ console.log('\nthe menu has a tab of its own');
   /* the page's own classes are drawn */
   ['ink-read', 'ink-bar', 'menu-say', 'sq-learn', 'menu-intro'].forEach(c =>
     ok(`.${c} is styled`, new RegExp('\\.' + c + '\\b').test(css)));
+}
+
+/* ============================================================
+   The phone, and the promise that it costs the desktop nothing
+
+   The deal made when the viewport tag went in was that every rule written for
+   a phone would live inside a max-width or a pointer query, so a desktop
+   window could not see any of it. That is a promise about the shape of a file,
+   which is exactly the kind of promise a check can keep.
+   ============================================================ */
+console.log('\nthe phone layer stays on the phone');
+{
+  const html = read('index.html');
+  const css = read('css/app.css');
+
+  /* Without this tag a phone lays out at 980px and every max-width block below
+     is dead. It is the one line the whole phone layer rests on. */
+  const vp = html.match(/<meta name="viewport" content="([^"]*)">/);
+  ok('index.html declares a viewport', !!vp);
+  ok('  at the device width', !!vp && /width=device-width/.test(vp[1]));
+  ok('  with the safe area covered', !!vp && /viewport-fit=cover/.test(vp[1]),
+     'env(safe-area-inset-*) stays 0 without viewport-fit=cover');
+
+  const MARK = '   On a phone\n   ============================================================';
+  const at = css.indexOf(MARK);
+  ok('css/app.css has a phone layer, marked', at >= 0);
+
+  if (at >= 0) {
+    /* Everything past the marker, with comments and the contents of each block
+       removed, should be nothing but @media openers. Brace counting is enough
+       here: this file has no strings containing braces. */
+    /* The marker sits inside a comment, so start past the end of it — from
+       here on the file is ordinary CSS and the comment stripper can work. */
+    const tailCss = css.slice(css.indexOf('*/', at) + 2);
+    const noComments = tailCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    const top = [];                    /* every selector at nesting depth 0 */
+    let depth = 0, buf = '';
+    for (const ch of noComments) {
+      if (ch === '{') { if (depth === 0) top.push(buf.trim()); depth++; buf = ''; }
+      else if (ch === '}') { depth--; buf = ''; }
+      else if (depth === 0) buf += ch;
+    }
+    const bare = top.filter(sel => !/^@media\b/.test(sel));
+    ok('every block in it is a media query', bare.length === 0,
+       bare.length ? `bare rule(s): ${bare.slice(0, 3).join(' / ')}` : '');
+
+    /* A media query can still be a desktop rule. These are the only two ways
+       to address a phone without addressing a desktop window as well. */
+    const reaches = top.filter(sel => /^@media\b/.test(sel))
+      .filter(sel => !/max-width|pointer\s*:\s*coarse|hover\s*:\s*none/.test(sel));
+    ok('and every one of them is narrow-only or touch-only', reaches.length === 0,
+       reaches.length ? reaches.slice(0, 3).join(' / ') : '');
+  }
+
+  /* The bottom bar is gone, so nothing should still be styling it or drawing
+     it. A rule left behind for a deleted element is invisible until someone
+     reuses the class name. */
+  ok('the phone bottom bar is gone from the markup', !/<nav class="nav"/.test(html));
+  ok('  and from the stylesheet', !/^\.nav[\s.{]/m.test(css.replace(/\.nav-sep/g, '')));
+
+  /* Every section needs a way in at both widths: a tab in the desktop row and
+     a row in the phone sheet. */
+  const tabs = [...html.matchAll(/data-nav="(\w+)"/g)].map(m => m[1]);
+  const inTop = new Set(tabs.slice(0, tabs.length / 2));
+  const secs = ['today', 'menu', 'sprint', 'write', 'library', 'radicals', 'record'];
+  ok(`all ${secs.length} sections are in the desktop row`, secs.every(v => inTop.has(v)));
+  ok('and all of them are in the phone sheet', secs.every(v =>
+    new RegExp(`drawer-nav[\\s\\S]*data-nav="${v}"`).test(html)));
+  ok('the burger opens and shuts it', /burgerBtn/.test(read('js/app.js'))
+     && /function openDrawer/.test(read('js/app.js')) && /function closeDrawer/.test(read('js/app.js')));
+  ok('and picking a tab shuts it', /closeDrawer\(\);\s*\n\s*window\.scrollTo/.test(read('js/app.js')));
+}
+
+
+console.log('\nwhat a finger does, and what it is spared');
+{
+  const app = read('js/app.js');
+  const css = read('css/app.css');
+
+  /* Four across or two-up is a setting with three answers, and only one of
+     them asks the window. If the width query ever came back the setting would
+     stop working at one end without failing anywhere. */
+  ok('the answer layout is a stored setting', api.blank().optCols === 'auto');
+  ok('  resolved in one place', /function optColsEffective/.test(app) && /function applyOptCols/.test(app));
+  ok('  and written where the stylesheet reads it',
+     /dataset\.optCols\s*=\s*optColsEffective\(\)/.test(app) && /\[data-opt-cols="row"\]/.test(css));
+  ok('  the width only decides on auto',
+     /pick === "auto" \? \(optColsMQ\.matches/.test(app));
+  ok('  and it is offered as three choices, not two',
+     ['auto', 'row', 'grid'].every(v => app.includes(`["${v}", "`)));
+  ok('  no width query still owns the option grid',
+     !/@media \(min-width: 820px\)[\s\S]{0,120}\.opts\.grid2/.test(css),
+     'the 820px rule would overrule the setting below it');
+
+  /* Trackpad writing wants a trackpad. Android reports requestPointerLock and
+     then has nothing to lock, so the capability test alone put a dead button
+     on every phone. */
+  ok('the trackpad asks for a fine pointer', /pointer: fine/.test(app));
+  ok('  and padStart refuses without one',
+     /function padStart\([\s\S]{0,400}?!padSupported\(\)[\s\S]{0,80}?return false/.test(app),
+     'T on a keyboard still calls in, and a tablet has both');
+  const padButtons = [...app.matchAll(/id="(padW|nbPad|wpPad)"/g)].length;
+  const padGated = [...app.matchAll(/padSupported\(\) \? `<button[^`]*id="(padW|nbPad|wpPad)"/g)].length;
+  ok(`  and all ${padButtons} trackpad buttons are behind it`, padButtons > 0 && padGated === padButtons,
+     `${padGated} of ${padButtons} gated`);
+
+  /* The card's three gestures. The tap must not also flip, or a phone would
+     turn the card over every time it was asked to say it. */
+  ok('the flashcard takes tap, hold and swipe',
+     ['flashTouchDown', 'flashTouchMove', 'flashTouchUp', 'flashTouchReset'].every(f =>
+       new RegExp(`function ${f}`).test(app)));
+  ok('  only on a coarse pointer', /flashTouchy = \(\) => matchMedia\("\(pointer: coarse\)"\)/.test(app));
+  ok('  and a tap there does not also flip the card',
+     /if \(flashTouchy\(\)\) return;/.test(app));
+  ok('  a cancelled hold puts the card back', /pointercancel[\s\S]{0,140}flashFlip\(false\)/.test(app));
+  ok('  and leaving the deck clears the gesture', /function flashKeysReset[\s\S]{0,200}flashTouchReset\(\)/.test(app));
+  ok('  both hint lines exist, and only one shows at a time',
+     /class="flash-keys"/.test(read('index.html')) && /class="flash-taps"/.test(read('index.html'))
+     && /@media \(hover: none\) \{ \.flash-keys \{ display: none/.test(css)
+     && /\.flash-taps \{ display: block/.test(css));
+
+  /* .opt-n is the drill's numbering and also the inline keycap used in prose.
+     Hiding it wholesale on touch left "reload with  held, or ." in Settings. */
+  ok('the answer numbering hides on touch without taking prose keycaps with it',
+     /@media \(hover: none\) \{ \.opts \.opt-n, \.sp-opts \.opt-n, \.key-hint/.test(css));
+}
+
+
+console.log('\nthe square and the writer are the same square');
+{
+  const app = read('js/app.js');
+  const css = read('css/app.css');
+
+  /* hanzi-writer emits width/height attributes and no viewBox, so its SVG
+     cannot scale after it is built. A writer built to a different number than
+     its 田字格 sits in the corner and puts every stroke you draw about 40% off
+     the guide lines — and nothing errors, so it reads as bad handwriting. */
+  ok('the writer measures the square it is mounted in', /function writerPx/.test(app)
+     && /width: px, height: px/.test(app));
+  const carried = [...app.matchAll(/makeWriter\([^)]*\{[^}]*\bwidth:\s*\d/g)];
+  ok('  and no call site carries its own copy of a CSS size', carried.length === 0,
+     carried.length ? carried[0][0].slice(0, 60) : '');
+
+  /* A viewport unit here is correct when the square is built and wrong the
+     first time the phone is turned sideways, because the writer inside it
+     cannot follow. */
+  const boxes = [/\.writer-box \{ width: ([^;]+);/, /\.nb-sq \{ position: relative; width: ([^;]+);/];
+  boxes.forEach(re => {
+    const m = css.match(re);
+    ok(`  ${m ? m[1].trim() : '?'} is a fixed size`, !!m && /^\d+px$/.test(m[1].trim()));
+  });
+
+  /* Centring a scrolling flex column puts its first item above the scroll
+     origin the moment the content overflows, where nothing can reach it. */
+  ['.nb-stage', '.place-body'].forEach(sel => {
+    const blk = css.slice(css.indexOf(sel + ' {'));
+    ok(`${sel} falls back to the top when it overflows`,
+       /safe center/.test(blk.slice(0, blk.indexOf('}'))));
+  });
+}
+
+
+/* ============================================================
+   Two devices, one record
+
+   The merge is the only part of cross-device sync that can lose somebody's
+   work, and it loses it silently — a morning on the phone simply isn't there
+   any more. So it is exercised here against made-up records rather than
+   trusted to read correctly.
+   ============================================================ */
+console.log('\ntwo devices, one record');
+{
+  const { mergeState, mergeChar, mergeDay, mergeSprint, blank } = api;
+
+  const ch = (o = {}) => Object.assign({
+    lvl: 0, due: '2026-01-01', seen: 0, right: 0, wrong: 0,
+    skills: { r: 0, p: 0, c: 0, w: 0 }, shown: { r: 0, p: 0, c: 0, w: 0 },
+    first: '2026-01-01', last: '2026-01-01'
+  }, o);
+
+  /* the counters only ever go up, so the union of two counts is the true count */
+  {
+    const a = ch({ seen: 5, right: 4, wrong: 1, skills: { r: 3, p: 0, c: 1, w: 0 }, last: '2026-01-05' });
+    const b = ch({ seen: 3, right: 3, wrong: 0, skills: { r: 1, p: 2, c: 0, w: 0 }, last: '2026-01-03' });
+    const m = mergeChar(a, b);
+    ok('a character keeps the higher of every count', m.seen === 5 && m.right === 4 && m.wrong === 1);
+    ok('  and the best of each skill', m.skills.r === 3 && m.skills.p === 2 && m.skills.c === 1);
+  }
+
+  /* lvl and due are a place in a queue, not a score — maxing them would invent
+     a schedule that neither device ever had */
+  {
+    const a = ch({ lvl: 4, due: '2026-03-01', last: '2026-01-02' });
+    const b = ch({ lvl: 1, due: '2026-01-06', last: '2026-01-05' });
+    const m = mergeChar(a, b);
+    ok('the schedule comes whole from the later sighting', m.lvl === 1 && m.due === '2026-01-06');
+    ok('  and the first time it was ever seen is the earlier one', m.first === '2026-01-01');
+    ok('  and the last is the later one', m.last === '2026-01-05');
+  }
+
+  /* the case the whole merge exists for */
+  {
+    const morning = Object.assign(blank(), {
+      updated: 1000,
+      chars: { 一: ch({ seen: 4, right: 4, last: '2026-01-05' }), 二: ch({ seen: 2, last: '2026-01-05' }) },
+      days: { '2026-01-05': { new: 2, rev: 9, revC: { 一: true } } },
+      streak: { cur: 3, best: 7, last: '2026-01-05' },
+      hailed: [50]
+    });
+    const afternoon = Object.assign(blank(), {
+      updated: 2000,
+      chars: { 一: ch({ seen: 1, last: '2026-01-04' }), 三: ch({ seen: 6, last: '2026-01-05' }) },
+      days: { '2026-01-05': { new: 1, rev: 4, revC: { 三: true } }, '2026-01-04': { new: 5, rev: 0 } },
+      streak: { cur: 1, best: 2, last: '2026-01-05' },
+      hailed: [50, 100],
+      goalNew: 9
+    });
+    const m = mergeState(morning, afternoon);
+
+    ok('no character studied on either device is lost',
+       ['一', '二', '三'].every(c => m.chars[c]), Object.keys(m.chars).join(''));
+    ok('  and a character on both keeps the bigger count', m.chars['一'].seen === 4);
+    ok('a day counted on both keeps the bigger tally',
+       m.days['2026-01-05'].rev === 9 && m.days['2026-01-05'].new === 2);
+    ok('  and the characters revised are the union of both',
+       !!m.days['2026-01-05'].revC['一'] && !!m.days['2026-01-05'].revC['三']);
+    ok('  and a day only one device knew about survives', m.days['2026-01-04'].new === 5);
+    ok('a best streak cannot be undone by the other device not knowing', m.streak.best === 7);
+    ok('milestones already celebrated are never re-celebrated',
+       m.hailed.length === 2 && m.hailed[0] === 50 && m.hailed[1] === 100);
+    ok('a setting follows the clock, not the union', m.goalNew === 9);
+    ok('and merging is the same either way round',
+       JSON.stringify(mergeState(afternoon, morning)) === JSON.stringify(m));
+  }
+
+  /* the trivial cases, which are the ones that actually run on day one */
+  {
+    const fresh = blank();
+    ok('merging a blank record against a real one changes nothing real',
+       mergeState(fresh, fresh).chars && Object.keys(mergeState(fresh, fresh).chars).length === 0);
+    ok('  and a missing side is simply the other side', mergeState(null, fresh) === fresh);
+  }
+
+  /* sprint sheets are a list, and two devices produce two lists */
+  {
+    const run = (at, right) => ({ at, right, ms: 1000, n: 20, secs: 60, mode: 'l', on: '2026-01-05' });
+    const m = mergeSprint(
+      { runs: [run(3, 18), run(1, 10)], best: { 'l:20': run(3, 18) }, marks: {}, pick: {}, cleared: {} },
+      { runs: [run(2, 12), run(1, 10)], best: { 'l:20': run(2, 12) }, marks: {}, pick: {}, cleared: {} });
+    ok('finished sheets from both devices are kept, newest first',
+       m.runs.length === 3 && m.runs[0].at === 3 && m.runs[2].at === 1);
+    ok('  the same sheet is not counted twice', m.runs.filter(r => r.at === 1).length === 1);
+    ok('  and the better best wins', m.best['l:20'].right === 18);
+  }
+
+  /* the plumbing around it */
+  const srs = read('js/srs.js');
+  ok('a pull merges rather than overwrites', /mergeState\(state, remote\)/.test(srs));
+  ok('  and pushes back what the other device was missing',
+     /push unconditionally/.test(srs) && /pushRemote\(\);\s*\n\s*return changed;/.test(srs));
+}
+
+console.log('\nsigning in is optional, and off until it is configured');
+{
+  const syn = read('js/sync.js');
+  const html = read('index.html');
+  ok('js/sync.js is loaded, stamped, and after srs.js',
+     html.indexOf('js/sync.js') > html.indexOf('js/srs.js') && /js\/sync\.js\?v=/.test(html));
+  ok('with no project configured the feature does not exist',
+     /apiKey: ""/.test(syn) && /const syncConfigured = \(\) => !!SYNC_CONFIG\.apiKey/.test(syn)
+     && /syncConfigured\(\) \? `<div class="settings-row" id="syncRow"/.test(read('js/app.js')));
+  ok('  and nothing is fetched until it is', /if \(!syncConfigured\(\)\) return;/.test(syn));
+  ok('the SDK is pinned to an exact version', /firebase@\d+\.\d+\.\d+\//.test(syn));
+  ok('  and comes from the CDN the rest of the app uses',
+     syn.includes('https://cdn.jsdelivr.net/npm/firebase@'));
+  ok('a blocked popup falls back to a redirect rather than failing',
+     /auth\/popup-blocked/.test(syn) && /signInWithRedirect/.test(syn));
+  ok('the three setup failures each name their own fix',
+     ['auth/unauthorized-domain', 'auth/operation-not-allowed', 'permission-denied']
+       .every(c => syn.includes(c)));
+  ok('signing out lets go of the remote document',
+     /async function syncSignOut[\s\S]{0,320}dropRemote\(\)/.test(syn));
+  ok('the security rule is written down where it is needed', /allow read, write: if request\.auth/.test(syn));
 }
 
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');

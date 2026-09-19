@@ -134,6 +134,11 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
 
 /* desktop tabs, hidden on phones */
 .top-nav { display: none; gap: .1rem; }
+/* and its opposite number: the phone's way into the same tabs, hidden until a
+   window is too narrow for the row. Laid out in the phone layer at the foot of
+   this file. Both classes are named because .icon-btn sets display: grid and
+   is declared below this — one class each and the later rule wins. */
+.icon-btn.burger { display: none; }
 .top-nav button {
   display: flex; align-items: baseline; gap: .4rem; white-space: nowrap;
   padding: .4rem .7rem; border: 0; border-radius: 7px;
@@ -222,37 +227,8 @@ main { flex: 1; width: 100%; }
 .view.on { display: block; animation: rise .3s ease both; }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
-/* mobile bottom bar */
-.nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  display: grid; grid-template-columns: repeat(7, 1fr);
-  background: color-mix(in srgb, var(--paper) 93%, transparent);
-  backdrop-filter: blur(14px);
-  border-top: 1px solid var(--rule-2);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-.nav button {
-  background: none; border: 0; padding: .5rem .2rem .55rem;
-  display: flex; flex-direction: column; align-items: center; gap: .15rem;
-  color: var(--ink-3); position: relative;
-}
-.nav button .nz { font-family: var(--f-han-ui); font-size: 1.05rem; line-height: 1.1; }
-.nav button .nl { font-size: .58rem; letter-spacing: .03em; text-transform: uppercase; }
-@media (max-width: 360px) { .nav button .nl { font-size: .52rem; letter-spacing: 0; } }
-/* the same four groups, divided the same way */
-.nav .grp-end::after {
-  content: ""; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  width: 1px; height: 54%; background: var(--rule); opacity: .75;
-}
-.nav button.on { color: var(--ink); }
-.nav button.on::before {
-  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 20px; height: 2px; background: var(--seal); border-radius: 0 0 2px 2px;
-}
-
 @media (min-width: 860px) {
   .top-nav { display: flex; }
-  .nav { display: none; }
   .brand { margin-right: 1.2rem; }
   .top-nav { margin-right: auto; }
   .topbar { padding: .6rem 1.5rem; }
@@ -445,7 +421,15 @@ code {
 .ses-foot-inner { max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: .5rem; }
 
 .card-hero { display: flex; flex-direction: column; align-items: center; gap: .75rem; }
-.writer-box { width: 190px; }
+/* The square you write in was 190px inside a column that is 544px on a phone
+   and 864px on a desktop — a thumbnail of a thing you are meant to draw in.
+
+   Fixed pixels rather than a vw, and this is not fussiness: makeWriter builds
+   the hanzi-writer SVG to whatever this measures at the moment it runs, and
+   that SVG cannot scale afterwards. A viewport unit would be correct when the
+   square was built and wrong the first time the phone was turned sideways.
+   268 clears the narrowest phone still in use — 320px less 32 of padding. */
+.writer-box { width: 268px; }
 .writer-box .tian-slot > div { width: 100%; height: 100%; }
 .hero-char {
   font-family: var(--f-han); font-size: 7.5rem; line-height: 1;
@@ -539,16 +523,20 @@ code {
 
 .opts { display: grid; gap: .5rem; }
 .opts.grid2 { grid-template-columns: 1fr 1fr; }
+/* Bigger than the page needs, on purpose. An answer button is read at a
+   glance and hit without looking, and neither the study column nor the phone
+   was ever short of room — .92rem and 3rem of height were the defaults of a
+   layout that had not been looked at since. */
 .opt {
-  padding: .8rem .9rem; border-radius: 8px; text-align: left;
+  padding: .85rem 1rem; border-radius: 8px; text-align: left;
   border: 1px solid var(--rule); background: var(--sheet); color: var(--ink);
-  font-size: .92rem; transition: border-color .15s, background .15s, transform .12s;
-  display: flex; align-items: center; gap: .6rem; min-height: 3rem;
+  font-size: 1.05rem; transition: border-color .15s, background .15s, transform .12s;
+  display: flex; align-items: center; gap: .6rem; min-height: 3.5rem;
 }
 .opt:hover:not(:disabled) { border-color: var(--ink-3); transform: translateY(-1px); }
 .opt:disabled { cursor: default; }
-.opt .big { font-family: var(--f-han); font-size: 2.6rem; line-height: 1; margin: 0 auto; }
-.opt .pin { font-size: 1.05rem; }
+.opt .big { font-family: var(--f-han); font-size: 3rem; line-height: 1; margin: 0 auto; }
+.opt .pin { font-size: 1.2rem; }
 .opt.right { border-color: var(--jade); background: var(--jade-wash); color: var(--jade); }
 .opt.wrong { border-color: var(--seal); background: var(--seal-wash); color: var(--seal); }
 .opt.right .big, .opt.wrong .big { color: inherit; }
@@ -578,6 +566,9 @@ code {
   border: 1px solid var(--rule); background: transparent; color: var(--ink-2); white-space: nowrap;
 }
 .filt.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* a handful of chips as one control — a setting with three answers, where a
+   pair of them would have been a toggle */
+.pick-row { display: flex; gap: .3rem; flex: none; }
 /* the stage picker wears the chip's clothes so the row reads as one control */
 .filt-sel { font: inherit; font-size: .78rem; padding-right: 1.5rem; cursor: pointer;
   appearance: none; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
@@ -1274,7 +1265,9 @@ code {
 }
 .card-back .sm { font-family: var(--f-han); font-size: 2.6rem; color: var(--ink-3); line-height: 1; }
 
-.flash-keys {
+/* the three things the space bar does, and the three a thumb does, in the same
+   place and the same type */
+.flash-keys, .flash-taps {
   margin: .5rem 0 0; text-align: center;
   font-size: .68rem; color: var(--ink-3);
 }
@@ -1285,6 +1278,8 @@ code {
 }
 /* a touch device has no space bar to tell anyone about */
 @media (hover: none) { .flash-keys { display: none; } }
+/* its opposite number, laid out in the phone layer at the foot of this file */
+.flash-taps { display: none; }
 
 .flash-foot { padding: .9rem 1rem calc(.9rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--rule-2); background: var(--sheet); }
 .flash-foot-inner { max-width: 24rem; margin: 0 auto; display: flex; gap: .5rem; }
@@ -1378,11 +1373,23 @@ code {
 
 /* ---------- 练字本 notebook ---------- */
 
+/* Centred while it fits, and top-aligned the moment it doesn't.
+
+   Plain `justify-content: center` in a scrolling flex column is a trap: when
+   the content is taller than the box, centring puts the first item *above* the
+   scroll origin, and no amount of scrolling will reach it. The first square —
+   the one you are being asked to write in — ends up cut off under the header,
+   which reads as the header covering it rather than as an alignment bug.
+
+   `safe` is the keyword for exactly this: it falls back to start alignment on
+   overflow. Declared twice so a browser that doesn't know it keeps the plain
+   centring rather than dropping the whole rule. */
 .nb-stage {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center;
+  justify-content: safe center;
   gap: 1.1rem; padding: 1.5rem 1rem; overflow-y: auto;
 }
-@media (min-width: 720px) { .nb-sq { width: 172px; } }
 /* ---------- writing practice: choosing what to write ----------
 
    The two sources are two exercises, not two settings of one control, so they
@@ -1423,7 +1430,11 @@ code {
 .nb-next { flex: none; }
 
 .nb-line { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center; }
-.nb-sq { position: relative; width: 150px; flex: none; cursor: pointer; }
+.nb-sq { position: relative; width: 196px; flex: none; cursor: pointer; }
+/* After the rule it widens, not before it. A media query buys no specificity,
+   so while this sat above .nb-sq the later, equally specific base rule won at
+   every width and the wide square never once appeared. */
+@media (min-width: 720px) { .nb-sq { width: 214px; } }
 .nb-sq .tian { background: var(--sheet); border-radius: 4px; overflow: hidden; }
 .nb-sq .tian-grid .edge { stroke: var(--rule); }
 .nb-sq.on .tian-grid .edge { stroke: var(--seal); stroke-width: 3; }
@@ -1746,7 +1757,11 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .opts.grid2 .opt-n { position: absolute; top: .4rem; left: .4rem; }
 .opts.grid2 .opt .mk { position: absolute; top: .4rem; right: .5rem; margin-left: 0; }
 .key-hint { font-size: .68rem; color: var(--ink-3); white-space: nowrap; }
-@media (hover: none) { .opt-n, .key-hint { display: none; } }
+/* No keyboard, no numbering. Scoped to the options themselves: .opt-n is also
+   the inline keycap used in prose — the version row offers ⇧ and ⌘⇧R, and a
+   bare .opt-n rule hid those too, leaving "reload with  held, or ." on every
+   phone. The numbers on the answers are the thing a finger has no use for. */
+@media (hover: none) { .opts .opt-n, .sp-opts .opt-n, .key-hint { display: none; } }
 
 /* sticking points */
 .leech-list { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -1805,13 +1820,18 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 /* Four short options sit in one row on a wide screen, so 1-2-3-4 on the
    keyboard runs left to right the way the numbers read. Below that width
    they fall back to two-up, where the numbering still reads in order. */
-@media (min-width: 820px) {
-  /* minmax(0,…) so a column may shrink below its content rather than
-     pushing the row wider than the prompt card above it */
-  .opts.grid2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .opts.grid2 .opt { padding-left: 1.4rem; padding-right: 1.4rem; min-height: 4.6rem; }
-  .opts.grid2 .opt .big { font-size: 2.4rem; }
-}
+/* Four short options in one row, so 1-2-3-4 on the keyboard runs left to
+   right the way the numbers read — against two-up, which is what a thumb
+   wants. This used to be a plain width query. It is an attribute now because
+   the choice belongs to the reader: applyOptCols in js/app.js weighs the
+   setting against the window and writes the answer here, and the base rule
+   above holds two-up until it has. See optColsEffective.
+
+   minmax(0,…) so a column may shrink below its content rather than pushing
+   the row wider than the prompt card above it. */
+:root[data-opt-cols="row"] .opts.grid2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+:root[data-opt-cols="row"] .opts.grid2 .opt { padding-left: 1.4rem; padding-right: 1.4rem; min-height: 5.2rem; }
+:root[data-opt-cols="row"] .opts.grid2 .opt .big { font-size: 2.8rem; }
 
 /* ---------- question timer ---------- */
 
@@ -2061,7 +2081,9 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .place-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--rule-2); overflow: hidden; }
 .place-prog > i { display: block; height: 100%; background: var(--jade); transition: width .4s ease; }
 .place-count { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
-.place-body { flex: 1; overflow-y: auto; display: grid; place-items: center; padding: 1.5rem 1rem 3rem; }
+/* the same trap, and the same keyword — see .nb-stage */
+.place-body { flex: 1; overflow-y: auto; display: grid; place-items: center;
+  align-items: safe center; padding: 1.5rem 1rem 3rem; }
 .place-inner {
   width: min(32rem, 100%); display: flex; flex-direction: column;
   align-items: center; gap: .9rem; text-align: center;
@@ -3100,3 +3122,113 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .coach-dots span.on { background: var(--seal); }
 .coach-nav { display: flex; gap: .4rem; }
 @media (prefers-reduced-motion: reduce) { .coach-ring { transition: none; } }
+
+/* ============================================================
+   On a phone
+   ============================================================
+
+   Everything from this line to the end of the file sits inside a max-width or
+   a pointer query. Nothing here can reach a desktop window, which is the whole
+   deal: the phone got a layout without the desktop giving anything up. The
+   check "the phone layer stays on the phone" in tools/smoke.mjs reads this
+   file from the marker above and fails if a bare rule appears below it.
+
+   860px is the line because that is where the desktop tab row appears. Below
+   it there is no room for seven tabs, and the burger stands in for them.
+   ============================================================ */
+
+@media (max-width: 859.98px) {
+
+  /* ---------- the sections sheet ---------- */
+
+  .icon-btn.burger { display: grid; }
+  .burger-bars { display: grid; gap: 3px; width: 15px; }
+  .burger-bars i { display: block; height: 1.5px; background: currentColor; border-radius: 1px; }
+
+  .drawer { position: fixed; inset: 0; z-index: 80; display: none; }
+  .drawer.on { display: block; }
+  .drawer-veil { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); animation: cheerFade .18s ease both; }
+  /* Anchored to the bottom, not dropped from the button. A phone is held from
+     the bottom and the list is the part you aim at — the button is one tap and
+     the list is seven. */
+  .drawer-sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: 84dvh; overflow-y: auto;
+    background: var(--paper); border-top: 1px solid var(--rule-2);
+    border-radius: 16px 16px 0 0;
+    padding: .5rem .7rem calc(.8rem + env(safe-area-inset-bottom));
+    animation: drawer-up .22s cubic-bezier(.22, .9, .3, 1) both;
+  }
+  @keyframes drawer-up { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .drawer-grip {
+    display: block; width: 34px; height: 4px; border-radius: 2px;
+    background: var(--rule); margin: .15rem auto .5rem;
+  }
+  .drawer-nav { display: flex; flex-direction: column; }
+  .drawer-nav button {
+    display: flex; align-items: baseline; gap: .7rem; text-align: left;
+    /* 3rem of row: a tab is the one control on this page you reach for without
+       looking, so it gets a target you cannot miss */
+    min-height: 3rem; padding: .6rem .7rem; border: 0; border-radius: 9px;
+    background: none; color: var(--ink-2); font-size: 1rem;
+  }
+  .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.1rem; color: var(--ink-3); flex: none; }
+  .drawer-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
+  .drawer-nav button.on .nz { color: var(--seal); }
+  .drawer-rule { display: block; height: 1px; background: var(--rule-2); margin: .3rem .7rem; }
+
+  /* The bottom bar used to hold 5.5rem of the page open under everything. It
+     is gone, and so is the gap it was keeping clear. */
+  .wrap { padding-bottom: 2.25rem; }
+
+  /* ---------- answers, where a thumb is ----------
+
+     A drill is read at the top and answered at the bottom. On a phone held
+     from the bottom in one hand, the top half of an 812px screen is a stretch
+     and the bottom quarter is not, so the prompt keeps the room it needs and
+     the answers sit on the floor of the screen.
+
+     margin-top: auto rather than a fixed height — a four-line sentence prompt
+     is still allowed to push the buttons down the page and scroll.
+
+     width: 100% because .ses-inner centres itself with margin: 0 auto, and an
+     auto cross-axis margin on a flex item eats the free space instead of
+     stretching into it. */
+  .ses-body { display: flex; flex-direction: column; }
+  .ses-inner { flex: 1 0 auto; width: 100%; }
+  .drill, .sp-q { flex: 1 0 auto; }
+  .drill .opts, .sp-q .sp-opts { margin-top: auto; }
+
+  /* Big enough to hit without aiming, and far enough apart that hitting the
+     wrong one is a decision rather than an accident. */
+  .opts, .sp-opts { gap: .7rem; }
+  .opts .opt, .sp-opts .sp-opt { min-height: 4rem; }
+  .opts.grid2 .opt, .sp-opts.grid2 .sp-opt { min-height: 5.6rem; font-size: 1.15rem; }
+  .opts.grid2 .opt .big, .sp-opts.grid2 .sp-opt .big { font-size: 3.4rem; }
+  .sp-opts.grid3 .sp-opt { min-height: 4.6rem; }
+}
+
+/* ---------- what a finger can do that a mouse cannot, and the reverse ----------
+
+   pointer: coarse, not a width: a touchscreen laptop is both, and a narrow
+   window on a desktop is neither. */
+@media (pointer: coarse) {
+  /* the card takes tap, hold and swipe — see flashTouchDown. pan-y keeps the
+     page scrollable while the browser stops eating sideways drags, and a long
+     press on a card should peek at the back, not offer to select the glyph. */
+  .flash-stage { touch-action: pan-y; }
+  .flash-stage .card3d {
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .flash-taps { display: block; }
+}
+
+/* The burger is an eighth thing in a bar that already held seven, and the
+   wordmark is what gives. Measured, not guessed: the row needs about 410px to
+   lay out without squeezing, so below 480 the name stands down and the seal
+   carries the identity on its own — which is what it already does between
+   860 and the width where the tab row stops being tight, for the same reason. */
+@media (max-width: 479.98px) {
+  .brand-name { display: none; }
+  .topbar { gap: .45rem; padding-left: .6rem; padding-right: .6rem; }
+}

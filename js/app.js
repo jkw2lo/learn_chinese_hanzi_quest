@@ -410,11 +410,32 @@ function inkColors() {
     jade: cs.getPropertyValue("--jade").trim() || "#3F7D63"
   };
 }
+/* The size of a writing square is decided in CSS and used in JS, and the two
+   have to agree to the pixel.
+
+   hanzi-writer emits an SVG with width and height attributes and no viewBox,
+   so it does not scale: built at 190 inside a 268px 田字格 it sits in the
+   top-left corner, and because it positions strokes from its own bounding
+   rect, everything you draw lands about 40% off the guide lines behind it.
+   Nothing errors — the square just quietly stops being the square.
+
+   Four call sites used to carry their own width and height, each one a copy of
+   a number in the stylesheet. They ask the square instead now, so there is one
+   place to change a size and the writer cannot be left behind. */
+function writerPx(mount) {
+  const sq = mount.closest(".tian");
+  /* a square that hasn't been laid out yet measures 0 — 190 is what every one
+     of these was before they were sized, so it is the safe floor */
+  return Math.round(sq ? sq.getBoundingClientRect().width : 0) || 190;
+}
 function makeWriter(mount, char, opts = {}) {
   if (!window.HanziWriter || !window.STROKE_DATA[char] || !mount) return null;
   const c = inkColors();
+  const px = writerPx(mount);
   return HanziWriter.create(mount, char, Object.assign({
-    width: 190, height: 190, padding: 8,
+    /* padding scaled from the old 8-in-190, so a bigger square keeps the
+       proportions the character was drawn to */
+    width: px, height: px, padding: Math.max(4, Math.round(px * 0.042)),
     strokeColor: c.stroke, outlineColor: c.outline, drawingColor: c.jade,
     showOutline: true, showCharacter: true,
     strokeAnimationSpeed: 1, delayBetweenStrokes: 180,
@@ -465,7 +486,14 @@ const PAD_SENSITIVITY = 0.55;   /* trackpad travel : ink travel */
 const pad = { active: false, svg: null, box: null, lockEl: null, dot: null, hint: null,
               x: 0, y: 0, ink: false, onEnd: null, onDraw: null, quiet: false };
 
-const padSupported = () => !!document.body.requestPointerLock && !!window.MouseEvent;
+/* Trackpad writing needs a trackpad. Pointer lock is the capability test, but
+   it is not enough on its own: Android reports requestPointerLock and then has
+   nothing to lock, so the button appeared on a phone and did nothing when
+   pressed. A coarse pointer is a finger, and a finger already draws on the
+   square directly — there is nothing for this mode to add. */
+const padSupported = () =>
+  !!document.body.requestPointerLock && !!window.MouseEvent
+  && matchMedia("(pointer: fine)").matches;
 
 /* Arm the trackpad on a writing box the learner didn't explicitly ask to arm.
 
@@ -2134,6 +2162,10 @@ function renderFlash() {
       </div>
     </button>`;
   $("#card3d").onclick = () => {
+    /* A thumb has its own three gestures below and a tap means "say it" there,
+       so a tap must not also turn the card over. A mouse keeps click-to-flip,
+       which is what a card on a desk does. */
+    if (flashTouchy()) return;
     flash.flipped = !flash.flipped;
     $("#card3d").classList.toggle("flipped", flash.flipped);
     if (flash.flipped) sayPhrase(f.speak);
@@ -2204,6 +2236,65 @@ function flashKeyUp() {
 function flashKeysReset() {
   clearTimeout(fkey.holdTimer); clearTimeout(fkey.tapTimer);
   fkey.down = 0; fkey.held = false; fkey.holdTimer = fkey.tapTimer = null;
+  flashTouchReset();
+}
+
+/* ---------- the same three things, with a thumb ----------
+
+   The space bar is tap, double tap, hold — because a flashcard is a thing you
+   hold in one hand. A phone has the one hand and no space bar, so the card
+   takes the gestures instead: tap to hear it, hold to peek at the back, swipe
+   across to move on. Left carries you forward, the way a page turns.
+
+   A touch hold needs longer than a keyboard one. 170ms is a deliberate press
+   on a key and an ordinary tap on glass — a thumb rests that long on the way
+   back up — so the touch threshold is its own number.
+
+   None of this runs on a mouse. A fine pointer keeps click-to-flip untouched. */
+const FLASH_HOLD_TOUCH = 320;   /* past this a press is a press, not a tap */
+const FLASH_SWIPE = 44;         /* px across before it counts as a swipe */
+const FLASH_SLOPE = 1.2;        /* and it has to be more across than down */
+const FLASH_STILL = 10;         /* a thumb never holds perfectly still */
+
+const flashTouchy = () => matchMedia("(pointer: coarse)").matches;
+const fdrag = { id: null, x: 0, y: 0, held: false, timer: null, moved: false };
+
+function flashTouchReset() {
+  clearTimeout(fdrag.timer);
+  fdrag.id = null; fdrag.held = false; fdrag.moved = false; fdrag.timer = null;
+}
+
+function flashTouchDown(e) {
+  if (!flashTouchy() || fdrag.id !== null) return;
+  fdrag.id = e.pointerId; fdrag.x = e.clientX; fdrag.y = e.clientY;
+  fdrag.held = false; fdrag.moved = false;
+  fdrag.timer = setTimeout(() => {
+    if (fdrag.moved) return;            /* it turned into a swipe on the way */
+    fdrag.held = true;
+    flashFlip(true);
+    sayPhrase(flashFace(flash.deck[flash.i]).speak);
+  }, FLASH_HOLD_TOUCH);
+}
+
+function flashTouchMove(e) {
+  if (fdrag.id !== e.pointerId) return;
+  if (Math.abs(e.clientX - fdrag.x) > FLASH_STILL
+   || Math.abs(e.clientY - fdrag.y) > FLASH_STILL) fdrag.moved = true;
+}
+
+function flashTouchUp(e) {
+  if (fdrag.id !== e.pointerId) return;
+  const dx = e.clientX - fdrag.x, dy = e.clientY - fdrag.y;
+  const held = fdrag.held, moved = fdrag.moved;
+  flashTouchReset();
+
+  if (held) return flashFlip(false);    /* let go, and the card turns back */
+
+  if (Math.abs(dx) >= FLASH_SWIPE && Math.abs(dx) > Math.abs(dy) * FLASH_SLOPE) {
+    stopPhrase();
+    return flashStep(dx < 0 ? 1 : -1);
+  }
+  if (!moved) sayPhrase(flashFace(flash.deck[flash.i]).speak, true);
 }
 
 function flashStep(d) {
@@ -2348,7 +2439,7 @@ function renderNotebook() {
     </div>
 
     <div class="nb-tools">
-      <button class="btn btn-ghost btn-sm" id="nbPad">触控 Trackpad <kbd class="opt-n">T</kbd></button>
+      ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="nbPad">触控 Trackpad <kbd class="opt-n">T</kbd></button>` : ""}
     </div>
 
     <p class="note nb-hint">Write each character in order — the strokes are checked as you go.
@@ -2356,7 +2447,7 @@ function renderNotebook() {
 
   nb.writers = [];
   nb.chars.forEach((c, i) => {
-    const w = makeWriter($("#nbw" + i), c, { width: 150, height: 150,
+    const w = makeWriter($("#nbw" + i), c, {
       showCharacter: !!nb.done[i], showOutline: i === nb.idx && !nb.done[i] });
     nb.writers[i] = w;
     if (w && i === nb.idx && !nb.done[i]) startSquare(i);
@@ -2368,7 +2459,7 @@ function renderNotebook() {
     nb.word = null; nbSetSource(b.dataset.nbsrc); renderNotebook(); nbFollow();
   });
   $("#nbNew").onclick = () => { nbSetSource(nb.source); renderNotebook(); nbFollow(); };
-  $("#nbPad").onclick = () => nbPad();
+  $("#nbPad")?.addEventListener("click", () => nbPad());
   $$("#nbStage .nb-sq").forEach(sq => sq.addEventListener("click", () => {
     const i = +sq.dataset.sq;
     if (i === nb.idx || nb.done[i]) return;
@@ -2531,7 +2622,7 @@ function buildWritePage() {
                 <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
               </select>
             </label>
-            <button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>
+            ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>` : ""}
             <button class="btn btn-ghost btn-sm" id="wpSave">Save page</button>
             <button class="btn btn-ghost btn-sm" id="wpClear">Clear page</button>
           </div>
@@ -2560,7 +2651,7 @@ function buildWritePage() {
   $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
   $("#wpClear").onclick = () => wpClear();
   $("#wpSave").onclick  = () => wpSave();
-  $("#wpPad").onclick   = () => wpPad();
+  $("#wpPad")?.addEventListener("click", () => wpPad());
   $("#wpMore").onclick  = () => { wp.rows += 4; wpSizePage(); };
   addEventListener("resize", wpSizePage);
   wpDiary();
@@ -2695,7 +2786,7 @@ function renderPickStage() {
       <button class="btn btn-ghost btn-sm" id="psShow">Show</button>
     </div>`;
 
-  soWriter = makeWriter($("#psMount"), c, { width: 168, height: 168, showCharacter: false });
+  soWriter = makeWriter($("#psMount"), c, { showCharacter: false });
   let at = 0;
   const paint = () => { const el = $("#psAt"); if (el) el.textContent = at ? `${at}/${n}` : ""; };
   const play = () => { at = 0; paint(); soWriter?.hideCharacter(); soWriter?.animateCharacter(); };
@@ -3911,6 +4002,25 @@ function renderRecord() {
    anywhere instead.
    ============================================================ */
 
+/* What the sync row says, which is a different sentence in each of five
+   states — and the two failure states have to name the fix, because the person
+   reading them is the one who set the project up. */
+function syncRowNote() {
+  if (sync.status === "in") {
+    const who = sync.user && (sync.user.email || sync.user.name);
+    return `Signed in${who ? ` as ${esc(who)}` : ""}. This record is kept in step with your other `
+         + "devices — sign in there with the same account and both read the same one. "
+         + "Nothing is shared with anyone else.";
+  }
+  if (sync.status === "error") {
+    return `<b>Sync is off:</b> ${esc(sync.msg)}`;
+  }
+  if (sync.status === "loading") return "Checking…";
+  return "Sign in once on each device and your characters, streak and diary follow you "
+       + "between them. Everything keeps working offline and keeps working if you never do — "
+       + "this only adds a copy somewhere you can reach from a phone.";
+}
+
 function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
@@ -3931,6 +4041,16 @@ function openSettings() {
         <div class="settings-row">
           <label>Include writing drills<small>Trace from memory once a character is solid.</small></label>
           <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
+        </div>
+        <div class="settings-row">
+          <label>Answer buttons<small>One row matches the keyboard, where 1-2-3-4 runs left to right.
+            Two by two sits low on the screen, where a thumb reaches. ${(state.optCols || "auto") === "auto"
+              ? `Auto, so this window decides: <b>${optColsEffective() === "row" ? "one row" : "two by two"}</b> at this size.`
+              : "Set by hand, so the window doesn't get a vote."}</small></label>
+          <span class="pick-row" id="optColsPick">
+            ${[["auto", "Auto"], ["row", "1 × 4"], ["grid", "2 × 2"]].map(([v, l]) =>
+              `<button class="filt ${(state.optCols || "auto") === v ? "on" : ""}" data-oc="${v}">${l}</button>`).join("")}
+          </span>
         </div>
         <div class="settings-row">
           <label>Start the trackpad automatically<small>${padSupported()
@@ -3975,6 +4095,13 @@ function openSettings() {
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
         <span class="eyebrow" style="margin-bottom:.5rem">Your data ${hanLabel("你的记录")}</span>
+        ${syncConfigured() ? `<div class="settings-row" id="syncRow">
+          <label>Progress on your other devices<small>${syncRowNote()}</small></label>
+          ${sync.status === "in"
+            ? `<button class="btn btn-ghost btn-sm" id="syncOut">Sign out</button>`
+            : `<button class="btn btn-ghost btn-sm" id="syncIn" ${sync.status === "loading" ? "disabled" : ""}>${
+                sync.status === "loading" ? "…" : "Sign in"}</button>`}
+        </div>` : ""}
         <div class="settings-row">
           <label>Save your progress to a file<small>Writes one .json file — progress, streak and diary — that you can load back in later.
             ${state.lastBackup ? `Last saved ${esc(new Date(state.lastBackup).toLocaleDateString())}.` : "You haven't saved a copy yet."}</small></label>
@@ -4015,8 +4142,13 @@ function openSettings() {
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $$("#optColsPick button").forEach(b => b.onclick = () => {
+    state.optCols = b.dataset.oc; save(); applyOptCols(); openSettings();
+  });
   $("#padTgl").onclick = () => { state.padAuto = !state.padAuto; save(); openSettings(); };
   $("#audioTgl").onclick = () => { state.audio = !state.audio; save(); openSettings(); };
+  $("#syncIn")?.addEventListener("click", syncSignIn);
+  $("#syncOut")?.addEventListener("click", syncSignOut);
   $("#backupBtn").onclick = openBackup;
   $("#profileBtn").onclick = () => openProfile(false);
   $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
@@ -4797,7 +4929,7 @@ function renderIntroHello(host) {
       <p class="intro-skip">Click to skip</p>
     </div>`;
   introWriters = [...HELLO].map((c, i) => {
-    const w = makeWriter($("#hi" + i), c, { width: 128, height: 128, showCharacter: false });
+    const w = makeWriter($("#hi" + i), c, { showCharacter: false });
     return w;
   });
   /* one after the other, so it reads as a word being written rather than two
@@ -5282,8 +5414,53 @@ function go(v) {
   $$("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === v));
   RENDER[v]();
   syncHelp();
+  closeDrawer();
   window.scrollTo(0, 0);
 }
+/* ---------- four across, or two-up ----------
+
+   A phone held in one hand wants a 2x2 block low on the screen, where a thumb
+   reaches without regripping. A desktop wants one row, because 1-2-3-4 on the
+   keyboard runs left to right and the options should run the same way.
+
+   Those are good defaults and bad rules, so the window only decides when the
+   setting says to. The answer is resolved here rather than in a media query
+   because it depends on two things — the setting and the width — and CSS can
+   only ask about one of them at a time. The stylesheet reads the result off
+   data-opt-cols and never has to know how it was arrived at. */
+const OPT_ROW_MIN = 820;        /* the width four options need to stay legible */
+const optColsMQ = matchMedia(`(min-width: ${OPT_ROW_MIN}px)`);
+
+function optColsEffective() {
+  const pick = state.optCols || "auto";
+  return pick === "auto" ? (optColsMQ.matches ? "row" : "grid") : pick;
+}
+function applyOptCols() {
+  document.documentElement.dataset.optCols = optColsEffective();
+}
+
+/* ---------- the sections sheet ----------
+
+   A phone has no room for the tab row, so the tabs live in a sheet behind the
+   burger. The buttons inside it carry data-nav like every other tab button,
+   which means go() lights the right one and the single [data-nav] handler in
+   boot() wires them — this code only has to open and shut the thing. */
+function openDrawer() {
+  const d = $("#drawer");
+  d.hidden = false;
+  d.classList.add("on");
+  document.body.style.overflow = "hidden";
+  $("#burgerBtn").setAttribute("aria-expanded", "true");
+}
+function closeDrawer() {
+  const d = $("#drawer");
+  if (!d.classList.contains("on")) return;
+  d.classList.remove("on");
+  d.hidden = true;
+  document.body.style.overflow = "";
+  $("#burgerBtn").setAttribute("aria-expanded", "false");
+}
+
 function renderAll() {
   /* renderWrite() deliberately no-ops once built — rebuilding it would wipe
      whatever is on the page. */
@@ -5388,6 +5565,21 @@ function boot() {
   $("#placeClose").onclick = () => closePlacement(false);
   $("#nbClose").onclick = closeNotebook;
   /* #nbPad lives inside the notebook stage now, and is bound when it renders */
+  {
+    /* #flashStage survives every renderFlash — only its contents are replaced —
+       so these are bound once. pointercancel matters: the browser takes the
+       pointer away when it decides a drag is a scroll, and without it the hold
+       timer would fire onto a card the thumb has already left. */
+    const stage = $("#flashStage");
+    stage.addEventListener("pointerdown", flashTouchDown);
+    stage.addEventListener("pointermove", flashTouchMove);
+    stage.addEventListener("pointerup", flashTouchUp);
+    stage.addEventListener("pointercancel", () => {
+      const held = fdrag.held;
+      flashTouchReset();
+      if (held) flashFlip(false);
+    });
+  }
   $("#flashPrev").onclick = () => flashStep(-1);
   $("#flashNext").onclick = () => flashStep(1);
   /* Hover and focus open it in CSS; a tap needs a class, and a tap anywhere
@@ -5419,6 +5611,19 @@ function boot() {
   $("#helpBtn")?.addEventListener("click", () => openCoach());
   /* the veil dismisses the ? version and not the locked one */
   $("#coachVeil")?.addEventListener("click", () => closeCoach());
+  applyOptCols();
+  /* The window only gets a vote while the setting is on auto, but the listeners
+     are cheap and applyOptCols asks the setting first. Both, because the media
+     query is the right question and resize is the one that always gets asked:
+     a viewport that changes without a matchMedia change event — an emulated
+     one, a desktop browser entering full screen — would otherwise leave a
+     drill laid out for the window before it. */
+  optColsMQ.addEventListener("change", applyOptCols);
+  addEventListener("resize", applyOptCols);
+  $("#burgerBtn").onclick = () =>
+    ($("#drawer").classList.contains("on") ? closeDrawer() : openDrawer());
+  $("#drawerVeil").onclick = closeDrawer;
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
   $$(".settings-btn").forEach(b => b.onclick = openSettings);
   $$(".save-btn").forEach(b => b.onclick = openBackup);
   $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };
@@ -5433,7 +5638,14 @@ function boot() {
   renderTracker();
   syncHelp();
   startIntro();
+  /* Two ways the record can arrive from somewhere else, and one thing to do
+     about it either way. srs.js calls onRemoteChange after a pull has merged
+     something in; sync.js calls onSyncChange when the signed-in state moves,
+     which only Settings is showing. */
+  onRemoteChange = renderAll;
+  onSyncChange = () => { if ($("#syncRow")) openSettings(); };
   connectRemote().then(changed => { if (changed) renderAll(); });
+  syncInit();
 }
 
 document.addEventListener("DOMContentLoaded", boot);

@@ -56,6 +56,9 @@ const blank = () => ({
   timer: true,
   tour: false,
   writeDrills: true,
+  /* how the four answers are laid out: "auto" lets the window decide, "row"
+     and "grid" overrule it — see optColsEffective in app.js */
+  optCols: "auto",
   padAuto: false,
   hailed: [],           /* milestones already celebrated — see MILESTONES */
   menuTaught: [],       /* the side quest's own book — see menuCanRead() */
@@ -119,9 +122,182 @@ function resetProgress() {
   return state;
 }
 
-/* ---------- optional cross-device sync ---------- */
+/* ---------- merging two records of the same person ----------
+
+   Last write wins is the right rule for a setting and the wrong rule for work.
+   A morning on the phone and an afternoon on the laptop are both real; whichever
+   pushed second would erase the other, and the thing erased would be the thing
+   the person actually did. So preferences follow the clock and anything earned
+   is unioned.
+
+   What makes the union safe is that everything counted here only ever goes up.
+   `seen`, `right`, `wrong`, `skills` and `shown` are incremented in grade() and
+   reset nowhere, so max() of two counts of the same monotonic thing is the true
+   count — the only way to overcount would be to record one session twice, and a
+   session happens on one device.
+
+   `lvl` and `due` are the exception, and are not counts: they are a position in
+   a review queue. Maxing them would invent a schedule neither device had, so
+   they come as a pair from whichever record was written later. */
+
+const day = d => String(d || "");
+const laterDay = (a, b) => (day(a) >= day(b) ? day(a) : day(b)) || null;
+const earlierDay = (a, b) => (!a ? b : !b ? a : (day(a) <= day(b) ? a : b)) || null;
+const bigger = (a, b) => Math.max(a || 0, b || 0);
+
+const CH_COUNTS = ["seen", "right", "wrong"];
+const CH_SKILLS = ["r", "p", "c", "w"];
+
+function mergeChar(x, y) {
+  if (!x) return y;
+  if (!y) return x;
+  /* the later sighting carries the schedule: the other device's queue has
+     since moved on, and its lvl/due are a snapshot of a queue that no longer
+     exists */
+  const lead = day(y.last) >= day(x.last) ? y : x;
+  const out = Object.assign({}, lead);
+  CH_COUNTS.forEach(k => out[k] = bigger(x[k], y[k]));
+  out.skills = {}; out.shown = {};
+  CH_SKILLS.forEach(k => {
+    out.skills[k] = bigger(x.skills && x.skills[k], y.skills && y.skills[k]);
+    out.shown[k] = bigger(x.shown && x.shown[k], y.shown && y.shown[k]);
+  });
+  out.first = earlierDay(x.first, y.first);
+  out.last = laterDay(x.last, y.last);
+  return out;
+}
+
+/* A day's tally is counts and a set of characters revised. Both union. */
+function mergeDay(x, y) {
+  if (!x) return y;
+  if (!y) return x;
+  const out = Object.assign({}, x, y);
+  ["new", "rev", "ahead", "extra"].forEach(k => {
+    if (x[k] !== undefined || y[k] !== undefined) out[k] = bigger(x[k], y[k]);
+  });
+  if (x.revC || y.revC) out.revC = unionKeys(x.revC, y.revC);
+  return out;
+}
+
+/* Every key from both sides, in a fixed order.
+
+   Sorted, and not for tidiness: the merged record is serialised to compare it
+   against the local one and again to write it to the remote. Keys arriving in
+   whichever order the arguments happened to be in would make two identical
+   records compare as different — a repaint on every pull, and a write on every
+   load. Dates sort chronologically as a bonus. */
+const mergeBy = (x = {}, y = {}, f) => {
+  const out = {};
+  for (const k of [...new Set([...Object.keys(x), ...Object.keys(y)])].sort()) out[k] = f(x[k], y[k]);
+  return out;
+};
+/* a plain union of two flag objects, in the same fixed order — Object.assign
+   would keep whichever order the arguments arrived in */
+const unionKeys = (x, y) => mergeBy(x, y, (a, b) => (b === undefined ? a : b));
+
+/* x is the older record and y the newer, so the preferences in here resolve by
+   the clock rather than by which way round the caller happened to pass them */
+function mergeSprint(x = {}, y = {}) {
+  const out = {};
+  /* a mark is [right, wrong] per mode plus `s`, a rolling window of the last
+     few results — the window is a recent history, so it comes from one device
+     whole rather than being interleaved into a sequence that never happened */
+  out.marks = mergeBy(x.marks, y.marks, (a, b) => {
+    if (!a) return b;
+    if (!b) return a;
+    const total = m => ["l", "r", "w"].reduce((n, k) => n + ((m[k] || [0, 0])[0] + (m[k] || [0, 0])[1]), 0);
+    const lead = total(b) >= total(a) ? b : a;
+    const m = Object.assign({}, lead);
+    ["l", "r", "w"].forEach(k => {
+      if (a[k] || b[k]) m[k] = [bigger((a[k] || [])[0], (b[k] || [])[0]),
+                                bigger((a[k] || [])[1], (b[k] || [])[1])];
+    });
+    return m;
+  });
+  out.best = mergeBy(x.best, y.best, (a, b) => (!b ? a : !a ? b : (beats(a, b) ? a : b)));
+  out.cleared = unionKeys(x.cleared, y.cleared);
+  /* every finished sheet from both devices, newest first, deduped on the
+     millisecond it was recorded */
+  const seen = new Set();
+  out.runs = [...(x.runs || []), ...(y.runs || [])]
+    .filter(r => r && !seen.has(r.at) && seen.add(r.at))
+    .sort((a, b) => (b.at || 0) - (a.at || 0))
+    .slice(0, SPRINT_RUNS_KEPT);
+  /* the sheet settings last chosen — a preference, so the later device's copy
+     wins, which is why mergeState hands these over in clock order */
+  out.pick = unionKeys(x.pick, y.pick);
+  return out;
+}
+
+function mergeState(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const newer = (b.updated || 0) >= (a.updated || 0) ? b : a;
+  const older = newer === a ? b : a;
+
+  /* settings, name, interests, the day's menu pick: answers rather than
+     accumulations, so the clock decides */
+  const out = Object.assign(blank(), older, newer);
+
+  out.chars = mergeBy(a.chars, b.chars, mergeChar);
+  out.days = mergeBy(a.days, b.days, mergeDay);
+  out.sprint = mergeSprint(older.sprint, newer.sprint);
+  out.menuTaught = unionKeys(a.menuTaught, b.menuTaught);
+  out.hailed = [...new Set([...(a.hailed || []), ...(b.hailed || [])])].sort((x, y) => x - y);
+  out.streak = {
+    /* a best is a claim about the past and cannot be undone by the other
+       device not knowing about it */
+    best: bigger(a.streak && a.streak.best, b.streak && b.streak.best),
+    cur: (newer.streak || {}).cur || 0,
+    last: laterDay(a.streak && a.streak.last, b.streak && b.streak.last)
+  };
+  out.started = earlierDay(a.started, b.started);
+  out.lastBackup = bigger(a.lastBackup, b.lastBackup) || null;
+  out.placed = (a.placed && b.placed)
+    ? (bigger(a.placed.known, b.placed.known) === (a.placed.known || 0) ? a.placed : b.placed)
+    : (a.placed || b.placed || null);
+  out.updated = Math.max(a.updated || 0, b.updated || 0);
+  return out;
+}
+
+/* ---------- optional cross-device sync ----------
+
+   One document per person, holding the whole record. Two providers can supply
+   it and neither is required: `window.claude` when this app runs inside a
+   Claude artifact, and js/sync.js when a Firebase project has been configured.
+   Both hand over the same tiny shape — an object with get() and set() — so
+   everything below is written once.
+
+   With no provider at all, remoteDoc stays null, pushRemote is a no-op and the
+   app is exactly the localStorage-only app it was. */
 
 let remoteDoc = null;
+let onRemoteChange = null;             /* set by app.js, so a pull can repaint */
+
+/* Hand the record a document to sync against. Returns whether the local state
+   changed as a result, so the caller knows whether to re-render. */
+async function useRemote(doc) {
+  remoteDoc = doc;
+  if (!doc) return false;
+  try {
+    const snap = await doc.get();
+    const remote = snap && snap.exists ? snap.data() : null;
+    if (remote) {
+      const merged = mergeState(state, remote);
+      const changed = JSON.stringify(merged) !== JSON.stringify(state);
+      state = merged;
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+      /* push unconditionally: even when nothing changed locally, the remote is
+         missing whatever this device knew that it didn't */
+      pushRemote();
+      return changed;
+    }
+    pushRemote();
+  } catch { remoteDoc = null; }
+  return false;
+}
+
+function dropRemote() { remoteDoc = null; }
 
 async function connectRemote() {
   if (!window.claude?.use) return false;
@@ -129,18 +305,7 @@ async function connectRemote() {
     const [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
     if (!db) return false;
     const uid = user ? await user.id() : null;
-    remoteDoc = db.doc(`data/users/${uid || "me"}/progress`);
-    const snap = await remoteDoc.get();
-    if (snap.exists) {
-      const remote = snap.data();
-      /* Last write wins — the record is one person's, not a shared document. */
-      if (remote && remote.updated > (state.updated || 0)) {
-        state = Object.assign(blank(), remote);
-        try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
-        return true;
-      }
-    }
-    pushRemote();
+    return await useRemote(db.doc(`data/users/${uid || "me"}/progress`));
   } catch { remoteDoc = null; }
   return false;
 }
