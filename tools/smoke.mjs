@@ -16,7 +16,7 @@ const CONTRACT = [
   'TIERS', 'TIER_UNLOCK', 'tierOf', 'tierChars', 'tierFrom', 'tierProgress',
   'tierUnlocked', 'tierNeeds', 'unlockedCeiling', 'isLocked',
   'POS_LABEL', 'MENU', 'MENU_CHARS', 'EXTRA_GLOSS',
-  'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote',
+  'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote', 'capName',
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
@@ -450,6 +450,67 @@ console.log('\na sentence gets to finish before the card moves');
      /if \(item\.said\) sayPhrase\(item\.said, true\); else say\(ch\.c, true\);/.test(appSrc));
   ok('and the reading drill records what it said',
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
+}
+
+console.log('\na page that looks wrong beside its siblings is overriding something');
+{
+  /* Each of these was reported as "this one page looks wrong", and each turned
+     out to be a page opting out of a convention the other tabs follow. The fix
+     is never the page — it is the opt-out. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  /* the rule, not the comment that explains why it is gone */
+  const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  /* .wp-wrap { max-width: 78rem } pinned the Exercise book at every width,
+     overriding the 34 / 62 / 74rem .wrap steps through: measured 1248px
+     against 1184 for every other tab. Deleted, not tuned. */
+  ok('the Exercise book uses the same wrap as every other tab',
+     !/\.wp-wrap \{/.test(cssNoComments) && !/class=\x22wrap wp-wrap\x22/.test(appSrc));
+  ok('and .wrap still steps through its three widths',
+     (css.match(/\.wrap \{ max-width: 34rem|\.wrap \{ max-width: 62rem|\.wrap \{ max-width: 74rem/g) || []).length === 3);
+  /* it titled itself with an .eyebrow — 0.68rem uppercase — against the 1.6rem
+     display face the other tabs use, so Write read as a section inside some
+     larger page */
+  ok('and titles itself with a heading, not an eyebrow',
+     /<div class="wp-title">\s*<h1>/.test(appSrc));
+
+  /* A horizontally scrolling row is fine for five things and a trap for
+     eighteen: 1641px inside 1136, five chips off the right edge. */
+  ok('the stage filter is one control rather than thirteen chips',
+     /<select class="filt filt-sel/.test(appSrc) && /id="libStage"/.test(appSrc));
+  ok('the state filters stay as chips',
+     /const filters = \[\["all","All"\],\["due","Due"\],\["learning","Learning"\],\["strong","Strong"\],\["new","Not started"\]\];/.test(appSrc));
+  ok('and no stage is left out of it', /STAGES\.map\(st =>/.test(appSrc));
+  ok('the chip handler no longer catches the picker',
+     /\.filt\[data-f\]/.test(appSrc));
+  ok('and the picker wears the chip\'s clothes', /\.filt-sel \{/.test(css));
+}
+
+console.log('\nnames are capitalised, and the greeting uses the first one');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {capName,load,blank};')();
+  ok('each word is capitalised', a.capName('jennifer lo') === 'Jennifer Lo');
+  ok('and so is the part after a hyphen', a.capName('mary-jane') === 'Mary-Jane');
+  ok('and after an apostrophe, straight or curly',
+     a.capName("o'brien") === "O'Brien" && a.capName('o\u2019brien') === 'O\u2019Brien');
+  /* the rest of the word is left alone, or tidiness breaks real names */
+  ok('but the rest of the word is left exactly as typed',
+     a.capName('McRae') === 'McRae' && a.capName('van der Berg') === 'Van Der Berg',
+     a.capName('McRae') + ' / ' + a.capName('van der Berg'));
+  ok('whitespace is trimmed', a.capName('  jen  ') === 'Jen');
+  ok('and nothing at all is still nothing', a.capName('') === '' && a.capName(undefined) === '');
+
+  /* Applied on save AND on load: records written before this existed carry
+     whatever was typed, and the greeting says it back every morning. */
+  globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), { name: "jen o'brien" }));
+  ok('a name already in storage is repaired on load', a.load().name === "Jen O'Brien");
+
+  /* the headline is one line by design */
+  const appSrc = read('js/app.js');
+  ok('the greeting takes the first name only',
+     /state\.name\.split\(\/\\s\+\/\)\[0\]/.test(appSrc));
+  ok('and the name is capitalised where it is saved too', /capName\(\$\("#pfName"\)\.value\)/.test(appSrc));
 }
 
 console.log('\nToday is a dashboard, not a scroll');

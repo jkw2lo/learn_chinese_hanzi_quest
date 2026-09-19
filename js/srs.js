@@ -66,11 +66,23 @@ const blank = () => ({
 
 let state = blank();
 
+/* Names are capitalised: each word, and after a hyphen or an apostrophe, so
+   mary-jane becomes Mary-Jane and o'brien becomes O'Brien. The REST of each
+   word is left exactly as typed — otherwise McRae and van der Berg get broken
+   in the name of tidiness.
+
+   Declared here in srs.js rather than in app.js because load() needs it too:
+   records written before this existed carry whatever was typed, and the
+   greeting says it back every morning. One rule, both paths. */
+const capName = s => String(s || "").trim()
+  .replace(/(^|[\s\-'\u2019])(\p{L})/gu, (m, sep, first) => sep + first.toLocaleUpperCase());
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) state = Object.assign(blank(), JSON.parse(raw));
     if (!(state.goalNew >= GOAL_MIN && state.goalNew <= GOAL_MAX)) state.goalNew = blank().goalNew;
+    if (state.name) state.name = capName(state.name);
   } catch { /* private mode, cleared storage — carry on with a fresh record */ }
   return state;
 }

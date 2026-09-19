@@ -543,6 +543,13 @@ code {
   border: 1px solid var(--rule); background: transparent; color: var(--ink-2); white-space: nowrap;
 }
 .filt.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* the stage picker wears the chip's clothes so the row reads as one control */
+.filt-sel { font: inherit; font-size: .78rem; padding-right: 1.5rem; cursor: pointer;
+  appearance: none; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right .72rem center, right .55rem center;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
+.filt-sel.on { background-color: var(--ink); }
 
 .search {
   width: 100%; padding: .6rem .85rem; border-radius: 8px;
@@ -1226,7 +1233,11 @@ code {
 /* ---------- 练字 exercise book ---------- */
 
 /* the page shares the row with the trace panel now, so give it more room */
-.wp-wrap { max-width: 78rem; }
+/* .wp-wrap { max-width: 78rem } used to live here, and pinned this one page
+   at 78rem at every width — overriding the 34 / 62 / 74rem that .wrap steps
+   through. 64px wider than every other tab on a desktop, and ignoring the
+   narrow step entirely on a tablet. When a page looks wrong beside its
+   siblings, look at what it OVERRIDES before adjusting what it renders. */
 .wp-bar {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap; margin-bottom: .9rem;

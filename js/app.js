@@ -2149,12 +2149,12 @@ function renderWrite() {
 }
 
 function buildWritePage() {
-  $("#viewWrite").innerHTML = `<div class="wrap wp-wrap">
+  $("#viewWrite").innerHTML = `<div class="wrap">
     <div class="cols">
       <div class="section">
         <div class="wp-bar">
           <div class="wp-title">
-            <span class="eyebrow">Exercise book ${hanLabel("练字")}</span>
+            <h1>Exercise book ${hanLabel("练字")}</h1>
             <p class="note">A blank page. Nothing is checked here — fill it, scrawl on it, clear it and go again.</p>
           </div>
           <div class="wp-tools">
@@ -2681,7 +2681,9 @@ function renderToday() {
   const clear = newLeft === 0 && due === 0;
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
-  const who = state.name ? `, ${state.name}` : "";
+  /* The first name only. The headline is one line by design, and
+     "Ready when you are, Jen O'Brien." came out as "…, J…". */
+  const who = state.name ? `, ${state.name.split(/\s+/)[0]}` : "";
   /* One line. "You're clear for today, Jen." wrapped to two in a dashboard
      column, which looked unbalanced beside a ring; the phrasing is shorter and
      the size comes down with it. */
@@ -3111,8 +3113,13 @@ function renderLibrary() {
     return true;
   });
 
-  const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"],
-    ...STAGES.map(s => ["s" + s.n, `${s.icon} ${s.name}`])];
+  /* A horizontally scrolling row is fine for five things and a trap for
+     eighteen: five state chips plus thirteen stages came to 1641px inside a
+     1136px row, so five of them sat off the right-hand edge with nothing on
+     screen saying so. It scrolled, so nothing looked broken. The five states
+     stay as chips; the stages become one control that can hold all of them. */
+  const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"]];
+  const stagePick = /^s\d+$/.test(libFilter) ? libFilter : "";
 
   /* Grouped by tier rather than laid out in one sheet of 348. A beginner
      scrolling past three hundred characters they can't start on is the
@@ -3177,7 +3184,11 @@ function renderLibrary() {
     </div>
     <input class="search" id="libQ" type="search" placeholder="Search a character, pinyin or meaning…" value="${esc(libSearch)}">
     <div class="filters">${filters.map(([k, l]) =>
-      `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}</div>
+      `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}
+      <select class="filt filt-sel ${stagePick ? "on" : ""}" id="libStage" aria-label="Filter by stage">
+        <option value="">All stages</option>
+        ${STAGES.map(st => `<option value="s${st.n}" ${stagePick === "s" + st.n ? "selected" : ""}>${st.n}. ${esc(st.icon)} ${esc(st.name)} ${esc(st.zh)}</option>`).join("")}
+      </select></div>
     ${chars.length ? sections
       : `<div class="empty"><span class="z">空</span><p>Nothing here yet. Try another filter.</p></div>`}
     <div class="legend">
@@ -3188,7 +3199,8 @@ function renderLibrary() {
     </div>
   </div>`;
 
-  $$("#viewLibrary .filt").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $$("#viewLibrary .filt[data-f]").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $("#libStage").onchange = e => { libFilter = e.target.value || "all"; renderLibrary(); };
   $$("#viewLibrary .tier-toggle").forEach(b => b.onclick = () => {
     const n = +b.dataset.tier;
     const cur = b.getAttribute("aria-expanded") === "true";
@@ -3968,7 +3980,7 @@ function openProfile(firstRun) {
   });
   $("#pfSkip").onclick = () => { state.profiled = true; save(); closeSheet(); };
   $("#pfSave").onclick = () => {
-    state.name = $("#pfName").value.trim().slice(0, 40);
+    state.name = capName($("#pfName").value).slice(0, 40);
     const next = [...chosen];
     /* a changed interest set invalidates a pick that may no longer be in it */
     if ((state.interests || []).join() !== next.join()) state.wotw = null;
