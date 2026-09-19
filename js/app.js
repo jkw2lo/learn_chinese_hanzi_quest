@@ -1963,21 +1963,46 @@ function renderNotebook() {
   const total = nb.deck.length;
   const doneSoFar = Math.min(nb.pos + nb.done.filter(Boolean).length, total);
 
-  $("#nbTitle").innerHTML = `<span class="han">抄写</span> Writing practice
-    <span class="dim" style="font-weight:400;font-size:.82rem">${byWord && nb.word
-      ? esc(nb.word[1]) + " · " + esc(nb.word[2])
-      : `today's characters · round ${nb.round}`}</span>`;
+  /* The word and the round used to be repeated up here. The band below says
+     both, larger and with the characters themselves — this was the same line
+     twice, six millimetres apart. */
+  $("#nbTitle").innerHTML = `<span class="han">抄写</span> Writing practice`;
+
+  const words = writableWords();
+  /* The two sources are different exercises, not two settings of one: single
+     characters from today's lesson, or a real word written straight through.
+     A segmented control said that badly — it made them look like one control
+     with two positions, it left the count as a bare number with nothing to
+     say what it counted, and a solid slab of ink for "selected" was the
+     heaviest thing on a page whose whole subject is a faint grey character. */
+  const mode = (src, k, name, n, what, off) => `
+    <button role="tab" class="nb-mode ${nb.source === src ? "on" : ""}" data-nbsrc="${src}"
+      aria-selected="${nb.source === src}" ${off ? "disabled" : ""}>
+      <span class="nb-mode-k han">${k}</span>
+      <span class="nb-mode-t">${name}</span>
+      <span class="nb-mode-n">${off ? "none yet" : `${n} ${what}`}</span>
+    </button>`;
 
   $("#nbStage").innerHTML = `
-    <div class="nb-modes">
-      <button class="filt ${!byWord ? "on" : ""}" data-nbsrc="today" ${today.length ? "" : "disabled"}>今天 Today's</button>
-      <button class="filt ${byWord ? "on" : ""}" data-nbsrc="word" ${writableWords().length ? "" : "disabled"}>词语 A word</button>
-      <button class="filt" id="nbNew">${byWord ? "Another word" : "Shuffle"}</button>
-    </div>
+    <div class="nb-head">
+      <div class="nb-seg" role="tablist">
+        ${mode("today", "今日", "Today's characters", today.length, "to trace", !today.length)}
+        ${mode("word", "词语", "Whole words", words.length, "you can write", !words.length)}
+      </div>
 
-    <div class="nb-progress">
-      <span class="nb-count">${doneSoFar} / ${total}</span>
-      <span class="bar"><i style="width:${total ? (doneSoFar / total * 100).toFixed(1) : 0}%"></i></span>
+      <div class="nb-now">
+        <span class="nb-now-what">${byWord && nb.word
+          ? `<b class="han">${esc(nb.word[0])}</b>
+             <span class="p">${esc(nb.word[1])}</span>
+             <span class="m">${esc(nb.word[2])}</span>`
+          : `<span class="m">Round ${nb.round}</span>`}</span>
+        <button class="btn btn-ghost btn-sm nb-next" id="nbNew">${byWord ? "↻ Another word" : "↻ Shuffle"}</button>
+      </div>
+
+      <div class="nb-progress">
+        <span class="bar"><i style="width:${total ? (doneSoFar / total * 100).toFixed(1) : 0}%"></i></span>
+        <span class="nb-count">${doneSoFar} / ${total}</span>
+      </div>
     </div>
 
     <div class="nb-line">
@@ -2261,6 +2286,7 @@ function renderPicker() {
       <span class="eyebrow">Trace a character ${hanLabel("描红")}</span>
       ${wp.guide ? `<button class="link-btn" id="pickClear">Clear <span class="han">${esc(wp.guide)}</span></button>` : ""}
     </div>
+    <div class="pick-stage" id="pickStage"></div>
     <input class="search pick-find" id="pickFind" type="search" placeholder="Find a character…" value="${esc(wp.find)}">
     <div class="pick-sorts">
       ${WP_SORTS.map(o => `<button class="filt ${wp.sort === o.id ? "on" : ""}" data-sort="${o.id}">${esc(o.label)}</button>`).join("")}
@@ -2273,6 +2299,8 @@ function renderPicker() {
       </div>`).join("")
       : `<p class="note">${wp.find ? "Nothing matches." : "Learn a character and it'll appear here."}</p>`}
     </div>`;
+
+  renderPickStage();
 
   $$("#wpPicker [data-sort]").forEach(b => b.onclick = () => { wp.sort = b.dataset.sort; renderPicker(); });
   $$("#wpPicker [data-pick]").forEach(b => b.onclick = () => {
@@ -2287,6 +2315,66 @@ function renderPicker() {
     renderPicker();
     const n = $("#pickFind"); n.focus(); n.setSelectionRange(pos, pos);
   };
+}
+
+/* The stroke-order player, docked under the picker.
+
+   A modal is the wrong shape for this: you watch the animation *in order to*
+   write the character, and a dialog makes you dismiss the thing you are
+   copying before you can copy it. One fixed place, filled by whatever is
+   selected, still there while you write. */
+let soWriter = null;
+
+function renderPickStage() {
+  const host = $("#pickStage");
+  if (!host) return;
+  const c = wp.guide;
+  soWriter = null;
+
+  if (!c) {
+    host.innerHTML = `<div class="pick-stage-empty">
+      <span class="z han">笔</span>
+      <span>Pick a character below and its stroke order plays here.</span>
+    </div>`;
+    return;
+  }
+  const ch = CHAR_INDEX[c];
+  if (!drawable(c)) {
+    host.innerHTML = `<div class="pick-stage-empty">
+      <span class="z han">${esc(c)}</span>
+      <span>No stroke-order data has been published for this one. You can still
+        trace its outline on the page.</span>
+    </div>`;
+    return;
+  }
+  const n = (window.STROKE_DATA[c] || {}).strokes?.length || 0;
+
+  host.innerHTML = `
+    <div class="ps-top">
+      <span class="ps-id"><b class="han">${esc(c)}</b><span>${esc(ch.p)} · ${esc(ch.m)}</span></span>
+      <span class="ps-n">${n} stroke${n === 1 ? "" : "s"}</span>
+    </div>
+    <div class="ps-box"><div class="tian">${TIAN_SVG}<div class="tian-slot"><div id="psMount"></div></div></div></div>
+    <div class="ps-tools">
+      <button class="btn btn-ghost btn-sm" id="psPlay">↻ Again</button>
+      <button class="btn btn-ghost btn-sm" id="psStep">Step <span id="psAt"></span></button>
+      <button class="btn btn-ghost btn-sm" id="psShow">Show</button>
+    </div>`;
+
+  soWriter = makeWriter($("#psMount"), c, { width: 168, height: 168, showCharacter: false });
+  let at = 0;
+  const paint = () => { const el = $("#psAt"); if (el) el.textContent = at ? `${at}/${n}` : ""; };
+  const play = () => { at = 0; paint(); soWriter?.hideCharacter(); soWriter?.animateCharacter(); };
+  setTimeout(play, 160);
+  $("#psPlay").onclick = play;
+  /* one stroke at a time, for the ones that go past too fast to copy */
+  $("#psStep").onclick = () => {
+    if (at >= n) { at = 0; soWriter?.hideCharacter(); paint(); return; }
+    if (at === 0) soWriter?.hideCharacter();
+    soWriter?.animateStroke(at++);
+    paint();
+  };
+  $("#psShow").onclick = () => { at = n; soWriter?.showCharacter(); paint(); };
 }
 
 function wpSizePage() {

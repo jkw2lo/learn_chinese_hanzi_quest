@@ -452,6 +452,64 @@ console.log('\na sentence gets to finish before the card moves');
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
 }
 
+console.log('\nwriting practice: two exercises, not one control');
+{
+  /* The source switch was a segmented control — one box split in half, the
+     selected half filled solid with --ink, each side carrying a bare number.
+     They are two exercises, not two settings of one: single characters from
+     today's lesson, or a real word written straight through. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  ok('the two sources are two cards', /<div class="nb-seg" role="tablist">/.test(appSrc)
+     && (appSrc.match(/class="nb-mode /g) || []).length === 1);
+  ok('each is a tab, and says which is chosen', /role="tab"/.test(appSrc) && /aria-selected=/.test(appSrc));
+  /* the count had nothing to say what it counted */
+  ok('and each count says what it is a count of',
+     /"to trace"/.test(appSrc) && /"you can write"/.test(appSrc));
+  ok('an exercise with nothing in it says so rather than showing a greyed zero',
+     /off \? "none yet"/.test(appSrc));
+  /* a solid slab of ink is heavier than anything else on a page whose subject
+     is a faint grey character to trace */
+  ok('selected is a wash and a border, not a slab of ink',
+     /\.nb-mode\.on \{ border-color: var\(--seal\); background: var\(--seal-wash\)/.test(css));
+  ok('and they stack rather than crowd at phone width',
+     /@media \(max-width: 520px\) \{ \.nb-seg \{ grid-template-columns: 1fr; \} \}/.test(css));
+
+  /* the rest follows from that */
+  ok('the shuffle no longer shares a row with the switch', /class="btn btn-ghost btn-sm nb-next"/.test(appSrc));
+  ok('the word being written is in the band, at full size',
+     /<span class="nb-now-what">/.test(appSrc) && /\.nb-now-what \.han \{ font-family: var\(--f-han\); font-size: 1\.25rem/.test(css));
+  ok('the progress bar spans the same width as the cards',
+     /\.nb-progress \{[^}]*width: 100%/.test(css));
+  /* the title bar said the word and the round, and so did the band six
+     millimetres below */
+  ok('and the title bar says only what page you are on',
+     /\$\("#nbTitle"\)\.innerHTML = `<span class="han">抄写<\/span> Writing practice`;/.test(appSrc));
+}
+
+console.log('\nthe stroke player is under the picker, not over the page');
+{
+  /* A modal is the wrong shape: you watch the animation *in order to* write
+     the character, and a dialog makes you dismiss the thing you are copying
+     before you can copy it. */
+  const appSrc = read('js/app.js'), css = read('css/app.css'), html = read('index.html');
+  ok('there is a docked place for it', /<div class="pick-stage" id="pickStage"><\/div>/.test(appSrc)
+     && /\.pick-stage \{/.test(css));
+  ok('it sits under the picker head, above the search',
+     /id="pickStage"[\s\S]{0,120}?class="search pick-find"/.test(appSrc));
+  ok('and it is filled whenever the picker renders', /\n  renderPickStage\(\);/.test(appSrc));
+  ok('nothing opens it as a dialog', !/id="strokeOrder"/.test(html) && !/showStrokeOrder/.test(appSrc));
+  /* Again / Step (with a counter) / Show */
+  ok('it can replay from the start', /id="psPlay"/.test(appSrc));
+  ok('and step one stroke at a time, for the ones that go past too fast',
+     /id="psStep"/.test(appSrc) && /animateStroke\(at\+\+\)/.test(appSrc));
+  ok('with a stroke counter', /id="psAt"/.test(appSrc) && /`\$\{at\}\/\$\{n\}`/.test(appSrc));
+  ok('and show the whole character', /id="psShow"/.test(appSrc));
+  ok('a character with no data says so rather than drawing nothing',
+     /if \(!drawable\(c\)\) \{[\s\S]{0,260}?pick-stage-empty/.test(appSrc));
+  ok('and with nothing picked it says what it is for',
+     /Pick a character below and its stroke order plays here/.test(appSrc));
+}
+
 console.log('\nsmaller fixes, in the same pass');
 {
   const appSrc = read('js/app.js'), css = read('css/app.css');
