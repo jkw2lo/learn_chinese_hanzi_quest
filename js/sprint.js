@@ -51,7 +51,27 @@ const WRITE_STYLES = {
 };
 
 const SPRINT_MINUTES = [1, 2, 3, 5];
+/* How far a tap moves the number on a phone, where the chip rows stand down.
+   The chips stay the desktop control and keep their own values; a stepper
+   walks the whole range in even steps instead, so 70 questions and 4 minutes
+   become reachable where the chips never offered them. */
+const SPRINT_STEP_N = 10;
+const SPRINT_STEP_MIN = 1;
 const SPRINT_COUNTS = [20, 30, 40, 50, 60, 80, 100];
+
+/* − value + , where each button is a plain data-sp-set like every chip. The
+   value is clamped to the same range the chips cover, and a button that would
+   not move is disabled rather than hidden, so the control never changes width
+   under your thumb. */
+function stepper(mode, key, now, step, lo, hi, mult) {
+  const at = v => Math.max(lo, Math.min(hi, v));
+  const down = at(now - step), up = at(now + step);
+  const btn = (v, label) => `<button data-sp-set="${mode}:${key}:${v * mult}"
+      ${v === now ? "disabled" : ""} aria-label="${label}">${label}</button>`;
+  return `<span class="sp-step">
+    ${btn(down, "−" + step)}<span class="sp-step-v">${now}</span>${btn(up, "+" + step)}
+  </span>`;
+}
 const SPRINT_MIN_POOL = 8;        /* characters you need before a sheet means anything */
 const SPRINT_MAX_LOOPS = 6;       /* how many times one sheet may reuse a character */
 const SPRINT_READY = 3;           /* the 预备 countdown, in seconds */
@@ -566,7 +586,7 @@ function sprintPanelHtml(mode, short) {
     ${open ? `<div class="sp-picker">
       <p class="note">${esc(cfg.long)}</p>
       ${silent ? `<p class="note sp-warn">Sound is off — turn it back on in Settings, or this mode has nothing to play.</p>` : ""}
-      ${mode === "w" ? `<div class="sp-row">
+      ${mode === "w" ? `<div class="sp-row sp-row-style">
         <span class="sp-row-lbl">How</span>
         <div class="sp-chips">${Object.values(WRITE_STYLES).map(s => `<button class="sp-chip wide ${p.style === s.key ? "on" : ""}" data-sp-set="w:style:${s.key}">
           <span class="han">${esc(s.zh)}</span> ${esc(s.name)}</button>`).join("")}</div>
@@ -577,11 +597,15 @@ function sprintPanelHtml(mode, short) {
         <div class="sp-chips">${SPRINT_COUNTS.map(n => `<button class="sp-chip ${p.n === n ? "on" : ""}"
           ${n > maxN ? "disabled title='More than this sheet can draw without repeating itself to death'" : ""}
           data-sp-set="${mode}:n:${n}">${n}</button>`).join("")}</div>
+        ${stepper(mode, "n", p.n, SPRINT_STEP_N, SPRINT_COUNTS[0],
+                  Math.min(SPRINT_COUNTS[SPRINT_COUNTS.length - 1], maxN), 1)}
       </div>
       <div class="sp-row">
         <span class="sp-row-lbl">Minutes</span>
         <div class="sp-chips">${SPRINT_MINUTES.map(m => `<button class="sp-chip ${p.secs === m * 60 ? "on" : ""}"
           data-sp-set="${mode}:secs:${m * 60}">${m}</button>`).join("")}</div>
+        ${stepper(mode, "secs", p.secs / 60, SPRINT_STEP_MIN, SPRINT_MINUTES[0],
+                  SPRINT_MINUTES[SPRINT_MINUTES.length - 1], 60)}
       </div>
       <div class="sp-verdict">
         <span class="sp-verdict-k han">${esc(g.zh)}</span>

@@ -5323,7 +5323,12 @@ function openCoach(v = view, locked = false) {
   if (!steps.length) return;
   coach = { view: v, step: 0, steps, locked };
   $("#coach").hidden = false;
-  document.body.style.overflow = "hidden";
+  /* The body is deliberately NOT locked here. renderCoach scrolls each target
+     into view, and body { overflow: hidden } makes that a no-op — so every
+     step drew its ring wherever the element already happened to be and the
+     coach behaved as though the whole page were on screen. On a desktop the
+     dashboard mostly is, which is why this never showed up there. The veil
+     already stops the page being touched; it does not need to stop it moving. */
   renderCoach();
 }
 
@@ -5335,7 +5340,6 @@ function closeCoach(force) {
   if (coach.locked && !force) return;
   $("#coach").hidden = true;
   $("#coachRing").hidden = true;
-  document.body.style.overflow = "";
   $$(".coach-lit").forEach(e => e.classList.remove("coach-lit"));
   coach = { view: null, step: 0, steps: [], locked: false };
 }

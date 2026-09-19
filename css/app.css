@@ -172,6 +172,9 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
   color: var(--ink-2); font-size: .9rem;
 }
 .icon-btn:hover { background: var(--sunken); color: var(--ink); }
+/* every top-bar icon is drawn rather than typed, so they all centre the same
+   way and share one stroke weight */
+.icon-btn svg { display: block; }
 /* an emoji glyph rides higher and larger than the text icons beside it */
 .save-btn { font-size: .78rem; line-height: 1; }
 
@@ -1103,7 +1106,11 @@ code {
 }
 .ink-bar i {
   display: block; height: 100%; border-radius: 999px;
-  background: linear-gradient(90deg, var(--jade), var(--seal));
+  /* One colour. The gradient ran jade to seal, and seal is the colour this
+     app uses for "wrong" and "due" everywhere else — so a bar that filled up
+     as you learned more got redder the better you did. It measures one thing
+     and reads in one direction. */
+  background: var(--jade);
   transition: width .5s cubic-bezier(.2,.9,.3,1);
 }
 .ink-bar b {
@@ -1277,7 +1284,11 @@ code {
   padding: .04rem .3rem; margin: 0 .05rem; background: var(--paper); color: var(--ink-2);
 }
 /* a touch device has no space bar to tell anyone about */
-@media (hover: none) { .flash-keys { display: none; } }
+/* One line or the other, never both and never neither. These used to ask
+   different questions — the keys hid on `hover: none`, the taps showed on
+   `pointer: coarse` — and a device can answer those two differently, which is
+   how both ended up on screen at once. One question now. */
+@media (pointer: coarse) { .flash-keys { display: none; } }
 /* its opposite number, laid out in the phone layer at the foot of this file */
 .flash-taps { display: none; }
 
@@ -1516,7 +1527,7 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .todo-tick {
   width: 1.4rem; height: 1.4rem; border-radius: 50%;
   border: 1.5px solid var(--rule); display: grid; place-items: center;
-  font-size: .78rem; color: transparent;
+  font-size: .78rem; line-height: 1; color: transparent;
 }
 .todo.done .todo-tick { background: var(--jade); border-color: var(--jade); color: #fff; }
 .todo.now .todo-tick { border-color: var(--gold); border-style: dashed; }
@@ -1644,7 +1655,7 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .pr-ring .val { fill: none; stroke: var(--jade); stroke-width: 4; stroke-linecap: round; }
 .pr-ring-k {
   position: absolute; inset: 0; display: grid; place-items: center;
-  font-family: var(--f-han); font-size: 1rem; color: var(--ink-2);
+  font-family: var(--f-han); font-size: 1rem; line-height: 1; color: var(--ink-2);
 }
 .pr-ring-flat .pr-ring-k { font-family: var(--f-body); font-size: 1.3rem; color: var(--gold); }
 .pr-deep-body { display: flex; flex-direction: column; gap: .22rem; min-width: 0; text-align: left; }
@@ -1747,7 +1758,10 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .opt-n {
   font-family: var(--f-pin); font-size: .64rem; font-weight: 600;
   min-width: 1.15rem; height: 1.15rem; padding: 0 .2rem;
-  display: inline-grid; place-items: center; flex: none;
+  /* line-height: 1 so the line box hugs the digit. Without it the box is as
+     tall as the font's ascent plus a descender that "1" never uses, and the
+     grid dutifully centres that — leaving the number sitting high. */
+  display: inline-grid; place-items: center; flex: none; line-height: 1;
   border: 1px solid var(--rule); border-radius: 4px;
   color: var(--ink-3); background: var(--paper);
 }
@@ -2373,6 +2387,15 @@ button.tier-head:hover { border-color: var(--ink-3); }
   font-weight: 600; width: 4.6rem; flex: none;
 }
 .sp-chips { display: flex; flex-wrap: wrap; gap: .3rem; flex: 1; }
+/* the phone's stand-in for a row of chips — laid out in the phone layer at the
+   foot of this file, and absent at every other width */
+.sp-step { display: none; align-items: center; gap: .1rem; border: 1px solid var(--rule);
+  border-radius: 7px; overflow: hidden; flex: none; }
+.sp-step button { background: var(--sheet); border: 0; width: 44px; height: 38px;
+  color: var(--ink-2); font-size: .95rem; line-height: 1; }
+.sp-step button[disabled] { opacity: .35; }
+.sp-step-v { min-width: 3.2rem; text-align: center; font-size: .95rem;
+  font-variant-numeric: tabular-nums; }
 .sp-chip {
   min-width: 2.3rem; padding: .32rem .5rem; border-radius: 7px; font-size: .82rem;
   border: 1px solid var(--rule); background: transparent; color: var(--ink-2);
@@ -3181,6 +3204,60 @@ button.tier-head:hover { border-color: var(--ink-3); }
      is gone, and so is the gap it was keeping clear. */
   .wrap { padding-bottom: 2.25rem; }
 
+  /* ---------- blocks that were laid out sideways ----------
+
+     Each of these is a row of three things that had room on a desktop and does
+     not at 375px, where the middle item is prose that wants the full width. */
+
+  /* the streak tracker: anchored right: 0 to a chip that has four icon buttons
+     to its right, so a 28-day row 445px wide started at 245px and ran off the
+     left of the screen. On a phone it is not a popover hanging off a chip —
+     it is a panel under the bar. */
+  .streak-pop { position: static; }
+  .tracker {
+    position: fixed; top: calc(3rem + env(safe-area-inset-top)); left: .7rem; right: .7rem;
+    width: auto; max-width: none; overflow-x: auto;
+  }
+
+  /* today's menu character: glyph and heading on one line, then the sentence,
+     then the button across the foot — instead of three columns each too
+     narrow to be read */
+  .sq-target {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "glyph info" "learn learn";
+    align-items: center; gap: .7rem .8rem;
+  }
+  .sq-glyph { grid-area: glyph; }
+  .sq-info  { grid-area: info; }
+  .sq-learn { grid-area: learn; align-self: stretch; width: 100%; }
+
+  /* the legibility figure: 2.1rem of number on the baseline of a paragraph
+     that wraps to three lines reads as a number that fell off the sentence */
+  .ink-top { flex-direction: column; align-items: flex-start; gap: .35rem; }
+
+  /* Go deeper: the ring is a 38px circle with 8px of stroke, leaving 30px for
+     a full-width han glyph that needs more than that to look like a character
+     rather than a smudge. */
+  .pr-ring { width: 48px; height: 48px; }
+  .pr-ring-k { font-size: 1.3rem; }
+
+  /* a sprint sheet: the character takes the middle of the space above the
+     answers rather than sitting on top of it. Two auto margins split the
+     slack — see .sp-q .sp-opts { margin-top: auto } above. */
+  .sp-q > :first-child { margin-top: auto; }
+
+  /* Questions and Minutes were seven and four chips wrapping under a label
+     that stayed vertically centred beside them, so the label sat in the middle
+     of its own control. A stepper is one row, and the chips stand down. */
+  .sp-row { align-items: center; }
+  .sp-row .sp-chips { display: none; }
+  .sp-row .sp-step { display: flex; }
+  /* the write-style row is three named choices, not a number — it keeps chips,
+     and gets the room by stacking under its label */
+  .sp-row.sp-row-style { flex-direction: column; align-items: stretch; gap: .35rem; }
+  .sp-row.sp-row-style .sp-chips { display: flex; }
+  .sp-row.sp-row-style .sp-row-lbl { width: auto; }
+
   /* ---------- answers, where a thumb is ----------
 
      A drill is read at the top and answered at the bottom. On a phone held
@@ -3205,6 +3282,20 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .opts .opt, .sp-opts .sp-opt { min-height: 4rem; }
   .opts.grid2 .opt, .sp-opts.grid2 .sp-opt { min-height: 5.6rem; font-size: 1.15rem; }
   .opts.grid2 .opt .big, .sp-opts.grid2 .sp-opt .big { font-size: 3.4rem; }
+
+  /* One shape for the whole session.
+
+     .grid2 is set by the drill kind — character options get it, meaning and
+     reading options do not — so a single sitting gave you Recognise as a list,
+     Read in context as a list and Hear as a 2 x 2. Three tasks, three shapes,
+     none of them chosen. On a phone the answer layout is a setting, so it
+     governs all four kinds and a meaning simply wraps inside its box. */
+  :root[data-opt-cols="grid"] .opts { grid-template-columns: 1fr 1fr; }
+  :root[data-opt-cols="row"] .opts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .opts .opt { position: relative; justify-content: center; text-align: center; }
+  .opts:not(.grid2) .opt { font-size: .95rem; line-height: 1.32; padding: .8rem .6rem; }
+  .opts .opt-n { position: absolute; top: .4rem; left: .4rem; }
+  .opts .opt .mk { position: absolute; top: .4rem; right: .5rem; margin-left: 0; }
   .sp-opts.grid3 .sp-opt { min-height: 4.6rem; }
 }
 

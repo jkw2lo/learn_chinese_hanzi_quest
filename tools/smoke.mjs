@@ -2296,10 +2296,12 @@ console.log('\nwhat a finger does, and what it is spared');
      /if \(flashTouchy\(\)\) return;/.test(app));
   ok('  a cancelled hold puts the card back', /pointercancel[\s\S]{0,140}flashFlip\(false\)/.test(app));
   ok('  and leaving the deck clears the gesture', /function flashKeysReset[\s\S]{0,200}flashTouchReset\(\)/.test(app));
+  /* Both lines must answer the SAME question, or a device that says
+     hover: none and pointer: fine (or the reverse) shows both, or neither. */
   ok('  both hint lines exist, and only one shows at a time',
      /class="flash-keys"/.test(read('index.html')) && /class="flash-taps"/.test(read('index.html'))
-     && /@media \(hover: none\) \{ \.flash-keys \{ display: none/.test(css)
-     && /\.flash-taps \{ display: block/.test(css));
+     && /@media \(pointer: coarse\) \{ \.flash-keys \{ display: none/.test(css)
+     && /@media \(pointer: coarse\)[\s\S]{0,400}?\.flash-taps \{ display: block/.test(css));
 
   /* .opt-n is the drill's numbering and also the inline keycap used in prose.
      Hiding it wholesale on touch left "reload with  held, or ." in Settings. */
