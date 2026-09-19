@@ -341,6 +341,46 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\nsection headings are one convention, and hoverable');
+{
+  /* Two conventions used to coexist: sprint.js put Chinese first — 错字本
+     Mistake notebook — while Today put it last or left it out. The convention
+     is English first, Chinese second, because in a section heading the English
+     is the label and the Chinese is a gloss on it. That is deliberately the
+     opposite of the nav tabs and drill labels, where the Chinese *is* the
+     label and stays in front. */
+  const appSrc = read('js/app.js'), sprintSrc = read('js/sprint.js');
+  const both = appSrc + sprintSrc;
+  const eyebrows = [...both.matchAll(/<span class="eyebrow"[^>]*>([\s\S]*?)<\/span>\s*(?:<\/span>|<\/div>|`|\n)/g)]
+    .map(m => m[1]);
+  ok('there are section headings to check', eyebrows.length > 15, eyebrows.length + ' found');
+  /* no heading may open with Chinese, and none may carry a raw .han span */
+  const chineseFirst = eyebrows.filter(t => /^\s*(?:<span class="han">)?\s*[\u4e00-\u9fff]/.test(t));
+  ok('no heading leads with the Chinese', !chineseFirst.length, chineseFirst.join(' | '));
+  const rawHan = eyebrows.filter(t => /<span class="han">/.test(t));
+  ok('and none sets its Chinese by hand instead of through hanLabel()',
+     !rawHan.length, rawHan.join(' | '));
+  const glossed = eyebrows.filter(t => /hanLabel\(/.test(t));
+  ok(`nearly every heading carries a Chinese gloss (${glossed.length} of ${eyebrows.length})`,
+     glossed.length >= eyebrows.length - 1);
+
+  /* the point of hanLabel is that the characters are hoverable */
+  ok('hanLabel makes each character hoverable',
+     /const hanLabel = str =>[\s\S]*?data-ch="\$\{esc\(c\)\}"/.test(appSrc));
+  ok('and the stylesheet sets it quieter than the English it follows',
+     /\.eyebrow \.han-label \{[^}]*text-transform: none/.test(read('css/app.css')));
+  ok('with a cursor that says it can be looked up',
+     /\.eyebrow \.han-label \[data-ch\] \{ cursor: help/.test(read('css/app.css')));
+
+  /* every character used in a heading has to have something to say on hover */
+  const inHeadings = new Set();
+  for (const m of both.matchAll(/hanLabel\("([^"]+)"\)/g))
+    [...m[1]].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) inHeadings.add(c); });
+  ok('every heading character is a real character', inHeadings.size > 20, inHeadings.size + ' distinct');
+  const silent = [...inHeadings].filter(c => !api.CHAR_INDEX[c] && !api.EXTRA_GLOSS[c]);
+  ok('and every one of them has a gloss to show', !silent.length, silent.join(' '));
+}
+
 console.log('\nuntaught characters on screen still have something to say');
 {
   /* The tooltip was built only from the curriculum, so anything printed

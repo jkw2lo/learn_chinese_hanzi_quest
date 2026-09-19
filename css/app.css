@@ -250,6 +250,15 @@ main { flex: 1; width: 100%; }
   font-size: .68rem; letter-spacing: .13em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 600;
 }
+/* In a section heading the English is the label and the Chinese follows as a
+   gloss on it, so it is set quieter and without the uppercase tracking the
+   English carries. The nav tabs and drill labels stay Chinese-first for the
+   opposite reason — there the Chinese *is* the label. */
+.eyebrow .han-label {
+  margin-left: .35rem; letter-spacing: 0; text-transform: none;
+  font-family: var(--f-han-ui); font-size: .92em; color: var(--seal); opacity: .85;
+}
+.eyebrow .han-label [data-ch] { cursor: help; }
 h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: -.015em; text-wrap: balance; margin: 0; }
 h1 { font-size: 1.6rem; line-height: 1.18; }
 h2 { font-size: 1.15rem; line-height: 1.25; }

@@ -40,6 +40,21 @@ const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;",
 const pick = (arr, n) => shuffle([...arr]).slice(0, n);
 const one = arr => arr[(Math.random() * arr.length) | 0];
 
+/* ---------- Chinese in a section heading ----------
+
+   Section headings carry Chinese as well as English, and there is no reason
+   the characters in the interface itself should be the only ones on screen you
+   cannot look up — 加练 and 错字本 are exactly the kind of thing a learner
+   wants to hover. tools/fetch-glosses.mjs scans this file, so anything used
+   here has a gloss without anybody having to remember to add one.
+
+   English first, then the Chinese — the opposite of the drill labels and the
+   nav, which are Chinese-first because there the Chinese *is* the label. In a
+   section heading the English is what you read and the Chinese is a gloss on
+   it, so it follows rather than leads. */
+const hanLabel = str => `<span class="han han-label">${[...str].map(c =>
+  /[\u4e00-\u9fff]/.test(c) ? `<span data-ch="${esc(c)}">${esc(c)}</span>` : esc(c)).join("")}</span>`;
+
 /* Nobody types tone marks, so searches compare against bare letters. "shui"
    finds 水, and "lv" finds 绿 — the usual keyboard stand-in for ü. */
 const bare = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -991,7 +1006,7 @@ function renderStep() {
     const onMenu = MENU_CHARS.includes(ch.c);
     body.innerHTML = `
       <div class="stack" style="gap:.3rem;align-items:center;text-align:center">
-        <span class="eyebrow">${isNew ? "New character" : "Revisiting"} · ${esc(st.icon)} ${esc(st.name)}</span>
+        <span class="eyebrow">${isNew ? "New character" : "Revisiting"} · ${esc(st.icon)} ${esc(st.name)} ${hanLabel(st.zh)}</span>
         ${onMenu ? `<span class="chip" style="background:var(--seal-wash);color:var(--seal)">🍜 on the menu</span>` : ""}
       </div>
       ${charCard(ch, { writerId: wid })}`;
@@ -2007,7 +2022,7 @@ function buildWritePage() {
       <div class="section">
         <div class="wp-bar">
           <div class="wp-title">
-            <span class="eyebrow">练字 · Exercise book</span>
+            <span class="eyebrow">Exercise book ${hanLabel("练字")}</span>
             <p class="note">A blank page. Nothing is checked here — fill it, scrawl on it, clear it and go again.</p>
           </div>
           <div class="wp-tools">
@@ -2102,7 +2117,7 @@ function renderPicker() {
 
   host.innerHTML = `
     <div class="pick-head">
-      <span class="eyebrow">Trace a character</span>
+      <span class="eyebrow">Trace a character ${hanLabel("描红")}</span>
       ${wp.guide ? `<button class="link-btn" id="pickClear">Clear <span class="han">${esc(wp.guide)}</span></button>` : ""}
     </div>
     <input class="search pick-find" id="pickFind" type="search" placeholder="Find a character…" value="${esc(wp.find)}">
@@ -2325,7 +2340,7 @@ async function wpDiary() {
   const bytes = all.reduce((a, p) => a + p.strokes.reduce((n, s2) => n + s2.length, 0), 0) * 8;
   host.innerHTML = `
     <div class="pr-head">
-      <span class="eyebrow">Practice diary</span>
+      <span class="eyebrow">Practice diary ${hanLabel("练习簿")}</span>
       <span class="dim" style="font-size:.74rem">${all.length} page${all.length === 1 ? "" : "s"} · about ${(bytes / 1024).toFixed(0)} KB</span>
     </div>
     <div class="diary-strip">
@@ -2555,7 +2570,7 @@ function renderToday() {
 
     <div class="learned">
       <div class="learned-head">
-        <span class="eyebrow">Learned today</span>
+        <span class="eyebrow">Learned today ${hanLabel("今日新字")}</span>
         <span class="dim" style="font-size:.76rem">${got.length} character${got.length === 1 ? "" : "s"}</span>
       </div>
       ${got.length
@@ -2590,7 +2605,7 @@ function renderToday() {
   const wotw = (() => {
     if (!wk || !wotwEntry(wk)) {
       return `<div class="sheet wotw wotw-empty">
-        <div class="pr-head"><span class="eyebrow">Word of the week <span class="han">每周一词</span></span></div>
+        <div class="pr-head"><span class="eyebrow">Word of the week ${hanLabel("每周一词")}</span></div>
         <p class="note">Tell the app what you're interested in and it'll show you one real word a week from it —
           usually made of characters well past where you've got to.</p>
         <button class="btn btn-ghost btn-sm btn-block" id="wotwSetup">Pick your interests</button>
@@ -2614,7 +2629,7 @@ function renderToday() {
     const open = state.wotwShown === wk.week;
     return `<div class="sheet wotw">
       <div class="pr-head">
-        <span class="eyebrow">Word of the week <span class="han">每周一词</span></span>
+        <span class="eyebrow">Word of the week ${hanLabel("每周一词")}</span>
         <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}${
           entry.festival ? ` <span class="han">${esc(cat.zh)}</span>` : ""}</span>
       </div>
@@ -2640,7 +2655,7 @@ function renderToday() {
      parts, because seeing that 大人 is big + person is what makes it stick. */
   const combos = knownWords();
   const decks = `<div class="sheet decks">
-    <span class="eyebrow">Flashcards</span>
+    <span class="eyebrow">Flashcards ${hanLabel("生字卡")}</span>
     ${oneDeck("deckToday", got, "Today's characters",
       `${got.length} card${got.length === 1 ? "" : "s"} — tap to flip`, "today", got[got.length - 1])}
     ${oneDeck("deckAll", all, "All characters",
@@ -2695,7 +2710,7 @@ function renderToday() {
 
   const todoBlock = `<div class="sheet todo-block">
     <div class="pr-head">
-      <span class="eyebrow">Today's practice</span>
+      <span class="eyebrow">Today's practice ${hanLabel("今日练习")}</span>
       <span class="dim" style="font-size:.76rem"
         title="${waiting ? `${waiting} more step${waiting === 1 ? "" : "s"} unlock as your library grows` : "Every step on today's list can be done now"}">
         ${stepsDone} of ${ready.length} done${waiting ? ` · ${waiting} locked` : ""}</span>
@@ -2726,7 +2741,7 @@ function renderToday() {
   const deeper = `<section class="deeper">
     <div class="deeper-head">
       <span class="deeper-title">
-        <span class="eyebrow">Go deeper <span class="han">加练</span></span>
+        <span class="eyebrow">Go deeper ${hanLabel("加练")}</span>
         <p class="deeper-sub">Reps past today's list. None of it is required and none of it can be finished —
           that's what makes it the part that compounds.</p>
       </span>
@@ -3101,7 +3116,7 @@ function renderRecord() {
 
         <div class="sheet" style="padding:1rem">
           <div class="stack" style="gap:.6rem">
-            <span class="eyebrow">Every day since you started</span>
+            <span class="eyebrow">Every day since you started ${hanLabel("学习记录")}</span>
             <div class="cal-wrap">${calendar(182)}</div>
             <div class="cal-legend">Less <span class="day"></span><span class="day f1"></span><span class="day f2"></span><span class="day f3"></span><span class="day f4"></span> More</div>
             <p class="note">${activeDays} day${activeDays === 1 ? "" : "s"} studied · best run ${state.streak.best}</p>
@@ -3151,7 +3166,7 @@ function renderRecord() {
           if (!stuck.length) return "";
           return `<div class="sheet" style="padding:1rem">
             <div class="stack" style="gap:.6rem">
-              <span class="eyebrow">Sticking points</span>
+              <span class="eyebrow">Sticking points ${hanLabel("难字")}</span>
               <p class="note">You've missed these more often than you've got them. Repeating the same drill won't shift them —
                 open one and look at where it comes from and what it's built out of.</p>
               <div class="leech-list">${stuck.slice(0, 18).map(c => `<button class="leech" data-c="${esc(c)}">
@@ -3168,7 +3183,7 @@ function renderRecord() {
       <div class="col-side">
         <div class="sheet" style="padding:1rem">
           <div class="stack" style="gap:.8rem">
-            <span class="eyebrow">Skills</span>
+            <span class="eyebrow">Skills ${hanLabel("能力")}</span>
             <div class="skills">
               ${skills.map(([k, label, key]) => {
                 /* Measured against the characters you know, not the whole
@@ -3215,7 +3230,7 @@ function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
-        <span class="eyebrow" style="margin-bottom:.5rem">Studying</span>
+        <span class="eyebrow" style="margin-bottom:.5rem">Studying ${hanLabel("学习")}</span>
         <div class="settings-row">
           <label>New characters a day<small>More isn't better — reviews compound.</small></label>
           <span class="stepper" id="goalStep">
@@ -3243,7 +3258,7 @@ function openSettings() {
 
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
-        <span class="eyebrow" style="margin-bottom:.5rem">Sound</span>
+        <span class="eyebrow" style="margin-bottom:.5rem">Sound ${hanLabel("声音")}</span>
         <div class="settings-row">
           <label>Speak characters aloud<small>${clipCount()
             ? `Characters play one of ${clipCount()} recorded clips.`
@@ -3274,7 +3289,7 @@ function openSettings() {
 
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
-        <span class="eyebrow" style="margin-bottom:.5rem">Your data</span>
+        <span class="eyebrow" style="margin-bottom:.5rem">Your data ${hanLabel("你的记录")}</span>
         <div class="settings-row">
           <label>Save your progress to a file<small>Writes one .json file — progress, streak and diary — that you can load back in later.
             ${state.lastBackup ? `Last saved ${esc(new Date(state.lastBackup).toLocaleDateString())}.` : "You haven't saved a copy yet."}</small></label>
@@ -3848,7 +3863,7 @@ function renderPlacement() {
 
   $("#placeBody").innerHTML = `<div class="place-inner">
     <span class="place-where">${esc(stage.icon)} ${esc(stage.name)} · #${ch.i + 1} of ${HQ.length}</span>
-    <span class="eyebrow">Which character means</span>
+    <span class="eyebrow">Which character means ${hanLabel("选字")}</span>
     <h1 class="place-q">${esc(ch.m)}</h1>
     <div class="place-opts">
       ${opts.map((o, i) => `<button class="place-opt" data-c="${esc(o.c)}">

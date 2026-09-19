@@ -105,6 +105,11 @@ const tidy = g => g
 const dull = g => !g || g.length > 56
   || /^(a |the )?surname$/i.test(g)
   || /^(variant|used in|abbr|same as|interchangeable)/i.test(g)
+  /* what is left after "simplified Kangxi radical 149" loses its radical note
+     is the bare word "simplified", which says nothing about the character —
+     and saying what it is a simplification OF would put Chinese in the gloss,
+     which the next test rejects anyway */
+  || /^(simplified|traditional)$/i.test(g)
   || /[\u4e00-\u9fff]/.test(g);                          /* a gloss in Chinese explains nothing */
 
 function senseFor(c) {
