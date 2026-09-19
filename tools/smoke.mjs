@@ -527,6 +527,83 @@ console.log('\nthe day\'s block: the ring, the headline and the labels');
      /\.dash \.todo-block \.bar \{ margin-top/.test(css));
 }
 
+console.log('\nthe two blocks are an open notebook, not a page');
+{
+  /* The first pass put a ruled margin down the FAR LEFT of the enclosure,
+     which made the whole thing read as one page with two columns printed on
+     it. They are not two columns — they are two facing leaves, so the fold and
+     the binder holes belong in the GUTTER BETWEEN them. */
+  const css = read('css/app.css');
+  const fold = /\.dash-today > \.dash-col:nth-child\(2\)::before \{([^}]*)\}/.exec(css);
+  ok('the fold is drawn on the second leaf, not the enclosure', !!fold);
+  ok('and it sits in the gutter, to the LEFT of that leaf',
+     /left: calc\(-\.45rem - \.5px\)/.test(fold[1]), (fold[1] || '').trim().slice(0, 70));
+  const holes = /\.dash-today > \.dash-col:nth-child\(2\)::after \{([^}]*)\}/.exec(css);
+  ok('the binder holes are in the same gutter', !!holes && /left: calc\(-\.45rem - 4px\)/.test(holes[1]));
+  ok('and there are three of them, placed by proportion rather than a fixed offset',
+     (holes[1].match(/radial-gradient/g) || []).length === 3
+     && /50% 20%/.test(holes[1]) && /50% 50%/.test(holes[1]) && /50% 80%/.test(holes[1]));
+  ok('nothing fakes a second hole with a box-shadow', !/box-shadow: 0 11rem/.test(css));
+
+  /* squared paper, on a sheet rather than on the desk */
+  ok('both enclosures are squared paper',
+     /\.dash-today, \.dash-side \{[^}]*background-image:[\s\S]*?linear-gradient\(90deg/.test(css));
+  ok('and colourless but not transparent — the ground is the same sheet the cards use',
+     /\.dash-today, \.dash-side \{[^}]*background-color: var\(--sheet\)/.test(css));
+  ok('the cards give up their fill so the grid runs under them',
+     /\.dash-today > \.dash-col > \*, \.dash-side > \* \{[^}]*background: transparent/.test(css));
+  ok('but anything with a run of text in it keeps a ground, or the rules run through the prose',
+     /\.dash-today \.learned, \.dash-today \.todo-list[\s\S]{0,200}?background-color: var\(--sheet\)/.test(css));
+  ok('the side rail is an enclosure of its own, so its first card starts on the same line',
+     /\.dash-side > :first-child \{ margin-top: 0/.test(css));
+  ok('and the gutter is wide enough to put a fold in',
+     /\.dash-today \{ grid-template-columns[^}]*gap: \.9rem/.test(css));
+  ok('none of it exists below the breakpoint the enclosure does',
+     (css.match(/@media \(min-width: 1180px\)/g) || []).length >= 3);
+}
+
+console.log('\na section on paper needs a title, not a label');
+{
+  const css = read('css/app.css');
+  const tab = /\.dash-today \.eyebrow, \.dash-side \.eyebrow, \.dash-wide \.deeper-title \.eyebrow \{([^}]*)\}/.exec(css);
+  ok('the eyebrow becomes a stuck-on tab on the dashboard', !!tab);
+  /* inline-block alone is not enough: in .decks and .deeper-title the label is
+     a flex child and stretches to the full column */
+  ok('and is stopped from stretching to the full column',
+     /align-self: flex-start/.test(tab[1]), (tab[1] || '').trim().slice(0, 60));
+  ok('Go deeper\'s tab takes the other half of the pair, since its band is already sunken',
+     /\.dash-wide \.deeper-title \.eyebrow \{ background: var\(--sheet\)/.test(css));
+  ok('the Chinese gloss is part of the label now, not a whisper after it',
+     /\.dash-wide \.deeper-title \.eyebrow \.han-label \{ opacity: 1/.test(css));
+  /* every other eyebrow in the app is still on a plain card and still quiet */
+  ok('and every other eyebrow in the app is left alone',
+     /\.eyebrow \{\n  font-size: \.68rem/.test(css));
+}
+
+console.log('\nthe flashcard decks are one hue at three depths');
+{
+  /* Three decks in three unrelated hues said nothing. They are not unrelated:
+     today's characters are a handful, everything you know is more, and the
+     words those characters make is more again. */
+  const css = read('css/app.css');
+  const pct = re => +(re.exec(css) || [])[1];
+  const a = pct(/\.decks \.deck \{[^}]*background: color-mix\(in srgb, var\(--jade\) (\d+)%/s);
+  const b = pct(/\.decks \.deck-all \{[^}]*background: color-mix\(in srgb, var\(--jade\) (\d+)%/s);
+  const c = pct(/\.decks \.deck-words \{[^}]*background: color-mix\(in srgb, var\(--jade\) (\d+)%/s);
+  ok('all three decks are the same hue', !!(a && b && c));
+  ok('and the ramp deepens as the deck gets bigger', a < b && b < c, `${a} < ${b} < ${c}`);
+  ok('no deck is gold or vermilion any longer',
+     !/\.deck-words \{[^}]*var\(--seal-wash\)/s.test(css) && !/\.deck-all \{[^}]*var\(--jade-wash\)/s.test(css));
+  /* the ramp costs --ink-3 its legibility on the deepest rung: 2.5:1 light,
+     2.2:1 dark. Measured after the fix — light 6.98/6.24/5.54, dark
+     6.58/5.49/4.53 — every rung over 4.5:1. */
+  ok('the caption moved up a step to survive it',
+     /\.decks \.deck-text small \{ color: var\(--ink-2\)/.test(css));
+  ok('and the deepest rung eases off rather than going deeper still', c <= 24, String(c));
+  ok('the deepest card face is lifted off the ground it sits on',
+     /\.decks \.deck-words \.dc \{ background: var\(--sheet\)/.test(css));
+}
+
 console.log('\nno block borrows a class name that already means something');
 {
   /* Day one looked padded out: three empty flashcard decks at 178px each

@@ -1459,18 +1459,39 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .decks .deck { padding: .8rem .85rem; gap: .8rem; }
 .decks .deck-cards { width: 40px; height: 52px; }
 .decks .deck-cards .dc { font-size: 1.4rem; }
-.deck-all {
-  border-color: color-mix(in srgb, var(--jade) 32%, transparent);
-  background: linear-gradient(120deg, var(--jade-wash), transparent 70%), var(--sheet);
+
+/* The three decks used to be three hues — gold, jade, vermilion — which read
+   as three unrelated things. They are not unrelated: today's characters are a
+   handful, everything you know is more, and the words those characters make
+   is more again. So they are one hue at three depths, and the ramp is the
+   information: the deck gets darker as it gets bigger. */
+.decks .deck {
+  border-color: color-mix(in srgb, var(--jade) 22%, transparent);
+  background: color-mix(in srgb, var(--jade) 6%, var(--sheet));
 }
-.deck-all .dc1 { border-color: color-mix(in srgb, var(--jade) 50%, transparent); }
-.deck-all .deck-go { color: var(--jade); }
-.deck-words {
-  border-color: color-mix(in srgb, var(--seal) 30%, transparent);
-  background: linear-gradient(120deg, var(--seal-wash), transparent 70%), var(--sheet);
+.decks .deck .dc1 { border-color: color-mix(in srgb, var(--jade) 34%, transparent); }
+.decks .deck .deck-go { color: var(--jade); }
+/* The ramp costs the caption its contrast — --ink-3 on the deepest card is
+   2.5:1 in light and 2.2:1 in dark. One step up puts it back over 4.5:1 on
+   every rung, which is the price of the ramp and worth paying. */
+.decks .deck-text small { color: var(--ink-2); }
+
+.decks .deck-all {
+  border-color: color-mix(in srgb, var(--jade) 34%, transparent);
+  background: color-mix(in srgb, var(--jade) 15%, var(--sheet));
 }
-.deck-words .dc1 { border-color: color-mix(in srgb, var(--seal) 48%, transparent); }
-.deck-words .deck-go { color: var(--seal); }
+.decks .deck-all .dc1 { border-color: color-mix(in srgb, var(--jade) 48%, transparent); }
+
+.decks .deck-words {
+  border-color: color-mix(in srgb, var(--jade) 48%, transparent);
+  background: color-mix(in srgb, var(--jade) 24%, var(--sheet));
+}
+.decks .deck-words .dc1 { border-color: color-mix(in srgb, var(--jade) 62%, transparent); }
+/* the deepest card sits on the deepest ground, so its face needs lifting off it */
+.decks .deck-words .dc { background: var(--sheet); }
+/* The old three-hue versions of these lived here — gold, jade, vermilion. The
+   ramp above replaces them; leaving them would only mean two sets of rules
+   fighting on specificity for the same three cards. */
 
 /* a word on a flashcard face: two or three characters where one used to sit */
 .card-face .big.big-wide { font-size: 4.2rem; }
@@ -2351,4 +2372,157 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .dash-wide .sq-actions .btn { min-width: 8.5rem; flex: none; }
   .dash .deeper { padding: .7rem .9rem; }
   .dash-wide .deeper .pr-meter { max-width: 22rem; }
+}
+
+/* ============================================================
+   The two blocks are an open notebook, not a page
+
+   The first pass gave the enclosure ruled lines, a vermilion margin rule down
+   the FAR LEFT, and two binder holes beside it. That reads as one page with
+   two columns printed on it — and they are not two columns, they are two
+   facing leaves: the day's characters on the left, the day's practice on the
+   right. So the margin rule and the holes belong in the GUTTER BETWEEN them,
+   where the fold of a real spread is, and the horizontal rules become squared
+   paper — the paper Chinese writing practice actually happens on.
+
+   Both enclosures are colourless — no --sunken tint — but not transparent:
+   the ground is --sheet, the same near-white the cards use, so the grid reads
+   as lines printed on a sheet of paper rather than on the desk under it.
+   Transparent was tried and is wrong; in dark mode the enclosure then sits
+   darker than the cards it holds.
+   ============================================================ */
+
+.dash-today { position: relative; }
+@media (min-width: 1180px) {
+  /* squared paper: the horizontal and vertical rules of a 田字格 workbook, at a
+     weight that stays behind the content rather than competing with it */
+  .dash-today, .dash-side {
+    padding: .55rem; border-radius: 12px;
+    border: 1px solid var(--rule-2); background-color: var(--sheet);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--rule) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--rule) 55%, transparent) 1px, transparent 1px);
+    background-size: 100% 1.15rem, 1.15rem 100%;
+    background-clip: padding-box;
+  }
+
+  /* a spread needs a gutter wide enough to put a fold in */
+  .dash-today { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: .9rem; }
+  .dash-today > .dash-col { position: relative; }
+
+  /* the fold, down the middle of the gutter — measured against the real gutter
+     centre rather than guessed */
+  .dash-today > .dash-col:nth-child(2)::before {
+    content: ""; position: absolute; top: .15rem; bottom: .15rem;
+    left: calc(-.45rem - .5px); width: 1px;
+    background: var(--seal); opacity: .18; pointer-events: none;
+  }
+  /* and the three holes a ring binder punches through it.
+
+     The first version was one dot plus a second faked with a box-shadow at a
+     fixed offset, which is why there were only two: a third shadow would have
+     landed past the bottom of a column whose height is not fixed. Three radial
+     gradients on a full-height strip place themselves at 20/50/80% of whatever
+     the column turns out to be, and each paints its own 1px rim. */
+  .dash-today > .dash-col:nth-child(2)::after {
+    content: ""; position: absolute; top: 0; bottom: 0;
+    left: calc(-.45rem - 4px); width: 8px;
+    background-image:
+      radial-gradient(circle at 50% 20%, var(--paper) 0 3px, var(--rule) 3px 4px, transparent 4px),
+      radial-gradient(circle at 50% 50%, var(--paper) 0 3px, var(--rule) 3px 4px, transparent 4px),
+      radial-gradient(circle at 50% 80%, var(--paper) 0 3px, var(--rule) 3px 4px, transparent 4px);
+    pointer-events: none;
+  }
+
+  /* Paper you cannot see is not paper. With the cards left as opaque sheets
+     the grid only showed in the padding round them, which is a texture on a
+     frame and not a page. Inside these two enclosures the cards give up their
+     fill and their border: the paper is the ground, and the fold is what
+     separates the left leaf from the right. */
+  .dash-today > .dash-col > *, .dash-side > * {
+    background: transparent; border-color: transparent; box-shadow: none;
+  }
+  /* Anything with a run of text in it keeps its own ground. Ruled lines behind
+     a heading are paper; ruled lines behind a paragraph are noise, and the
+     grid was running straight through the day's characters, the practice list
+     and the word's definition. They are the same --sheet as the enclosure, so
+     the fill shows as nothing at all — which is the point: it stops the grid
+     rather than drawing a box. */
+  .dash-today .lc, .dash-today .today-all, .dash-side .wotw-word,
+  .dash-today .learned, .dash-today .todo-list, .dash-side .wotw-note,
+  .dash-side .wotw .note, .dash-today .learned-empty {
+    background-color: var(--sheet);
+  }
+  /* NOT the decks: they carry the jade ramp, which is their own ground and
+     stops the grid just as well. Flattening them to --sheet here is what made
+     all three rungs measure the same luminance. */
+  /* and a little room, so the fill has an edge rather than ending at the ink */
+  .dash-today .learned, .dash-today .todo-list,
+  .dash-side .wotw-note, .dash-side .wotw .note {
+    border-radius: 8px; padding: .4rem .5rem;
+  }
+  .dash-today .learned { padding-bottom: .5rem; }
+
+  /* The side rail is an enclosure of its own now, with the same border and
+     padding, so its first card starts on the line the enclosure's first card
+     starts on. */
+  .dash-side > :first-child { margin-top: 0; }
+}
+
+/* ---------- a section is titled, not just labelled ----------
+
+   On a plain card an .eyebrow floating above the content is enough. On squared
+   paper it is not: the rules run straight through it and it reads as one more
+   line of text rather than the name of what follows. So on the dashboard it
+   becomes a tab — a small stuck-on label, sitting slightly proud of the block
+   it names.
+
+   Only inside the two paper enclosures and the Go deeper band; every other
+   .eyebrow in the app is still on a plain card and still wants to be quiet. */
+@media (min-width: 1180px) {
+  .dash-today .eyebrow, .dash-side .eyebrow, .dash-wide .deeper-title .eyebrow {
+    /* inline-block alone is not enough: in .decks and .deeper-title the label
+       is a flex child and would stretch to the full column, which makes some
+       tabs full-width bands and the rest chips */
+    display: inline-block; align-self: flex-start; padding: .2rem .5rem .22rem;
+    border-radius: 6px; border: 1px solid var(--rule-2);
+    background: var(--sunken); color: var(--ink-2);
+    letter-spacing: .1em;
+  }
+  /* Go deeper's band is itself --sunken, so a --sunken tab on it is invisible
+     but for its border. The tab is always the other one of the pair. */
+  .dash-wide .deeper-title .eyebrow { background: var(--sheet); }
+
+  /* the Chinese gloss is part of the label, so it sits inside the same tab */
+  .dash-today .eyebrow .han-label, .dash-side .eyebrow .han-label,
+  .dash-wide .deeper-title .eyebrow .han-label { opacity: 1; }
+
+  /* the tab wants the line to itself when the count beside it would otherwise
+     be baseline-aligned to a box rather than to text */
+  .dash-today .pr-head, .dash-today .learned-head,
+  .dash-side .pr-head { align-items: center; }
+}
+
+@media (min-width: 1180px) {
+  /* The greeting and the date are a block, not type floating on graph paper.
+     --sheet alone stops the grid but is the same colour as the ground it sits
+     on, so it needs an edge to read as a block at all. */
+  .dash-today .hero-top {
+    background: var(--sheet); border: 1px solid var(--rule-2); border-radius: 9px;
+    padding: .55rem .7rem; margin: -.1rem -.15rem .15rem;
+  }
+  /* and the buttons get a ground of their own back — the rule that strips the
+     cards' fill catches them too, and a call to action with no fill on squared
+     paper reads as a caption */
+  .dash-today .hero-cta .btn { background: var(--sunken); border-color: var(--rule); }
+  .dash-today .hero-cta .btn:hover { background: var(--sheet); border-color: var(--ink-3); }
+  .dash-today .hero-cta .btn-seal,
+  .dash-today .hero-cta .btn-seal:hover { background: var(--seal); border-color: var(--seal); }
+
+  /* Word of the week and the flashcards read as one surface with Go deeper —
+     the three things that are not today's work. */
+  .dash-side .wotw, .dash-side .decks {
+    background: var(--sunken); border: 1px solid var(--rule-2); border-radius: 10px;
+  }
+  .dash-side .wotw .wotw-word { background: var(--sheet); }
 }
