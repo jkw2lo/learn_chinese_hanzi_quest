@@ -34,10 +34,32 @@ const CONTRACT = [
 ];
 
 /* typeof guards so a missing name reports cleanly instead of crashing */
-const api = new Function(
-  read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
-  'return {' + CONTRACT.map(n => `${n}: typeof ${n} === "undefined" ? undefined : ${n}`).join(',') + '};'
-)();
+let api;
+try {
+  api = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {' + CONTRACT.map(n => `${n}: typeof ${n} === "undefined" ? undefined : ${n}`).join(',') + '};'
+  )();
+} catch (e) {
+  /* The data files throw at load for exactly one reason often enough to be
+     worth naming: STAGES[].end is cumulative and hand-written, and
+     `STAGES.find(s => i < s.end).n` returns undefined for every character past
+     a short last entry — a null-property error that says nothing about stages.
+     Diagnose it from the source before giving up. */
+  console.error('\nthe data files would not load: ' + e.message);
+  try {
+    const src = read('js/data.js');
+    const ends = [...src.matchAll(/\{n:\s*\d+,[^}]*?end:\s*(\d+)/g)].map(m => +m[1]);
+    const chars = (src.match(/\{c:"/g) || []).length;
+    if (ends.length && chars && ends[ends.length - 1] < chars)
+      console.error(`  → STAGES ends at ${ends[ends.length - 1]} and there are ${chars} characters. ` +
+                    'Every character past the last `end` has no stage. Recompute the column.');
+    const wrong = ends.filter((e, i) => i && e <= ends[i - 1]);
+    if (wrong.length) console.error('  → STAGES ends do not ascend: ' + ends.join(' '));
+  } catch { /* the diagnosis is a courtesy; the throw above is the failure */ }
+  console.error('');
+  process.exit(1);
+}
 
 let failures = 0;
 const ok = (label, cond, detail = '') => {
@@ -343,7 +365,7 @@ console.log('\neverything speakable has a clip');
 
 console.log('\na meaning in brackets is not a translation');
 {
-  /* Seventeen of the 763 meanings open with a bracket — (measure: flat
+  /* A handful of the meanings open with a bracket — (measure: flat
      things), (completed action marker) — and they are exactly the characters
      with no English word behind them. In a recognition drill that fails twice
      over: against three plain meanings it is answerable by elimination, and
@@ -450,6 +472,63 @@ console.log('\na sentence gets to finish before the card moves');
      /if \(item\.said\) sayPhrase\(item\.said, true\); else say\(ch\.c, true\);/.test(appSrc));
   ok('and the reading drill records what it said',
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
+}
+
+console.log('\nthe numbers that turn out to be hardcoded');
+{
+  /* Adding characters is not only adding characters. Every number below is one
+     that has to track the data and does not do so by itself. */
+
+  /* STAGES[].end is cumulative and hand-written. Miss one and
+     STAGES.find(s => i < s.end) returns undefined for every character past it,
+     and ch.stage = ….n throws at LOAD with a null-property error that says
+     nothing about stages. So: count the characters per stage rather than
+     trusting the arithmetic. */
+  let running = 0;
+  const drift = [];
+  for (const st of STAGES) {
+    const n = HQ.filter(c => c.stage === st.n).length;
+    if (running + n !== st.end) drift.push(`stage ${st.n}: end=${st.end}, ${running}+${n}=${running + n}`);
+    running = st.end;
+  }
+  ok(`every stage's end is the running total of its characters (${STAGES.length} stages)`,
+     !drift.length, drift.join('; '));
+  ok('the ends ascend', STAGES.every((st, i) => !i || st.end > STAGES[i - 1].end));
+  /* the one that throws rather than misbehaving */
+  ok('and the last one covers the whole library',
+     STAGES[STAGES.length - 1].end >= HQ.length,
+     `${STAGES[STAGES.length - 1].end} vs ${HQ.length}`);
+  ok('so every character finds a stage without falling off the end',
+     HQ.every(c => STAGES.find(st => c.i < st.end)));
+
+  /* Tiers are aspirational — `to` is the milestone the tier stands for, not
+     how many characters are written — but they still have to ascend, and
+     tierOf() must answer for every index. */
+  ok('the tiers ascend', api.TIERS.every((t, i) => !i || t.to > api.TIERS[i - 1].to));
+  ok('and every character lands in one', HQ.every(c => !!api.tierOf(c.i)));
+
+  /* Prose that states a count. None of these break; all of them become lies.
+     This is `grep -n for the old number` turned into something that runs. */
+  const files = ['js/app.js', 'js/srs.js', 'js/sprint.js', 'tools/smoke.mjs', 'tools/audit-strokes.mjs'];
+  const claims = [];
+  for (const f of files) {
+    const src = read(f);
+    /* "all 763", "the 763 characters", "of 763 characters" — a number stated
+       as the size of the library, in prose, in the present tense */
+    for (const m of src.matchAll(/\b(?:all|the|of)\s+(\d{3,4})\s*(?:characters|meanings|of them)\b/g))
+      claims.push({ f, n: +m[1], text: m[0] });
+    for (const m of src.matchAll(/\blibrary (?:is|has|holds|stops at)\s+(\d{3,4})\b/g))
+      claims.push({ f, n: +m[1], text: m[0] });
+  }
+  const wrong = claims.filter(c => c.n !== HQ.length);
+  ok(`no comment states a library size that is not the library size (${claims.length} checked)`,
+     !wrong.length, wrong.map(c => `${c.f}: "${c.text}"`).join(' | '));
+
+  /* A threshold with the library's own size in it is usually measuring the
+     wrong thing — the practice-pool check was calibrated that way and passed
+     at one size while failing at another with the rotation working perfectly. */
+  ok('no check calibrates itself against HQ.length',
+     !/HQ\.length \* 0\.\d/.test(read('tools/smoke.mjs')));
 }
 
 console.log('\nthe radicals page has a way in');
@@ -842,7 +921,7 @@ console.log('\nno block borrows a class name that already means something');
 console.log('\nthe teaching card fits the screen it teaches on');
 {
   /* charCard() is six blocks in a 34rem column. Stacked, that measured 1313px
-     of reading inside a 592px window at 1280x720 — every one of 763
+     of reading inside a 592px window at 1280x720 — every one of the
      characters overflowed, while ~700px of screen sat empty either side. You
      met a new character by scrolling past it. Layout cannot be measured here,
      so this pins the structure the measurement depends on; the numbers are in

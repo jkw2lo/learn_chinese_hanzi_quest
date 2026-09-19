@@ -722,10 +722,15 @@ function stageProgress(stageNo) {
 /* ---------- tiers ----------
 
    `to` is the milestone the tier stands for, not how many characters are
-   written yet: tier 2 runs to 500 but the library currently stops at 348, so
-   `tierChars` returns what actually exists and `tierPlanned` says what it is
-   aiming at. Keeping those apart is what lets the Library show an honest
-   "148 of 300 written" instead of pretending the rest are missing. */
+   written yet: a tier can run past the end of the library, so `tierChars`
+   returns what actually exists and `tierPlanned` says what it is aiming at.
+   Keeping those apart is what lets the Library show an honest "n of m
+   written" instead of pretending the rest are missing.
+
+   No sizes in this comment on purpose. It used to say "tier 2 runs to 500 but
+   the library currently stops at 348", which was true when it was written and
+   a lie by the time the library reached 763. Prose that states a count is
+   prose that goes stale. */
 
 const tierFrom = t => t.n === 1 ? 0 : TIERS[t.n - 2].to;
 const tierChars = t => HQ.slice(tierFrom(t), t.to);

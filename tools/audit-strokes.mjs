@@ -237,7 +237,7 @@ for (const ch of HQ) {
      notes into 104 useless ones in the other app.
 
      Depth is the other half of it. Two levels was enough for a curriculum of
-     300; at 763 the compounds run deeper, and two levels reported 11 claims
+     300; in a library this size the compounds run deeper, and two levels reported 11 claims
      as unfound that are simply further down — 整's 十 is inside 束 inside 敕.
      Four clears all 11 and keeps its teeth: appending the same parts over and
      over grows the string but barely the set, so the distinct characters

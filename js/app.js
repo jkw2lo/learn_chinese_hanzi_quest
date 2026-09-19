@@ -33,7 +33,7 @@ const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m]
 
 /* A meaning in brackets is not a translation.
 
-   Seventeen of the 763 meanings open with one — (measure: flat things),
+   A handful of the meanings open with one — (measure: flat things),
    (completed action marker), (question and pause marker). They are exactly
    the characters with no English word behind them: the particles and the
    measure words. A learner told "(measure: flat things)" is being asked about
