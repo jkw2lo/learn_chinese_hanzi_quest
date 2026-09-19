@@ -341,6 +341,27 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\nthe display face draws an ordinary J');
+{
+  /* Fraunces draws a J that drops below the baseline and curls left, and the
+     one heading that addresses the learner by name — "Ready when you are,
+     Jen." — is display type, so it is exactly where it shows. Pinning the WONK
+     axis does nothing: Google Fonts serves an instanced face per weight and
+     the axis is not in the file, and the stylistic sets leave the J alone.
+     The only fix is a different family, so the family is what is pinned. */
+  const css = read('css/app.css'), html = read('index.html');
+  ok('the display family is Newsreader', /--f-display:\s*"Newsreader"/.test(css));
+  ok('and Fraunces is gone from the stylesheet and the page',
+     !/Fraunces/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')) && !/Fraunces/.test(html));
+  ok('the font request asks for the family the stylesheet names',
+     /family=Newsreader:opsz,wght@6\.\.72,500;6\.\.72,600;6\.\.72,700/.test(html));
+  ok('nothing tries to pin a variation axis that is not served',
+     !/font-variation-settings/.test(css));
+  /* the headline that made this visible */
+  ok('a headline still addresses the learner by name',
+     /Ready when you are\$\{who\}/.test(read('js/app.js')));
+}
+
 console.log('\nthe radical cards count the form they print');
 {
   /* RADICALS[].strokes is prose beside a glyph, and the glyph is `form` — the

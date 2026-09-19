@@ -23,7 +23,15 @@
   --shadow:   0 1px 2px rgba(23, 33, 30, .06), 0 6px 18px rgba(23, 33, 30, .05);
   --shadow-lift: 0 2px 4px rgba(23, 33, 30, .08), 0 14px 34px rgba(23, 33, 30, .10);
 
-  --f-display: "Fraunces", Georgia, "Times New Roman", serif;
+  /* Newsreader, not Fraunces. Fraunces draws a J that drops below the
+     baseline and curls left, and the one heading that addresses the learner
+     by name — "Ready when you are, Jen." — is exactly where it shows. No axis,
+     feature or stylistic set reaches it: WONK 0 and WONK 1 are identical here
+     because Google Fonts serves an instanced face per weight and the axis is
+     not in the file at all, and ss01–ss04, salt, cv01 and cv02 leave the J
+     alone. Newsreader has the same editorial warmth and an optical-size axis,
+     pairs with IBM Plex Sans, and draws an ordinary J. */
+  --f-display: "Newsreader", Georgia, "Times New Roman", serif;
   --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-pin: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-han: "Songti SC", "STSong", "Noto Serif SC", "SimSun", "Source Han Serif SC", serif;
