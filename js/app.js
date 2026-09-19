@@ -21,7 +21,15 @@ const RADICAL_GLOSS = {
   "酉":["yǒu","a wine jar; fermentation"], "艹":["cǎo","grass (compressed 艸)"],
   "犭":["quǎn","beast (compressed 犬)"], "八":["bā","eight; dividing"]
 };
-const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m] : (RADICAL_GLOSS[c] || ["", ""]);
+/* Three sources, in order of how much they know about the character: the
+   curriculum, the hand-written radical notes above, and the generated
+   reference glosses for everything else the app prints without teaching it —
+   menu dishes, example words, sentences, the word of the week, the Chinese in
+   the section headings. Before the third existed those characters had no
+   tooltip at all, and a character you can hover and be told nothing about
+   reads as broken rather than as out of scope. */
+const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m]
+  : (RADICAL_GLOSS[c] || (typeof EXTRA_GLOSS !== "undefined" && EXTRA_GLOSS[c]) || ["", ""]);
 
 /* ---------- tiny helpers ---------- */
 
@@ -1580,8 +1588,22 @@ function initTips() {
   document.addEventListener("mouseover", e => {
     const g = e.target.closest("[data-ch]");
     if (!g) return;
-    const ch = CHAR_INDEX[g.dataset.ch];
-    if (!ch) return;
+    const c = g.dataset.ch;
+    const ch = CHAR_INDEX[c];
+    /* Not in the curriculum is not the same as nothing to say. A reference
+       gloss gets a reading and a sense and an honest line about why it has no
+       progress to report; bailing out here is what left the menu, the example
+       words and the headings silent. */
+    if (!ch) {
+      const [p, m] = gloss(c);
+      if (!m) return;
+      tipEl.innerHTML = `<div class="z">${esc(c)}</div>
+        <div class="p">${esc(p)}</div>
+        <div class="m">${esc(m)}</div>
+        <div class="s">Not in the curriculum — here for reference</div>`;
+      tipEl.classList.add("on");
+      return place(g);
+    }
     const known = isKnown(ch.c);
     tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
       <div class="p">${esc(ch.p)}</div>
