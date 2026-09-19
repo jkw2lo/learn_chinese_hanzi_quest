@@ -498,6 +498,35 @@ console.log('\nToday is a dashboard, not a scroll');
      /in a row/.test(tracker) && /best \$\{state\.streak\.best\}/.test(tracker) && !/🔥/.test(tracker));
 }
 
+console.log('\nthe day\'s block: the ring, the headline and the labels');
+{
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  /* Every other ring and tick in this app is left-aligned — the practice list,
+     Go deeper — and this one sat on the right on its own. */
+  ok('the progress ring leads the hero rather than trailing it',
+     /<div class="hero-top">\s*\$\{ring\}/.test(appSrc));
+  /* "You're clear for today, Jen." wrapped to two lines in a dashboard column */
+  ok('the headline is short enough for one line', /`All clear\$\{who\}\.`/.test(appSrc));
+  ok('and is held to one line at dashboard width',
+     /\.dash \.hero-title \{[^}]*white-space: nowrap/.test(css));
+
+  /* New and Due did not say what they meant */
+  ok('the queue pills say what they are', /To learn <b>/.test(appSrc) && /To review <b>/.test(appSrc)
+     && /Done <b>/.test(appSrc));
+  ok('and neither is called New or Due any more',
+     !/qpill new">New /.test(appSrc) && !/qpill due">Due /.test(appSrc));
+  ok('each explains whose decision it is',
+     /Your daily goal/.test(appSrc) && /schedule's decision, not yours/.test(appSrc));
+
+  /* the hero's slack is distributed, not pooled under the last block */
+  ok('the hero distributes its slack rather than pooling it',
+     /\.dash-today \.hero \{ justify-content: space-between/.test(css));
+  ok('and the practice list distributes its rows over the column',
+     /\.dash \.todo-list \{[^}]*justify-content: space-between/.test(css));
+  ok('with room above the bar so it reads as a bar, not an underline',
+     /\.dash \.todo-block \.bar \{ margin-top/.test(css));
+}
+
 console.log('\nno block borrows a class name that already means something');
 {
   /* Day one looked padded out: three empty flashcard decks at 178px each

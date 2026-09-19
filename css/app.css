@@ -2274,9 +2274,18 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .dash-wide .deeper-foot { grid-column: 1 / -1; grid-row: 2; }
   /* the explanation is a paragraph, and a band has no room for one */
   .dash-wide .deeper .deeper-sub { display: none; }
-  .dash-wide .deeper .pr-deep { padding: .45rem .55rem; }
+  .dash-wide .deeper .pr-deep { padding: .4rem .5rem; gap: .5rem; }
+  .dash-wide .deeper .pr-deep-body b { font-size: .84rem; }
   .dash-wide .deeper .pr-grid-3 { gap: .5rem; }
-  .dash-wide .deeper-foot { font-size: .68rem; }
+  .dash-wide .deeper .pr-ring { width: 30px; height: 30px; }
+  .dash-wide .deeper .pr-deep-body small { font-size: .66rem; }
+  .dash-wide .deeper-foot { font-size: .68rem; padding-top: .2rem; }
+  .dash-wide .sq { gap: .3rem 1rem; padding: .5rem .9rem; }
+  .dash-wide .sq-icon { font-size: 1.1rem; }
+  .dash-wide .sq-name b { font-size: .92rem; }
+  .dash-wide .sq-name .zh { font-size: .66rem; }
+  .dash-wide .sq-info .m { font-size: .8rem; }
+  .dash-wide .sq-info .p { font-size: .7rem; }
 
   /* The last pass of compaction, measured rather than guessed: padding and
      type scale that only the scrolling layout could afford. */
@@ -2286,6 +2295,24 @@ button.tier-head:hover { border-color: var(--ink-3); }
      dashboard has no end to clear */
   #viewToday .wrap { padding-bottom: .9rem; }
   .dash .hero-cta { padding: .55rem .8rem; }
+  /* One line beside a ring. 1.7rem wrapped "You're clear for today, Jen." into
+     two, which read as unbalanced next to a circle. */
+  .dash .hero-title { font-size: 1.45rem; line-height: 1.15; white-space: nowrap; }
+  /* Every other ring and tick in this app is left-aligned — the practice list,
+     Go deeper — and this one sat on the right on its own. */
+  .dash .hero-top { align-items: center; gap: .85rem; }
+  /* the ring is a glance, not a feature: it can be smaller on a dashboard */
+  .dash .hero-ring { width: 62px; height: 62px; }
+  .dash .hero-sub { font-size: .82rem; line-height: 1.45; }
+  .dash .hero { gap: .7rem; padding: .9rem 1rem 1rem; }
+  /* a dashboard's call to action is already the biggest thing in its column */
+  .dash .hero-cta .btn-lg { padding: .7rem 1.1rem; font-size: .94rem; }
+  /* The practice list distributes its rows over the column instead of sitting
+     at the top of it, and the bar gets room above so it reads as a bar rather
+     than as an underline of the heading. */
+  .dash .todo-block { display: flex; flex-direction: column; }
+  .dash .todo-block .bar { margin-top: .35rem; }
+  .dash .todo-list { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
   .dash .learned { gap: .35rem; padding-top: .75rem; }
   .dash .todo-block { padding-bottom: .5rem; }
   .dash .todo { padding-top: .42rem; padding-bottom: .42rem; }
@@ -2293,6 +2320,11 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .dash .wotw .wotw-word { padding: .55rem .6rem; }
   .dash .wotw-note { font-size: .74rem; line-height: 1.45; }
   .dash .wotw .note.dim { display: none; }
+  /* the setup card's pitch, trimmed to the two lines that carry it */
+  .dash .wotw-empty .note {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    font-size: .74rem; line-height: 1.45;
+  }
   .dash .decks { padding: .7rem .8rem .75rem; gap: .4rem; }
   .dash .decks .deck { padding: .45rem .6rem; gap: .6rem; }
   .dash .decks .deck-cards { width: 30px; height: 38px; }
@@ -2309,7 +2341,10 @@ button.tier-head:hover { border-color: var(--ink-3); }
   }
   .dash-wide .sq-top { grid-column: 1; grid-row: 1; }
   .dash-wide .sq .bar { grid-column: 1; grid-row: 2; align-self: start; }
-  .dash-wide .sq .note { grid-column: 1; grid-row: 3; margin: 0; font-size: .68rem; line-height: 1.35; }
+  .dash-wide .sq .note {
+    grid-column: 1; grid-row: 3; margin: 0; font-size: .68rem; line-height: 1.35;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;
+  }
   .dash-wide .sq-target { grid-column: 2; grid-row: 1 / 4; padding: .45rem .55rem; }
   .dash-wide .sq-glyph { width: 2.6rem; height: 2.6rem; font-size: 1.7rem; }
   .dash-wide .sq-actions { grid-column: 3; grid-row: 1 / 4; flex-wrap: nowrap; }

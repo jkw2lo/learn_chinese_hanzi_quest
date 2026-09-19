@@ -2682,7 +2682,10 @@ function renderToday() {
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
   const who = state.name ? `, ${state.name}` : "";
-  const headline = clear ? `You're clear for today${who}.` : done > 0 ? `Keep going${who}.` : `Ready when you are${who}.`;
+  /* One line. "You're clear for today, Jen." wrapped to two in a dashboard
+     column, which looked unbalanced beside a ring; the phrasing is shorter and
+     the size comes down with it. */
+  const headline = clear ? `All clear${who}.` : done > 0 ? `Keep going${who}.` : `Ready when you are${who}.`;
   const sub = clear
     ? (remainingNew() ? "Nothing is due. You can study ahead whenever you like."
        : "Every character in the library is in your review rotation.")
@@ -2700,12 +2703,12 @@ function renderToday() {
   /* ---- the invitation ---- */
   const hero = `<div class="hero">
     <div class="hero-top">
+      ${ring}
       <div class="hero-head">
         <span class="hero-date">${esc(dateStr)}</span>
         <h1 class="hero-title">${esc(headline)}</h1>
         <p class="hero-sub">${esc(sub)}</p>
       </div>
-      ${ring}
     </div>
     <div class="hero-cta">
       ${newLeft + due > 0
@@ -2714,9 +2717,9 @@ function renderToday() {
             ? `<button class="btn btn-ghost btn-lg btn-block" id="aheadBtn">Study ahead — ${Math.min(5, remainingNew())} more characters</button>`
             : "")}
       <div class="queue">
-        <span class="qpill new">New <b>${newLeft}</b></span>
-        <span class="qpill due">Due <b>${due}</b></span>
-        <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Revised today <b>${revd.length}</b></span>
+        <span class="qpill new" title="Your daily goal — how many new characters are still to come today. Change it in Settings.">To learn <b>${newLeft}</b></span>
+        <span class="qpill due" title="The schedule's decision, not yours: characters whose review has come round today.">To review <b>${due}</b></span>
+        <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Done <b>${revd.length}</b></span>
       </div>
     </div>
 
