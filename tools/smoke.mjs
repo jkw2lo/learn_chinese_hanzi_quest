@@ -452,6 +452,34 @@ console.log('\na sentence gets to finish before the card moves');
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
 }
 
+console.log('\nsmaller fixes, in the same pass');
+{
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+
+  /* `closest` is an Element method, and an event target is not always one: a
+     click dispatched on `document` has `document` as its target, which threw
+     and took the rest of the handler chain down with it. */
+  const tips = appSrc.slice(appSrc.indexOf('function initTips'), appSrc.indexOf('/* ---------- flashcards'));
+  ok('the tooltip listeners guard their target',
+     /e\.target instanceof Element \? e\.target\.closest/.test(tips));
+  ok('and none of them calls closest on a raw target any more',
+     !/const g = e\.target\.closest/.test(tips) && !/if \(e\.target\.closest/.test(tips));
+
+  /* the face is a card; it needs no caption */
+  ok('a flashcard face carries no hint', !/class="hint">Tap to flip/.test(appSrc));
+  ok('and the stylesheet has stopped styling one', !/\.card-face \.hint \{/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('the buttons name the arrow keys that already worked',
+     /<span class="fk">←<\/span> Back/.test(appSrc) && /Next <span class="fk">→<\/span>/.test(appSrc));
+  ok('and still say Done on the last card', /last \? "Done" :/.test(appSrc));
+
+  /* the deck used to sample its own contents, so its face was whichever word
+     came first — it read as a card about that word */
+  ok('the vocabulary deck says 生字 rather than one of its own cards',
+     /combos\.length \? "生字" : ""/.test(appSrc));
+  ok('and two characters are sized to fit a face drawn for one',
+     /\.dash \.decks \.deck-cards \.dc1\.dc-word \{ font-size/.test(css));
+}
+
 console.log('\na page that looks wrong beside its siblings is overriding something');
 {
   /* Each of these was reported as "this one page looks wrong", and each turned
@@ -583,7 +611,7 @@ console.log('\nthe day\'s block: the ring, the headline and the labels');
   ok('the hero distributes its slack rather than pooling it',
      /\.dash-today \.hero \{ justify-content: space-between/.test(css));
   ok('and the practice list distributes its rows over the column',
-     /\.dash \.todo-list \{[^}]*justify-content: space-between/.test(css));
+     /\.dash \.todo-list \{[^}]*grid-auto-rows: 1fr/.test(css));
   ok('with room above the bar so it reads as a bar, not an underline',
      /\.dash \.todo-block \.bar \{ margin-top/.test(css));
 }

@@ -1732,8 +1732,13 @@ function initTips() {
   tipEl.className = "tip";
   document.body.appendChild(tipEl);
 
+  /* `closest` is an Element method and an event target is not always one — a
+     click dispatched on `document` itself has `document` as its target, which
+     threw and took the rest of the handler chain down with it. */
+  const hit = e => (e.target instanceof Element ? e.target.closest("[data-ch]") : null);
+
   document.addEventListener("mouseover", e => {
-    const g = e.target.closest("[data-ch]");
+    const g = hit(e);
     if (!g) return;
     const c = g.dataset.ch;
     const ch = CHAR_INDEX[c];
@@ -1760,11 +1765,11 @@ function initTips() {
     place(g);
   });
   document.addEventListener("mouseout", e => {
-    if (e.target.closest("[data-ch]")) tipEl.classList.remove("on");
+    if (hit(e)) tipEl.classList.remove("on");
   });
   /* touch has no hover — open the full card instead */
   document.addEventListener("click", e => {
-    const g = e.target.closest("[data-ch]");
+    const g = hit(e);
     if (g && CHAR_INDEX[g.dataset.ch]) openChar(g.dataset.ch);
   });
 
@@ -1844,14 +1849,12 @@ function renderFlash() {
       <div class="card3d-inner">
         <div class="card-face">
           <span class="big ${f.wide ? "big-wide" : ""}">${esc(f.front)}</span>
-          <span class="hint">Tap to flip</span>
         </div>
         <div class="card-face card-back">
           <span class="sm">${esc(f.front)}</span>
           <span class="pin">${esc(f.pin)}${f.tone ? " " + toneMark(f.pin) : ""}</span>
           <span class="mean">${esc(f.mean)}</span>
           <span class="word">${esc(f.foot)}</span>
-          <span class="hint">Tap to flip back</span>
         </div>
       </div>
     </button>`;
@@ -1861,7 +1864,13 @@ function renderFlash() {
     if (flash.flipped) sayPhrase(f.speak);
   };
   $("#flashPrev").disabled = flash.i === 0;
-  $("#flashNext").textContent = flash.i === flash.deck.length - 1 ? "Done" : "Next";
+  /* The face carried "Tap to flip", which is wrong as often as it is right:
+     the card's other gesture is hear-it, and a caption on a card is a caption
+     on a card. The buttons say what the arrow keys do instead — they already
+     worked and nothing on screen said so. */
+  $("#flashPrev").innerHTML = `<span class="fk">←</span> Back`;
+  const last = flash.i === flash.deck.length - 1;
+  $("#flashNext").innerHTML = last ? "Done" : `Next <span class="fk">→</span>`;
 }
 function flashStep(d) {
   if (flash.i + d >= flash.deck.length) return closeFlash();
@@ -2819,9 +2828,11 @@ function renderToday() {
       `${got.length} card${got.length === 1 ? "" : "s"} — tap to flip`, "today", got[got.length - 1])}
     ${oneDeck("deckAll", all, "All characters",
       `${all.length} card${all.length === 1 ? "" : "s"} you've learned`, "all", all[all.length - 1])}
+    ${/* The face used to be combos[0][0] — the deck sampling its own contents,
+          so it read as a card about that one word rather than a deck of them. */""}
     ${oneDeck("deckWords", combos, "Words you can read",
       `${combos.length} combination${combos.length === 1 ? "" : "s"} of characters you know`, "words",
-      combos.length ? combos[0][0] : "", "Learn two characters that go together and this fills up")}
+      combos.length ? "生字" : "", "Learn two characters that go together and this fills up")}
   </div>`;
 
   /* ---- the to-do list ----

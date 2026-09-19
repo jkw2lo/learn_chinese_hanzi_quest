@@ -1102,7 +1102,9 @@ code {
   padding: 1.2rem;
 }
 .card-face .big { font-family: var(--f-han); font-size: 7rem; line-height: 1; color: var(--ink); text-align: center; }
-.card-face .hint { font-size: .72rem; color: var(--ink-3); position: absolute; bottom: 1rem; }
+/* .card-face .hint used to live here. First it repeated the footer, then it
+   said "Tap to flip" on a face whose other gesture is hear-it — wrong as often
+   as right. The face is a card; it needs no caption. */
 .card-back { transform: rotateY(180deg); }
 .card-back .pin { font-family: var(--f-pin); font-size: 1.7rem; font-weight: 500; }
 .card-back .mean { font-size: 1rem; color: var(--ink-2); text-align: center; }
@@ -1115,6 +1117,7 @@ code {
 .flash-foot { padding: .9rem 1rem calc(.9rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--rule-2); background: var(--sheet); }
 .flash-foot-inner { max-width: 24rem; margin: 0 auto; display: flex; gap: .5rem; }
 .flash-foot-inner .btn { flex: 1; }
+.flash-foot .fk { opacity: .55; font-size: .95em; }
 
 /* the menu scrolls inside its own frame — fade the cut so it reads as "more below" */
 .menu-wrap { position: relative; }
@@ -1344,7 +1347,10 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .deck-cards .dc2 { transform: rotate(5deg) translate(2px, 1px); opacity: .8; }
 .deck-cards .dc1 { border-color: color-mix(in srgb, var(--gold) 55%, transparent); box-shadow: var(--shadow); }
 /* a two-character word has to shrink to sit on the same card face */
-.deck-cards .dc1.dc-word { font-size: .82rem; letter-spacing: -.02em; }
+/* two characters on a face drawn for one: the dashboard's card front is 34px
+   wide, and .82rem put them edge to edge with no card showing round them */
+.deck-cards .dc1.dc-word { font-size: .66rem; letter-spacing: -.04em; line-height: 1.05; }
+.decks .deck-cards .dc1.dc-word { font-size: .6rem; }
 .deck:hover:not(:disabled) .dc3 { transform: rotate(-15deg) translate(-7px, 1px); }
 .deck:hover:not(:disabled) .dc2 { transform: rotate(9deg) translate(5px, 0); }
 .deck:hover:not(:disabled) .dc1 { transform: translateY(-3px); }
@@ -2344,7 +2350,10 @@ button.tier-head:hover { border-color: var(--ink-3); }
      than as an underline of the heading. */
   .dash .todo-block { display: flex; flex-direction: column; }
   .dash .todo-block .bar { margin-top: .35rem; }
-  .dash .todo-list { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+  /* A grid of equal fractions, not space-evenly: space-evenly distributes what
+     is left AFTER the flex gap, so the space above the first row and the space
+     between rows come out different — even by the spec, uneven to the eye. */
+  .dash .todo-list { flex: 1; display: grid; grid-auto-rows: 1fr; align-items: center; }
   .dash .learned { gap: .35rem; padding-top: .75rem; }
   .dash .todo-block { padding-bottom: .5rem; }
   .dash .todo { padding-top: .42rem; padding-bottom: .42rem; }
@@ -2361,6 +2370,9 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .dash .decks .deck { padding: .45rem .6rem; gap: .6rem; }
   .dash .decks .deck-cards { width: 30px; height: 38px; }
   .dash .decks .deck-cards .dc { font-size: 1.05rem; }
+  /* and a two-character face on a 30px card is smaller again — this override
+     has to come after the generic one above, or the word goes edge to edge */
+  .dash .decks .deck-cards .dc1.dc-word { font-size: .58rem; }
   .dash .decks .deck-text b { font-size: .88rem; }
   .dash .decks .deck-text small { font-size: .7rem; }
   /* The side quest is a band too, for the same reason Go deeper is: it is one
