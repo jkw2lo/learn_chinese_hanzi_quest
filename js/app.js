@@ -868,7 +868,9 @@ function startRepair(chars) {
 
 function buildSession() {
   const due = dueList();
-  const fresh = nextNew(state.goalNew);
+  /* what is still owed today — NOT dayGoal(), which is a target and counts
+     what today already taught, so a second session would deal it all again */
+  const fresh = nextNew(newLeftToday());
   const items = [];
   const reviews = due.map(c => ({ t: "drill", c, kind: drillKind(c) }));
   let r = 0;
@@ -2454,7 +2456,7 @@ function renderToday() {
   const due = dueCount();
   const got = learnedToday();
   const revd = reviewedToday();
-  const newLeft = Math.max(0, Math.min(state.goalNew, remainingNew()) - t.new);
+  const newLeft = newLeftToday();
   /* Characters on both sides of this fraction. `newLeft` and `due` count
      characters, so measuring what's done in answers made the ring run ahead
      of the queue beside it — a character answered four times is one character
@@ -2793,7 +2795,7 @@ function renderToday() {
     renderToday();
   });
   $("#startBtn")?.addEventListener("click", startSession);
-  $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
+  $("#aheadBtn")?.addEventListener("click", () => { studyAhead(5); startSession(); });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
   $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
@@ -3247,7 +3249,7 @@ function openSettings() {
   </div></div>`);
 
   $$("#goalStep button").forEach(b => b.onclick = () => {
-    state.goalNew = Math.max(1, Math.min(30, state.goalNew + (+b.dataset.d)));
+    state.goalNew = Math.max(GOAL_MIN, Math.min(GOAL_MAX, state.goalNew + (+b.dataset.d)));
     save(); openSettings();
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };

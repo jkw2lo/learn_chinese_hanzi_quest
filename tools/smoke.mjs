@@ -21,6 +21,7 @@ const CONTRACT = [
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay', 'dayReps',
+  'studyAhead', 'aheadToday', 'dayGoal', 'newLeftToday', 'GOAL_MIN', 'GOAL_MAX',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
   'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
@@ -612,6 +613,84 @@ console.log('\ntiers gate the library');
   ok('a placement past tier 1 opens tier 2', fresh.tierUnlocked(fresh.TIERS[1]));
   ok('and the ceiling follows',
      fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
+}
+
+console.log('\nstudying ahead: today only');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {state,load,blank,save,today,dayKey,studyAhead,aheadToday,dayGoal,newLeftToday,goalMet,nextNew,introduce,tally,remainingNew};')();
+  /* load() REASSIGNS the module-level `state`, so the object handed back in
+     the harness snapshot goes stale the moment it is called. Always read the
+     record load() returns, never `a.state`. */
+  const reset = (over = {}) => {
+    globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), over));
+    return a.load();
+  };
+
+  let st = reset();
+  const base = st.goalNew;
+  ok('the day starts on the standing goal', a.dayGoal() === base);
+  a.studyAhead(5);
+  ok('asking for more deals more today', a.dayGoal() === base + 5);
+  ok('but the setting is untouched', st.goalNew === base);
+  a.studyAhead(5);
+  ok('and twice is still the setting', st.goalNew === base && a.dayGoal() === base + 10);
+
+  /* tomorrow: the same record, read on a different day */
+  const tomorrow = new Date(a.dayKey() + 'T12:00:00');
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const k2 = a.dayKey(tomorrow);
+  ok('the extra belongs to the day it was asked for', !(st.days[k2] && st.days[k2].ahead));
+
+  /* a finished day stays finished */
+  st = reset();
+  a.nextNew(st.goalNew).forEach(c => { a.introduce(c); a.tally('new'); });
+  const was = a.goalMet();
+  a.studyAhead(5);
+  ok('a day that was done is still done after asking for more', was && a.goalMet() === was);
+
+  /* ---- the runaway ----
+
+     The second half of the same bug, and the half that survives fixing the
+     setting. nextNew(n) returns the next n characters you have NEVER seen, so
+     it cannot see what today already taught you: dealing nextNew(dayGoal()) on
+     a finished day of five handed out ten more. Click, finish, click, finish,
+     and the day went 5 -> 15 -> 30 -> 50 while the hero counted down a
+     different number from the one the session dealt. */
+  st = reset();
+  const round = () => {
+    const owed = a.newLeftToday();
+    a.nextNew(owed).forEach(c => { a.introduce(c); a.tally('new'); });
+    return owed;
+  };
+  const first = round();
+  ok('the first session deals the standing goal', first === base, 'dealt ' + first);
+  ok('and the day is then clear', a.newLeftToday() === 0);
+
+  const dealt = [];
+  for (let i = 0; i < 4; i++) { a.studyAhead(5); dealt.push(round()); }
+  ok('every study-ahead round deals exactly five', dealt.every(n => n === 5), dealt.join(','));
+  ok('so four rounds taught 5 + 20, not 5 -> 15 -> 30 -> 50',
+     st.days[a.dayKey()].new === base + 20, 'learned ' + st.days[a.dayKey()].new);
+  ok('and the setting never moved through any of it', st.goalNew === base);
+}
+
+console.log('\nthe setting repairs itself');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {load,blank,GOAL_MIN,GOAL_MAX};')();
+  const stored = goalNew => {
+    globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), { goalNew }));
+    return a.load().goalNew;
+  };
+  /* what a record left by the old `goalNew += 5` actually looks like */
+  ok('a goalNew the stepper cannot produce goes back to the default',
+     stored(60) === a.blank().goalNew, 'got ' + stored(60));
+  ok('but a number someone could have chosen is left alone', stored(12) === 12);
+  ok('and neither is zero a setting', stored(0) === a.blank().goalNew);
+  ok('the stepper range is the one the repair uses', a.GOAL_MIN === 1 && a.GOAL_MAX === 30);
 }
 
 console.log('\nstreak safety');

@@ -70,6 +70,7 @@ function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) state = Object.assign(blank(), JSON.parse(raw));
+    if (!(state.goalNew >= GOAL_MIN && state.goalNew <= GOAL_MAX)) state.goalNew = blank().goalNew;
   } catch { /* private mode, cleared storage — carry on with a fresh record */ }
   return state;
 }
@@ -260,6 +261,44 @@ const extraTotal = () => Object.values(state.days).reduce((a, d) => a + (d.extra
 const extraBestDay = () => Object.values(state.days).reduce((a, d) => Math.max(a, d.extra || 0), 0);
 const extraDays = () => Object.values(state.days).filter(d => d.extra > 0).length;
 
+/* ---------- studying ahead ----------
+
+   "Study ahead — 5 more characters" used to do `state.goalNew += 5`, which is
+   the setting, not the day. So one click on a Tuesday quietly rewrote "new
+   characters a day" from 5 to 10 and left it there: Wednesday dealt ten, the
+   settings stepper read 10, and clicking again made it 15. What the button
+   means is "give me more today", so the extra is kept on the day and is gone
+   with it. */
+const aheadToday = () => (state.days[dayKey()] || {}).ahead || 0;
+function studyAhead(n) {
+  const t = today();
+  t.ahead = (t.ahead || 0) + n;
+  save();
+}
+
+/* Today's target: the standing setting, plus anything asked for on top of it
+   today. This is a *target*, not a batch size — see newLeftToday(). */
+const dayGoal = () => state.goalNew + aheadToday();
+
+/* How many new characters are still owed today, and the only number allowed to
+   decide how many a session deals.
+
+   Getting this wrong is what made "Study ahead" run away even after the extra
+   stopped touching the setting. nextNew(n) returns the next n characters you
+   have *never seen*, so it has no idea what today already taught you: dealing
+   nextNew(dayGoal()) on a finished day of five handed out ten more, not five.
+   Click, finish, click, finish and the day went 5 → 15 → 30 → 50, with the
+   hero counting down a different number from the one the session dealt. One
+   function now answers both. */
+const newLeftToday = () =>
+  Math.max(0, Math.min(dayGoal(), remainingNew()) - today().new);
+
+/* The stepper's own range. A stored goalNew outside it cannot have come from a
+   person — it is wreckage from the version that did `goalNew += 5` — so it
+   goes back to the default on load rather than sitting at a number nobody
+   chose and the stepper cannot walk back down to. */
+const GOAL_MIN = 1, GOAL_MAX = 30;
+
 function touchStreak() {
   const k = dayKey();
   const s = state.streak;
@@ -286,6 +325,9 @@ function liveStreak() {
   return gap <= 1 ? s.cur : 0;
 }
 
+/* Deliberately the standing goal and not dayGoal(): asking for five more
+   characters is extra credit, and extra credit cannot take back a day you had
+   already finished — or the streak that came with it. */
 function goalMet() {
   const t = state.days[dayKey()];
   if (!t) return false;
