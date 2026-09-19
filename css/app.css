@@ -2088,3 +2088,47 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .sp-inner { max-width: 44rem; }
   .sp-marks { max-width: 34rem; }
 }
+
+/* ============================================================
+   The teaching card, on a screen wider than a phone
+
+   charCard() is six blocks in a 34rem column — the character, where it comes
+   from, how to remember it, what it is built from, the words it turns up in,
+   and a sentence. Stacked, that measured 1313px of reading inside a 592px
+   window at 1280x720 — 721px of overflow, every one of 763 characters, while
+   roughly 700px of screen sat empty on either side of the column. You met a
+   new character by scrolling past it.
+
+   So above 1000px — which takes in a 1024-wide tablet, not just a laptop —
+   the column widens and the card becomes two parts: the character on the
+   left, everything written about it on the right, in two balanced text
+   columns. Narrow screens are untouched: there the single column is right and
+   scrolling is the correct answer.
+   ============================================================ */
+
+.cardx { display: flex; flex-direction: column; gap: 1rem; }
+.cardx-blocks { display: flex; flex-direction: column; gap: 1rem; }
+.card-topper { display: flex; flex-direction: column; gap: .3rem; align-items: center; text-align: center; }
+
+@media (min-width: 1000px) {
+  .ses-inner, .ses-foot-inner { max-width: 64rem; }
+
+  .cardx {
+    display: grid; grid-template-columns: 17rem minmax(0, 1fr);
+    gap: 1.1rem; align-items: start;
+  }
+  /* The character stays put while you read about it — it is the thing being
+     taught, and on a stacked card it scrolled away first. */
+  .cardx > .card-hero { position: sticky; top: .2rem; }
+
+  /* Multi-column rather than grid: five blocks of unequal length into two
+     columns of equal height is exactly what column balancing does, and a
+     2-column grid would leave one of them a row short. break-inside keeps a
+     block whole, and the gap has to be a margin because column-gap is
+     horizontal only. */
+  .cardx-blocks { display: block; columns: 2; column-gap: .9rem; }
+  .cardx-blocks > .block { break-inside: avoid; margin: 0 0 .9rem; }
+
+  /* the card is wider, so the type in it can stop being cramped */
+  .cardx .words { gap: .5rem .9rem; }
+}

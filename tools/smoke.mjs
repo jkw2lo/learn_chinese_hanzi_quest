@@ -341,6 +341,51 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\nthe teaching card fits the screen it teaches on');
+{
+  /* charCard() is six blocks in a 34rem column. Stacked, that measured 1313px
+     of reading inside a 592px window at 1280x720 — every one of 763
+     characters overflowed, while ~700px of screen sat empty either side. You
+     met a new character by scrolling past it. Layout cannot be measured here,
+     so this pins the structure the measurement depends on; the numbers are in
+     the commit. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  ok('the card wraps its two parts', /<div class="cardx">/.test(appSrc));
+  ok('and its text blocks separately', /<div class="cardx-blocks">/.test(appSrc));
+  const card = appSrc.slice(appSrc.indexOf('function charCard'), appSrc.indexOf('function bindCard'));
+  ok('every block in the card is inside the text wrapper',
+     (card.match(/<div class="block sheet">/g) || []).length === 5,
+     (card.match(/<div class="block sheet">/g) || []).length + ' blocks');
+  ok('the wrappers are balanced',
+     (card.match(/<div /g) || []).length === (card.match(/<\/div>/g) || []).length,
+     (card.match(/<div /g) || []).length + ' open, ' + (card.match(/<\/div>/g) || []).length + ' close');
+
+  /* the intro's header is the character's own label, so it rides in the hero
+     column rather than as a band above the card — 66px of the difference */
+  ok('charCard takes a topper', /function charCard\(ch, \{ writerId, topper = "" \}\)/.test(appSrc));
+  ok('and the session intro passes one',
+     /charCard\(ch, \{ writerId: wid, topper \}\)/.test(appSrc));
+  ok('the intro no longer puts a band above the card',
+     !/body\.innerHTML = `\s*<div class="stack"[^`]*charCard/s.test(appSrc));
+
+  /* the wide-screen layout itself */
+  ok('a wide screen splits the card into character and text',
+     /@media \(min-width: 1000px\)[\s\S]*?\.cardx \{[\s\S]*?grid-template-columns: 17rem/.test(css));
+  ok('and balances the text into two columns, not a grid',
+     /\.cardx-blocks \{ display: block; columns: 2/.test(css));
+  ok('with each block kept whole',
+     /\.cardx-blocks > \.block \{ break-inside: avoid/.test(css));
+  ok('the gap is a margin, because column-gap is horizontal only',
+     /\.cardx-blocks > \.block \{[^}]*margin: 0 0 \.9rem/.test(css));
+  ok('the character stays put while you read about it',
+     /\.cardx > \.card-hero \{ position: sticky/.test(css));
+  ok('and the session column widens to hold it',
+     /\.ses-inner, \.ses-foot-inner \{ max-width: 64rem/.test(css));
+  /* narrow screens keep the single column — scrolling is right there */
+  ok('a narrow screen is left stacked',
+     /\.cardx \{ display: flex; flex-direction: column/.test(css));
+}
+
 console.log('\nsection headings are one convention, and hoverable');
 {
   /* Two conventions used to coexist: sprint.js put Chinese first — 错字本
