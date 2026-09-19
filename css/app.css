@@ -2089,6 +2089,11 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .sp-marks { max-width: 34rem; }
 }
 
+/* A reading carried alongside a bracketed meaning, so it identifies the
+   character rather than competing with it for attention. */
+.opt-say { opacity: .72; font-size: .92em; white-space: nowrap; }
+.opt.on .opt-say, .opt.right .opt-say, .opt.wrong .opt-say { opacity: .85; }
+
 /* A character with no stroke data, set in type rather than built stroke by
    stroke. Sized to sit in the 田字格 the way the animated one does. */
 .tian-plain {

@@ -341,6 +341,47 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\na meaning in brackets is not a translation');
+{
+  /* Seventeen of the 763 meanings open with a bracket — (measure: flat
+     things), (completed action marker) — and they are exactly the characters
+     with no English word behind them. In a recognition drill that fails twice
+     over: against three plain meanings it is answerable by elimination, and
+     against another bracketed one it asks the learner to tell 张 from 条 by a
+     couple of words of somebody's English. */
+  const jobs = HQ.filter(c => /^\(/.test(c.m));
+  ok(`${jobs.length} meanings are a job description rather than a translation`,
+     jobs.length > 0, jobs.map(c => c.c).join(''));
+  ok('and there are enough of them to draw a full set of distractors from',
+     jobs.length >= 4, jobs.length + ' of ' + HQ.length);
+
+  const appSrc = read('js/app.js');
+  ok('there is one test for that shape of gloss',
+     /const isJobGloss = m => \/\^\\\(\/\.test\(String\(m\)\);/.test(appSrc));
+  ok('a bracketed answer draws bracketed distractors',
+     /const kin = isJobGloss\(ch\.m\) \? pool\.filter\(x => isJobGloss\(x\.m\)\) : pool;/.test(appSrc));
+  ok('and falls back to the ordinary pool if there are not enough',
+     /if \(others\.length < 3\) \{[\s\S]{0,200}?3 - others\.length\)/.test(appSrc));
+
+  /* THE condition. Tagging a lone bracketed option would hand the answer
+     over: one option carrying pinyin and three without is a tell, and a
+     learner stops reading the options and starts looking for the pinyin. */
+  ok('the reading rides along only when two or more options need it',
+     /const say = ms\.filter\(isJobGloss\)\.length >= 2;/.test(appSrc));
+  ok('and it is never attached on any weaker condition',
+     !/isJobGloss\)\.length >= 1/.test(appSrc) && !/isJobGloss\)\.length > 0/.test(appSrc));
+  ok('an option only carries a reading if its own meaning is bracketed',
+     /say && o && isJobGloss\(m\)/.test(appSrc));
+
+  /* the one place the same gloss stands alone, with nothing to compare it to */
+  ok('the placement prompt gets the reading unconditionally',
+     /class="place-q">\$\{esc\(ch\.m\)\}\$\{isJobGloss\(ch\.m\)/.test(appSrc));
+  ok('and asks which character *is* it, not what it means',
+     /Which character \$\{isJobGloss\(ch\.m\) \? "is" : "means"\}/.test(appSrc));
+  ok('the reading is set quieter than the meaning it rides with',
+     /\.opt-say \{ opacity: \.72/.test(read('css/app.css')));
+}
+
 console.log('\na character with no stroke data is still drawn');
 {
   /* hanzi-writer fills an empty mount, so a character it has no data for

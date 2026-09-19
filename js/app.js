@@ -31,6 +31,19 @@ const RADICAL_GLOSS = {
 const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m]
   : (RADICAL_GLOSS[c] || (typeof EXTRA_GLOSS !== "undefined" && EXTRA_GLOSS[c]) || ["", ""]);
 
+/* A meaning in brackets is not a translation.
+
+   Seventeen of the 763 meanings open with one — (measure: flat things),
+   (completed action marker), (question and pause marker). They are exactly
+   the characters with no English word behind them: the particles and the
+   measure words. A learner told "(measure: flat things)" is being asked about
+   my phrasing rather than about their Chinese.
+
+   So wherever a meaning like that has to stand in for the character on its
+   own — a drill option, a placement prompt — the reading rides along. zhāng
+   is the thing that identifies 张; the bracket only says what it is for. */
+const isJobGloss = m => /^\(/.test(String(m));
+
 /* ---------- tiny helpers ---------- */
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -1290,7 +1303,38 @@ function renderDrill(item, ch, body, foot) {
   if (kind === "r") {
     prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
     correct = ch.m;
-    options = [ch.m, ...optionSet(ch.m, pool, x => x.m)].map(m => ({ v: m, html: esc(m) }));
+    const byMeaning = new Map(pool.map(x => [x.m, x]));
+    byMeaning.set(ch.m, ch);
+    /* A bracketed answer draws bracketed distractors, the way kind "c" draws
+       characters that share a component.
+
+       "(measure: flat things)" against "fresh", "cup" and "to return" is not
+       really a question about 张 — it is answerable by elimination without
+       knowing anything about measure words. Against 条, 件 and 位, with each
+       one's reading beside it, it asks the thing worth asking: which of these
+       is this one. Harder, and the only version that tests what the character
+       actually does. */
+    const kin = isJobGloss(ch.m) ? pool.filter(x => isJobGloss(x.m)) : pool;
+    let others = optionSet(ch.m, kin, x => x.m);
+    if (others.length < 3) {
+      others = [...others, ...optionSet(ch.m, pool.filter(x => !others.includes(x.m)),
+                                        x => x.m, 3 - others.length)];
+    }
+    /* The reading rides along, but ONLY when two or more of the four need it.
+
+       That condition is the whole point. Tagging a lone bracketed option would
+       hand the answer over: one option carrying a reading and three without is
+       a tell, and a learner would very quickly stop reading the options and
+       start looking for the pinyin. With two or more tagged there is nothing
+       to spot, and a single bracketed option among three plain ones was
+       always answerable anyway — it is the only one of its kind. */
+    const ms = [ch.m, ...others];
+    const say = ms.filter(isJobGloss).length >= 2;
+    options = ms.map(m => {
+      const o = byMeaning.get(m);
+      return { v: m, html: say && o && isJobGloss(m)
+        ? `${esc(m)} <span class="pin opt-say">${esc(o.p)}</span>` : esc(m) };
+    });
   } else if (kind === "p") {
     prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
     correct = ch.p;
@@ -3951,8 +3995,9 @@ function renderPlacement() {
 
   $("#placeBody").innerHTML = `<div class="place-inner">
     <span class="place-where">${esc(stage.icon)} ${esc(stage.name)} · #${ch.i + 1} of ${HQ.length}</span>
-    <span class="eyebrow">Which character means ${hanLabel("选字")}</span>
-    <h1 class="place-q">${esc(ch.m)}</h1>
+    <span class="eyebrow">Which character ${isJobGloss(ch.m) ? "is" : "means"} ${hanLabel("选字")}</span>
+    <h1 class="place-q">${esc(ch.m)}${isJobGloss(ch.m)
+      ? ` <span class="pin opt-say">${esc(ch.p)}</span>` : ""}</h1>
     <div class="place-opts">
       ${opts.map((o, i) => `<button class="place-opt" data-c="${esc(o.c)}">
         <kbd class="opt-n">${i + 1}</kbd><span class="han">${esc(o.c)}</span></button>`).join("")}
