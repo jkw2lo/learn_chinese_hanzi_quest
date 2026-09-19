@@ -615,6 +615,37 @@ console.log('\ntiers gate the library');
      fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
 }
 
+console.log('\nthe tally stays in its corner');
+{
+  /* tallyRow(n, max) draws complete 正 up to `max` and then collapses to one
+     mark and a multiplier. The default of 6 was chosen for a page that could
+     scroll, and in a fixed corner it fails at *particular* counts rather than
+     large ones: 50 reps came out as 正 × 10 and fitted, while 31 drew seven
+     glyphs — measured at 209px against 117px for the capped row. */
+  const appjs = read('js/app.js');
+  const src = appjs.slice(appjs.indexOf('function tallyRow'));
+  const body = src.slice(0, src.indexOf('\n}\n') + 3);
+  const glyphs = new Function('tallyMark', body + '\nreturn tallyRow;')(n => '<m' + n + '>');
+  const count = (n, max) => ((glyphs(n, max).match(/<m\d>/g) || []).length);
+
+  ok('the Go deeper corner asks for a cap', /tallyRow\(exToday, 3\)/.test(appjs));
+  /* the counts that used to draw a seventh glyph, and the ones that never did */
+  const swept = [15, 16, 20, 26, 31, 34, 50, 120, 400];
+  ok('no count draws more than four glyphs at the corner\'s cap',
+     swept.every(n => count(n, 3) <= 4),
+     swept.map(n => n + ':' + count(n, 3)).join(' '));
+  ok('and 31 in particular is three marks and a multiplier, not seven marks',
+     count(31, 3) === 1 && /× 6 \+ 1/.test(glyphs(31, 3)), glyphs(31, 3));
+  ok('the uncapped default is what it used to be, for pages that can scroll',
+     count(31) === 7);
+  ok('a corner that fits is left as it is', count(15, 3) === 3 && count(5, 3) === 1);
+  ok('and no reps at all still says so', /no reps yet today/.test(glyphs(0, 3)));
+  /* CSS side: the corner is bounded and a mark never wraps onto a second line */
+  const css = read('css/app.css');
+  ok('the corner has a width it cannot exceed', /\.deeper-count \{[^}]*max-width:/.test(css));
+  ok('and the row of marks never wraps', /\.tally-row \{[^}]*flex-wrap: nowrap/.test(css));
+}
+
 console.log('\nevery speakable button has something listening');
 {
   /* `data-speak` was on the menu's five "Say it out loud" phrases from the

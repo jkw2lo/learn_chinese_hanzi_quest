@@ -2377,6 +2377,12 @@ function tallyMark(strokes) {
 
 /* A row of them, with the last one part-drawn. Past `max` the row would stop
    being countable, so it becomes a multiplier instead. */
+/* `max` is how many complete 正 are drawn before the row collapses to one
+   mark and a multiplier. The default of 6 was chosen for a page that could
+   scroll; in a fixed corner it fails at *particular* counts rather than large
+   ones — 50 reps came out as 正 × 10 and fitted, while 31 drew seven glyphs
+   and pushed its container. Callers with a corner to stay inside pass their
+   own. */
 function tallyRow(n, max = 6) {
   if (!n) return `<span class="tally-none">${tallyMark(0)}<span>no reps yet today</span></span>`;
   const full = Math.floor(n / 5), rest = n % 5;
@@ -2703,7 +2709,7 @@ function renderToday() {
           that's what makes it the part that compounds.</p>
       </span>
       <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark">
-        ${tallyRow(exToday)}
+        ${tallyRow(exToday, 3)}
         <span class="deeper-n"><b>${exToday}</b> rep${exToday === 1 ? "" : "s"} today</span>
       </span>
     </div>
