@@ -1500,6 +1500,8 @@ function settle(item, ch, ok, foot, extra, slips) {
 
 function renderDone() {
   startQuestionTimer(false);              /* nothing left to time */
+  /* after the grade has landed, not over the top of it */
+  maybeHail(700);
   const answered = session.right + session.wrong;
   const acc = answered ? Math.round((session.right / answered) * 100) : 100;
   const mark = acc >= 90 ? "甲" : acc >= 75 ? "乙" : "丙";
@@ -1570,6 +1572,80 @@ function renderDone() {
   const or = $("#openReward");
   if (or) or.onclick = () => { endSession(); openQuest("menu"); };
   $("#sesProg").style.width = "100%";
+}
+
+/* ============================================================
+   Milestones
+
+   The copy names what those characters actually bought, rather than saying
+   well done. "A hundred" means nothing on its own; "new characters now arrive
+   as parts you have already met" is the thing worth being pleased about.
+   ============================================================ */
+
+const HAIL = {
+  100: { zh: "一百", title: "A hundred",
+         note: "A hundred is where the writing system stops being a wall of shapes. New characters now arrive as parts you have already met, stuck together." },
+  200: { zh: "二百", title: "Two hundred",
+         note: "The foundation is behind you. Signs, prices, the shape of a sentence — you have the parts that everything else in the library is built from." },
+  300: { zh: "三百", title: "Three hundred",
+         note: "Messages, labels, the short text on a poster. Around here you start recognising characters in the wild before you remember learning them." },
+  400: { zh: "四百", title: "Four hundred",
+         note: "Past the halfway mark of the common list. Most of what arrives now is a part you know beside a part you know." },
+  500: { zh: "五百", title: "Five hundred",
+         note: "Enough to read without a dictionary at your elbow most of the time. The gaps are getting specific rather than constant." },
+  600: { zh: "六百", title: "Six hundred",
+         note: "The vocabulary of written prose — institutions, argument, analysis. This is the part that opens news and articles." },
+  700: { zh: "七百", title: "Seven hundred",
+         note: "Around nine characters in ten on an ordinary page. What is left is the tail, and the tail is short." },
+  763: { zh: "通读", title: "The whole library",
+         note: "Every character in Hanzi Quest. They are all in your reviews now, and the reviews are the part that keeps them." }
+};
+
+function openHail(m) {
+  const h = HAIL[m];
+  if (!h) return;
+  const rads = new Set();
+  knownChars().forEach(c => (CHAR_INDEX[c].comp || []).forEach(k => { if (RADICALS[k]) rads.add(k); }));
+  const tier = TIERS.filter(t => m >= t.to).pop();
+  $("#hailCard").innerHTML = `
+    <div class="hail-seal"><span class="han">${esc(h.zh)}</span></div>
+    <h2>${esc(h.title)}</h2>
+    <p>${esc(h.note)}</p>
+    <div class="hail-stats">
+      <div><b>${knownChars().length}</b><small>characters</small></div>
+      <div><b>${daysStudied()}</b><small>days studied</small></div>
+      <div><b>${rads.size}</b><small>radicals met</small></div>
+    </div>
+    ${tier ? `<div class="hail-tier">${tier.icon} <b>${esc(tier.name)}</b>
+      <span class="han">${esc(tier.zh)}</span> — ${esc(tier.blurb)}</div>` : ""}
+    <button class="btn btn-block" id="hailOk">${m === HQ.length ? "Close" : "Keep going"}</button>`;
+  $("#hail").hidden = false;
+  document.body.style.overflow = "hidden";
+  $("#hailOk").onclick = closeHail;
+  $("#hailOk").focus();
+}
+
+function closeHail() {
+  $("#hail").hidden = true;
+  document.body.style.overflow = "";
+}
+
+/* Placement can credit three hundred characters before the first session has
+   been sat. Those milestones are recorded as passed rather than celebrated:
+   the overlay is for work done, and congratulating someone for the test they
+   have just taken would cheapen the five they earn afterwards. */
+function hailSilently() {
+  const m = milestoneDue();
+  if (m !== null) markMilestone(m);
+}
+
+/* Called where the count can jump on the strength of actual work: the end of
+   a session. */
+function maybeHail(delay = 0) {
+  const m = milestoneDue();
+  if (m === null) return;
+  markMilestone(m);
+  setTimeout(() => openHail(m), delay);
 }
 
 /* ============================================================
@@ -4345,6 +4421,7 @@ function renderPlacementDone() {
   $("#placeGo").onclick = () => {
     if (n) placeKnown(place.got);
     else { state.placed = { on: dayKey(), at: 0, known: 0 }; save(); }
+    hailSilently();
     closePlacement();
   };
 }
@@ -4577,6 +4654,7 @@ function boot() {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
     if ($("#sprintRun").classList.contains("on")) { e.preventDefault(); $("#spClose").click(); return; }
+    if (!$("#hail").hidden) { closeHail(); return; }
     if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();

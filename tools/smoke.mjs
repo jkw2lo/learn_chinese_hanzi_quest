@@ -24,6 +24,7 @@ const CONTRACT = [
   'studyAhead', 'aheadToday', 'dayGoal', 'newLeftToday', 'GOAL_MIN', 'GOAL_MAX',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
+  'MILESTONES', 'milestoneDue', 'markMilestone', 'hailed',
   'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied',
@@ -472,6 +473,76 @@ console.log('\na sentence gets to finish before the card moves');
      /if \(item\.said\) sayPhrase\(item\.said, true\); else say\(ch\.c, true\);/.test(appSrc));
   ok('and the reading drill records what it said',
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
+}
+
+console.log('\nmilestones');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {HQ,state,load,blank,MILESTONES,milestoneDue,markMilestone,hailed,placeKnown,introduce,knownChars,resetProgress};')();
+  const reset = () => { globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(a.blank()); return a.load(); };
+
+  ok('the list is every hundred, plus the end',
+     a.MILESTONES.slice(0, -1).every(m => m % 100 === 0)
+     && a.MILESTONES[a.MILESTONES.length - 1] === a.HQ.length,
+     a.MILESTONES.join(' '));
+  ok('and it ascends', a.MILESTONES.every((m, i) => !i || m > a.MILESTONES[i - 1]));
+  /* coarse on purpose: every fifty would give fifteen of these and each would
+     mean half as much */
+  ok('there are few enough of them to mean something', a.MILESTONES.length <= 10, a.MILESTONES.length);
+
+  let st = reset();
+  ok('nothing is due before anything is learned', a.milestoneDue() === null);
+  a.HQ.slice(0, 99).forEach(c => a.introduce(c.c));
+  ok('and nothing at ninety-nine', a.milestoneDue() === null, String(a.knownChars().length));
+  a.introduce(a.HQ[99].c);
+  ok('the first hundred is due at a hundred', a.milestoneDue() === 100);
+
+  /* Offer the HIGHEST passed, not the lowest: placement can credit three
+     hundred at once, and a queue of overlays to click through would turn the
+     moment into a chore. */
+  st = reset();
+  a.placeKnown(a.HQ.slice(0, 320).map(c => c.c));   /* st is the record load() returned */
+  ok('a big jump offers the highest passed, not the lowest', a.milestoneDue() === 300);
+  a.markMilestone(300);
+  ok('and marking it marks everything under it',
+     [100, 200, 300].every(m => a.hailed().includes(m)), a.hailed().join(' '));
+  ok('so nothing queues up behind it', a.milestoneDue() === null);
+
+  /* Record what was celebrated; do not derive it from the count. The count
+     goes down as well as up — a reset, a character dropped from the
+     curriculum — and deriving it congratulates someone twice for the same
+     hundred. */
+  const before = a.knownChars().length;
+  a.HQ.slice(260, 320).forEach(c => { delete st.chars[c.c]; });
+  ok('sixty characters can go away', a.knownChars().length === before - 60);
+  ok('and nothing re-arms', a.milestoneDue() === null, a.hailed().join(' '));
+
+  /* the record is the record: a fresh one has celebrated nothing */
+  const fresh = a.resetProgress();
+  ok('a reset clears what was celebrated', !(fresh.hailed || []).length);
+  ok('and hailed is part of a blank record', Array.isArray(a.blank().hailed));
+
+  /* A milestone with no card opens an empty overlay, and app.js has no DOM in
+     this harness — so compare the two as text. */
+  const appSrc = read('js/app.js');
+  const cards = [...appSrc.slice(appSrc.indexOf('const HAIL = {'), appSrc.indexOf('function openHail'))
+    .matchAll(/^\s{2}(\d+):/gm)].map(m => +m[1]);
+  ok(`every milestone has a card (${cards.length})`,
+     a.MILESTONES.every(m => cards.includes(m)),
+     a.MILESTONES.filter(m => !cards.includes(m)).join(' '));
+  ok('and every card has a milestone', cards.every(c => a.MILESTONES.includes(c)),
+     cards.filter(c => !a.MILESTONES.includes(c)).join(' '));
+
+  /* the four decisions, in the source */
+  ok('placement marks silently rather than celebrating the test you just took',
+     /hailSilently\(\);\n    closePlacement\(\);/.test(appSrc));
+  ok('a finished session is where it fires', /maybeHail\(700\);/.test(appSrc));
+  ok('and it celebrates with the same stamp the session grade uses',
+     /\.hail-seal \{[^}]*animation: stamp /s.test(read('css/app.css')));
+  const strip = t => t.replace(/\/\*[\s\S]*?\*\//g, '');
+  ok('there is no second celebratory gesture',
+     !/confetti/i.test(strip(appSrc) + strip(read('css/app.css'))));
 }
 
 console.log('\nthe numbers that turn out to be hardcoded');

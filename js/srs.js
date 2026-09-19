@@ -57,6 +57,7 @@ const blank = () => ({
   tour: false,
   writeDrills: true,
   padAuto: false,
+  hailed: [],           /* milestones already celebrated — see MILESTONES */
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
   name: "",
   interests: [],
@@ -371,6 +372,36 @@ function nextNew(n) {
 /* What is left that you're actually allowed to start on. Counting the whole
    library here would promise "study ahead" sessions the gate then refuses. */
 const remainingNew = () => HQ.slice(0, unlockedCeiling()).filter(ch => !state.chars[ch.c]).length;
+
+/* ---------- milestones ----------
+
+   Every hundredth character, and the last one, get a moment. The list is
+   deliberately coarse: a library of 763 gives eight of these, which is often
+   enough to look forward to and rare enough that one still means something.
+   Every fifty would give fifteen and each would mean half as much.
+
+   `hailed` records what has been celebrated rather than deriving it from the
+   count, because the count goes down as well as up — a reset, or a character
+   removed from the curriculum — and nobody should be congratulated twice for
+   the same hundred. */
+const MILESTONES = [100, 200, 300, 400, 500, 600, 700, HQ.length];
+const hailed = () => (state.hailed = state.hailed || []);
+
+/* The HIGHEST milestone reached and not yet celebrated, not the lowest. The
+   placement test can credit three hundred characters in one go, and a queue
+   of overlays to click through would turn the moment into a chore. */
+function milestoneDue() {
+  const n = knownChars().length;
+  const due = MILESTONES.filter(m => n >= m && !hailed().includes(m));
+  return due.length ? due[due.length - 1] : null;
+}
+
+/* Marking one marks everything below it, so the ones jumped over do not queue
+   up and surface one at a time over the next eight sessions. */
+function markMilestone(m) {
+  MILESTONES.forEach(x => { if (x <= m && !hailed().includes(x)) hailed().push(x); });
+  save();
+}
 
 /* ---------- word of the week ----------
 
