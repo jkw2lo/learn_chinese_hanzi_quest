@@ -3,11 +3,11 @@
      A browser that has cached js/app.js will keep serving it until something
      about the URL changes, which is why a push can be live and invisible at
      the same time. Bump with: node tools/version.mjs <next>  -->
-<script>const APP_VERSION = "1.8.0", APP_DATE = "2026-09-19";</script>
+<script>const APP_VERSION = "1.9.0", APP_DATE = "2026-09-19";</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/app.css?v=1.8.0">
+<link rel="stylesheet" href="css/app.css?v=1.9.0">
 
 <div class="app">
 
@@ -20,6 +20,7 @@
     </button>
     <nav class="top-nav" aria-label="Sections">
       <button data-nav="today" class="on"><span class="nz">今天</span> Today</button>
+      <button data-nav="menu"><span class="nz">菜单</span> Menu</button>
       <button data-nav="sprint"><span class="nz">速练</span> Sprint</button>
       <button data-nav="library"><span class="nz">字库</span> Library</button>
       <button data-nav="write"><span class="nz">练字</span> Write</button>
@@ -54,6 +55,7 @@
 
   <main>
     <section class="view on" id="viewToday"></section>
+    <section class="view" id="viewMenu"></section>
     <section class="view" id="viewSprint"></section>
     <section class="view" id="viewLibrary"></section>
     <section class="view" id="viewWrite"></section>
@@ -63,6 +65,7 @@
 
   <nav class="nav" aria-label="Sections">
     <button data-nav="today" class="on"><span class="nz">今天</span><span class="nl">Today</span></button>
+    <button data-nav="menu"><span class="nz">菜单</span><span class="nl">Menu</span></button>
     <button data-nav="sprint"><span class="nz">速练</span><span class="nl">Sprint</span></button>
     <button data-nav="library"><span class="nz">字库</span><span class="nl">Library</span></button>
     <button data-nav="write"><span class="nz">练字</span><span class="nl">Write</span></button>
@@ -203,12 +206,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
-<script src="js/data.js?v=1.8.0"></script>
-<script src="js/strokes.js?v=1.8.0"></script>
+<script src="js/data.js?v=1.9.0"></script>
+<script src="js/strokes.js?v=1.9.0"></script>
 <!-- js/audio.js is deliberately not here. It is 859 KB gzipped of base64 speech
      that nothing needs in the first second, and as a blocking script it held up
      every view behind it. app.js fetches it after the first render. -->
-<script src="js/srs.js?v=1.8.0"></script>
+<script src="js/srs.js?v=1.9.0"></script>
 <!-- before app.js: app.js builds its RENDER map at load and names renderSprint in it -->
-<script src="js/sprint.js?v=1.8.0"></script>
-<script src="js/app.js?v=1.8.0"></script>
+<script src="js/sprint.js?v=1.9.0"></script>
+<script src="js/app.js?v=1.9.0"></script>

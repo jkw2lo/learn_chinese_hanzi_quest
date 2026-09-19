@@ -2111,5 +2111,55 @@ console.log('\nsprint: the record behind the sheets');
      /function startRepair/.test(appSrc) && /REPAIR_MODE/.test(appSrc));
 }
 
+console.log('\nthe menu has a tab of its own');
+{
+  const appSrc = read('js/app.js'), html = read('index.html'), css = read('css/app.css');
+
+  ok('app.js renders the menu tab', /RENDER = \{[^}]*menu: renderQuest/.test(appSrc));
+  ok('index.html gives it a view', /id="viewMenu"/.test(html));
+  ok('and a tab in both navs', (html.match(/data-nav="menu"/g) || []).length === 2);
+  ok('the overlay it replaced is gone', !/openQuest/.test(appSrc),
+     'two renderings of one page, and the readable one was the one you had to go and find');
+  /* the dashboard points at the tab instead of restating it */
+  ok('the dashboard keeps a way in, not a second copy',
+     /class="sheet sq-peek"/.test(appSrc) && (appSrc.match(/class="sheet sq"/g) || []).length === 1);
+  ok('and it goes to the tab', /data-nav-to="menu"/.test(appSrc) && /go\(b\.dataset\.navTo\)/.test(appSrc));
+
+  /* The phrases belong on this page: six characters appear in them and
+     nowhere on the card, so this row is the only place they are legible. */
+  const quest = appSrc.slice(appSrc.indexOf('function renderQuest()'),
+                             appSrc.indexOf('$("#learnMenu")?.addEventListener'));
+  ok('renderQuest renders the phrase list', /MENU\.phrases\.map/.test(quest) && /class="phrase-list"/.test(quest));
+  ok('and the day\u2019s character is highlighted in them', /glyphs\(ph\[0\], target\)/.test(quest));
+  ok('the menu card is on the page at full size', /renderMenuCard\(target, true\)/.test(quest));
+  ok('and the legend says what the inks mean', /class="menu-legend"/.test(quest));
+
+  /* Every character the quest reaches has to be legible somewhere on the
+     page, or the page is asking for something it does not show. */
+  const shown = new Set([...print3, ...spoken]);
+  ok('every character the quest counts is printed or spoken on this page',
+     MENU_CHARS.every(c => shown.has(c)),
+     MENU_CHARS.filter(c => !shown.has(c)).join(' '));
+
+  /* The lesson is the card and no drill — a drill would grade it, and
+     grading is the schedule. */
+  ok('teachOne teaches one character', /function teachOne\(c, opts = \{\}\)/.test(appSrc));
+  ok('and the menu lesson is the card with no drill',
+     /session\.queue = menu\s*\n\s*\? \[\{ t: "intro", c, menu \}\]/.test(appSrc));
+  ok('the intro records it in the quest\u2019s book', /if \(item\.menu\) menuLearn\(item\.c\);/.test(appSrc));
+  ok('and not in the library', /else if \(!isKnown\(item\.c\)\) \{ introduce/.test(appSrc));
+  /* Finishing one used to tick off "Learn today's characters" — a task about
+     the day's five, completed from a different tab. */
+  ok('a menu lesson ticks nothing off', /if \(session\.menu\) \{ \/\* the side quest keeps its own books \*\//.test(appSrc));
+  ok('and clears no task either', /if \(session\.menu \|\| task\.copy \|\| didToday\(task\.id\)\) return;/.test(appSrc));
+  ok('every session start declares the flag',
+     (appSrc.match(/session\.menu = /g) || []).length === (appSrc.match(/session\.questAtStart = /g) || []).length,
+     'a stale menu flag would suppress a real session\u2019s bookkeeping');
+
+  /* the page's own classes are drawn */
+  ['sq-peek', 'ink-read', 'ink-bar', 'menu-say', 'sq-learn', 'menu-intro'].forEach(c =>
+    ok(`.${c} is styled`, new RegExp('\\.' + c + '\\b').test(css)));
+}
+
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');
 process.exit(failures ? 1 : 0);

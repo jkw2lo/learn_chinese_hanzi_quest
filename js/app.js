@@ -844,7 +844,7 @@ function bindCard(root, ch, writerId) {
 
 const session = { queue: [], idx: 0, right: 0, wrong: 0, learned: 0, reviewed: 0,
                   combo: 0, bestCombo: 0, active: false, questAtStart: 0, practice: null, todo: null, got: {},
-                  qStart: 0, times: [], quick: 0, repair: null };
+                  qStart: 0, times: [], quick: 0, repair: null, menu: false };
 
 /* A question is "quick" if it lands while the bar still has some drain left.
    Running out costs nothing — the bar is there to add pace, not a penalty. */
@@ -898,7 +898,40 @@ function startPractice(mode) {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = mode;
+  session.todo = null;
+  session.repair = null;
+  session.active = true;
+  $("#session").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderStep();
+}
+
+/* ---------- one character, on its own ----------
+
+   The Menu tab's "Learn 菜" used to be a button on the dashboard with the
+   reading and the meaning printed beside it — tapping it was the lesson,
+   which was thin for the only teaching this quest does. It opens the real
+   card now, the same one the daily session shows for a new character.
+
+   With one difference: the menu's lesson is the card and NOTHING else. No
+   drill follows it, because a drill would grade it, and grading is the
+   schedule — which is exactly what this quest is being kept out of. */
+function teachOne(c, opts = {}) {
+  if (!CHAR_INDEX[c]) return;
+  const menu = !!opts.menu;
+  session.queue = menu
+    ? [{ t: "intro", c, menu }]
+    : [{ t: "intro", c }, { t: "drill", c, kind: "r", fresh: !isKnown(c) }];
+  session.idx = 0;
+  session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.combo = session.bestCombo = 0;
+  session.got = {};
+  session.times = []; session.quick = 0;
+  session.questAtStart = menuProgress().known;
+  session.menu = menu;
+  session.practice = null;
   session.todo = null;
   session.repair = null;
   session.active = true;
@@ -945,6 +978,7 @@ function startRepair(chars) {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = null;
   session.todo = null;
   session.repair = cs;
@@ -975,6 +1009,7 @@ function buildSession() {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = null;
   session.todo = null;
   session.repair = null;
@@ -1081,7 +1116,11 @@ function renderStep() {
     bindCard(body, ch, wid);
     foot.innerHTML = `<button class="btn btn-block" id="gotIt">Got it — keep going</button>`;
     $("#gotIt").onclick = () => {
-      if (!isKnown(item.c)) { introduce(item.c); tally("new"); session.learned++; }
+      /* A character met on the menu is recorded by the menu and nowhere else:
+         no review date, no day count, no place in today's rail. The
+         curriculum teaches it properly in its own time. */
+      if (item.menu) menuLearn(item.c);
+      else if (!isKnown(item.c)) { introduce(item.c); tally("new"); session.learned++; }
       next();
     };
     setTimeout(() => say(ch.c), 340);
@@ -1511,13 +1550,18 @@ function renderDone() {
   const prac = session.practice ? PRACTICE[session.practice] : null;
   const fixing = session.repair;
   const cleared = fixing ? fixing.filter(c => rightRun(c) >= SPRINT_CLEAR) : [];
-  if (session.todo) markDone(session.todo);
+  /* A menu lesson ticks nothing off. Finishing one used to mark "Learn
+     today's characters" done — a task about the day's five, completed by
+     looking at a character from a different tab — which is the entanglement
+     this quest is being kept out of. */
+  if (session.menu) { /* the side quest keeps its own books */ }
+  else if (session.todo) markDone(session.todo);
   else if (!session.practice && !session.repair) markDone("learn");
   /* Doing the work counts wherever you did it: if every one of today's
      characters was answered correctly in a task's drill during this session,
      that task is done — even if you started it from Go deeper. */
   TODAY_TASKS.forEach(task => {
-    if (task.copy || didToday(task.id)) return;
+    if (session.menu || task.copy || didToday(task.id)) return;
     const pool = taskPool(task);
     if (!pool.length) return;
     if (pool.every(c => task.proves.some(k => session.got[k] && session.got[k].has(c)))) markDone(task.id);
@@ -1526,11 +1570,15 @@ function renderDone() {
 
   $("#sesInner").innerHTML = `
     <div class="done-wrap">
-      <div class="grade-seal">${mark}</div>
-      <span class="grade-note">${esc(gradeNote)} · ${acc}% correct</span>
+      ${session.menu ? `<div class="grade-seal">菜</div>
+      <span class="grade-note">One character, no drill</span>`
+      : `<div class="grade-seal">${mark}</div>
+      <span class="grade-note">${esc(gradeNote)} · ${acc}% correct</span>`}
       <div class="stack" style="gap:.3rem">
-        <h1>${fixing ? "Repair round done." : task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
-        <p class="muted" style="font-size:.9rem">${fixing
+        <h1>${session.menu ? "That one's on the menu." : fixing ? "Repair round done." : task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
+        <p class="muted" style="font-size:.9rem">${session.menu
+          ? "Recorded by the menu and nowhere else — your reviews, your day's list and your goal are exactly where you left them."
+          : fixing
           ? (cleared.length
               ? `${cleared.length} of ${fixing.length} off the 错字本 — ${cleared.map(esc).join(" ")}.`
                 + (cleared.length < fixing.length ? ` The rest need ${SPRINT_CLEAR} right in a row.` : "")
@@ -1539,7 +1587,7 @@ function renderDone() {
           ? `${answered} rep${answered === 1 ? "" : "s"}. Your reviews are untouched — this was extra.`
           : `${liveStreak()} day${liveStreak() === 1 ? "" : "s"} in a row.`}</p>
       </div>
-      <div class="done-stats">
+      ${session.menu ? "" : `<div class="done-stats">
         ${prac || fixing ? `<div><b>${session.right}</b><small>right</small></div>
                  <div><b>${session.wrong}</b><small>missed</small></div>`
                : `<div><b>${session.learned}</b><small>learned</small></div>
@@ -1547,7 +1595,7 @@ function renderDone() {
         <div><b>${session.bestCombo}</b><small>best run</small></div>
         ${session.times.length ? `<div><b>${(session.times.reduce((a, b) => a + b, 0) / session.times.length / 1000).toFixed(1)}s</b><small>average</small></div>
         <div><b>${session.quick}</b><small><span class="han">快</span> under ${QUICK_MS / 1000}s</small></div>` : ""}
-      </div>
+      </div>`}
       ${fixing ? `<button class="btn btn-ghost" id="againFix">Take the next five</button>`
       : prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
       : `<div class="quest-bump">
@@ -1570,7 +1618,7 @@ function renderDone() {
     : `<button class="btn btn-block" id="fin">Close</button>`;
   $("#fin").onclick = endSession;
   const or = $("#openReward");
-  if (or) or.onclick = () => { endSession(); openQuest("menu"); };
+  if (or) or.onclick = () => { endSession(); go("menu"); };
   $("#sesProg").style.width = "100%";
 }
 
@@ -1729,55 +1777,142 @@ function menuLevelLine(p) {
     + `<b>${esc(MENU_TIERS[t.n].label.toLowerCase())}</b>.`;
 }
 
-function openQuest(id) {
-  const q = QUESTS.find(x => x.id === id);
-  if (!q || q.locked) return;
+/* ---------- the Menu tab ----------
+
+   This lived in an overlay behind a "See the full menu" button on the Today
+   dashboard, with a squeezed summary of itself on the dashboard above it. That
+   is two renderings of one thing, and the one you could actually read was the
+   one you had to go and find. It is a page now: the quest's state, the card at
+   full size, and the phrases that teach the characters the card never prints,
+   all on the tab whose name is the thing it is about. */
+function renderQuest() {
   const p = menuProgress();
   const own = menuOwn();
   const pick = menuToday();
-  const target = pick.c && !menuCanRead(pick.c) ? pick.c : null;
+  const pch = pick.c ? CHAR_INDEX[pick.c] : null;
+  /* menuCanRead, not isKnown: the quest records what it teaches in its own
+     book, so asking the library whether today's character is done would always
+     say no and the page would offer to teach it again tomorrow. */
+  const learnedIt = pick.c ? menuCanRead(pick.c) : true;
+  const target = learnedIt ? null : pick.c;
 
-  openSheet(`🍜 Read a Menu <span class="dim" style="font-weight:400;font-size:.85rem">看菜单</span>`,
-    `<div class="wrap"><div class="section">
-      <div class="today-head">
-        <h1>${p.done ? "You can read this." : "The menu you're working towards."}</h1>
-        <p class="note">${p.done
-          ? `Every one of the ${p.total} characters printed here is one you can read`
-            + `${own ? ` — ${own} of them learned right here` : ""}. Hover any of them for a reminder.`
-          : `<b>${p.known}</b> of the <b>${p.total}</b> characters printed on this menu${menuOwnClause(p, own)}. `
-            + `All of them are in the curriculum, so this card goes all the way to readable — `
-            + `the grey ones are ahead of you, not out of reach.`}</p>
-      </div>
-      ${menuBar(p)}
-      <p class="note dim menu-read"><b>${Math.round(p.pct * 100)}%</b> of the ink on the card
-        — ${p.ink} of its ${p.inkTotal} characters, repeats and all, because 面 in five dishes
-        is five characters of wall that light up at once.${
-          p.capped ? ` The mark at ${Math.round(p.ceilingPct * 100)}% is where this stops: `
-                   + `the other ${p.inkTotal - p.ceiling} are dish names the curriculum never teaches.` : ""}</p>
-      <p class="note dim menu-read">${menuLevelLine(p)}</p>
-      <!-- Two inks, and two is the right number here: every character printed
-           on this card is one the curriculum teaches, so "not yet" is always
-           true of the grey ones. A menu that outgrew the library would need a
-           third — lighter again, for the ones it will never teach — because
-           inking those the same grey as a character you simply have not
-           reached puts the wall further from readable than it is. -->
-      <div class="menu-legend">
-        <span><b class="g known">读</b> you can read it</span>
-        <span><b class="g">未</b> not yet — hover for the gloss</span>
-      </div>
-      ${renderMenuCard(target, true)}
-      <div class="sheet block">
-        <div class="block-head"><span class="k">口语</span><span class="t">Say it out loud</span></div>
-        <div class="phrase-list">
-          ${MENU.phrases.map(ph => `<button class="phrase" data-speak="${esc(ph[0])}">
-            <span class="z">${glyphs(ph[0], target)}</span>
-            <span class="p">${esc(ph[1])}</span>
-            <span class="e">${esc(ph[2])}</span>
-          </button>`).join("")}
+  const card = `<div class="sheet sq">
+    <div class="sq-top">
+      <span class="sq-icon">🍜</span>
+      <span class="sq-name"><b>Read a Menu</b><span class="zh">看菜单</span></span>
+      <span class="sq-frac" title="Characters printed on this menu, and how many of them you can read — from here or anywhere else in the app">${p.known}/${p.total}</span>
+    </div>
+    ${menuBar(p)}
+    <p class="note">${p.done
+      ? `Every one of the <b>${p.total}</b> characters printed on this menu is one you can read`
+        + `${own ? ` — ${own} of them learned right here` : ""}. `
+        + `Section heads, small print, specials board and all.`
+      : `<b>${p.known}</b> of the <b>${p.total}</b> characters printed on this menu${menuOwnClause(p, own)}. `
+        + `All of them are in the curriculum, so this card goes all the way to readable — `
+        + `the grey ones are ahead of you, not out of reach.`}<br>
+      <span class="sq-lvl">${menuLevelLine(p)}</span></p>
+
+    ${pch ? `<div class="sq-target ${learnedIt ? "done" : ""}">
+      <span class="sq-glyph">${esc(pch.c)}</span>
+      <span class="sq-info">
+        <span class="t">${learnedIt ? "Today's menu character — learned" : "Today's menu character"}</span>
+        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}`
+          : "One character a day, and it is printed on the menu as it stands — in red, below."}</span>
+        ${learnedIt
+          ? `<span class="p">Next one tomorrow. Nothing here touches your review queue.</span>`
+          : `<span class="p">${esc(pch.words[0][0])} · ${esc(pch.words[0][2])}</span>`}
+      </span>
+      ${!learnedIt ? `<button class="btn btn-seal sq-learn" id="learnMenu">Learn ${esc(pch.c)}</button>` : ""}
+    </div>` : `<div class="sq-target done">
+      <span class="sq-glyph">✓</span>
+      <span class="sq-info"><span class="t">You can read this menu</span>
+      <span class="m">Every character printed on it — all ${p.total}, specials board and small print
+        included${own ? `, ${own} of them learned right here` : ""}. Hover any of them for a reminder.</span></span>
+    </div>`}
+
+    ${(() => {
+      /* The one number you can check by looking up at a menu.
+
+         Counted in ink rather than in vocabulary: every character printed on
+         the card, repeats and all, because 面 in five dishes is five
+         characters of wall that light up when you learn it. The 54-character
+         pair above answers "how many of the list do I know"; this answers "how
+         much of this can I read", which is the question the quest is named
+         after, and it moves every session rather than only when a menu
+         character comes up.
+
+         The ceiling is drawn on the track rather than hidden. It sits at the
+         end here — this curriculum teaches all 54 — so `capped` is false and
+         no tick is drawn. On a card with dish names no curriculum this size
+         would teach, the fill would stop short, and a bar that quietly halts
+         reads as broken. */
+      const pct = Math.round(p.pct * 100), cap = Math.round(p.ceilingPct * 100);
+      return `<div class="ink-read">
+        <div class="ink-top">
+          <span class="ink-pct">${pct}<small>%</small></span>
+          <span class="ink-say"><b>of this menu is legible to you</b>
+            <small>${p.ink} of the ${p.inkTotal} characters printed on it — repeats and all, because
+              <span class="han">面</span> in five dishes is five characters of wall.</small></span>
         </div>
+        <div class="ink-bar" role="img" aria-label="${pct}% of the menu legible${p.capped ? `, out of a possible ${cap}%` : ""}">
+          <i style="width:${(p.pct * 100).toFixed(1)}%"></i>
+          ${p.capped ? `<b style="left:${(p.ceilingPct * 100).toFixed(1)}%"></b>` : ""}
+        </div>
+        <p class="ink-foot">${p.capped
+          ? `The mark at ${cap}% is where this stops: the other ${p.inkTotal - p.ceiling} characters
+             are dish names the curriculum never teaches.`
+          : `The bar runs to 100: every character printed on this card is one Hanzi Quest teaches,
+             so there is no part of this wall you are being kept from.`}</p>
+      </div>`;
+    })()}
+
+    <div class="menu-wrap full">${renderMenuCard(target, true)}</div>
+
+    <!-- The phrases belong on this tab, not in a drawer somewhere else. Six
+         characters — 这 少 给 服 务 员 — are in the quest's reach and printed
+         nowhere on the card; this row is the only place they appear, and the
+         day's character is highlighted here too when it turns up in one. -->
+    <div class="menu-say">
+      <div class="menu-say-head">
+        <span class="eyebrow">Say it out loud ${hanLabel("口语")}</span>
+        <span class="dim" style="font-size:.72rem">tap to hear</span>
       </div>
-      
-    </div></div>`);
+      <div class="phrase-list" style="--phrase-n:${Math.min(MENU.phrases.length, 6)}">
+        ${MENU.phrases.map(ph => `<button class="phrase" data-speak="${esc(ph[0])}">
+          <span class="z">${glyphs(ph[0], target)}</span>
+          <span class="p">${esc(ph[1])}</span>
+          <span class="e">${esc(ph[2])}</span>
+        </button>`).join("")}
+      </div>
+    </div>
+
+    <!-- Two inks, and two is the right number here: every character printed on
+         this card is one the curriculum teaches, so "not yet" is always true of
+         the grey ones. A menu that outgrew the library would need a third —
+         lighter again, for the ones it will never teach — because inking those
+         the same grey as a character you simply have not reached puts the wall
+         further from readable than it is. -->
+    <div class="menu-legend">
+      <span><b class="g known">读</b> you can read it</span>
+      <span><b class="g">未</b> not yet — it is in the curriculum</span>
+      ${!learnedIt ? `<span><b class="g target">红</b> today's character</span>` : ""}
+      <span class="dim">Hover any character for its meaning</span>
+    </div>
+  </div>`;
+
+  $("#viewMenu").innerHTML = `<div class="wrap">
+    <div class="today-head menu-intro">
+      <h1>The menu</h1>
+      <p class="note">A restaurant menu printed the way one is — one character a day, and the ones
+        you know ink themselves in. It grows as you do: dish names first, then the small print,
+        then the specials board. Hover any character for what it says.</p>
+    </div>
+    ${card}
+  </div>`;
+
+  /* The lesson is the card and no drill. A drill would grade it, and grading
+     is the schedule — which is exactly what this tab is being kept out of. */
+  $("#learnMenu")?.addEventListener("click", () => teachOne(pick.c, { menu: true }));
 }
 
 /* ============================================================
@@ -2872,6 +3007,7 @@ function startTodayDrill(task) {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = "read";              /* graded gently, like any practice */
   session.todo = task.id;
   session.active = true;
@@ -3180,49 +3316,28 @@ function renderToday() {
     </div>
   </section>`;
 
-  /* ---- the side quest ---- */
+  /* The side quest used to sit here, squeezed into a dashboard block that
+     could say where it had got to and not much else, with the menu itself an
+     overlay behind "See the full menu". It has its own tab now — the card at
+     full size, the phrases, and the day's character all on one page. What the
+     dashboard keeps is a line pointing at it, because the daily pick is worth
+     knowing about from Today; what it loses is a second, worse rendering of
+     the same thing. */
   const mp = menuProgress();
   const pick2 = menuToday();
-  const pch = pick2.c ? CHAR_INDEX[pick2.c] : null;
-  /* menuCanRead, not isKnown: the quest's own book is the one that says
-     whether today's character is done, and a character it taught never reaches
-     the library. Reading isKnown here meant today's pick never looked finished
-     and was offered again tomorrow. */
   const learnedIt = pick2.c ? menuCanRead(pick2.c) : true;
-
-  const sideQuest = `<div class="sheet sq">
-    <div class="sq-top">
-      <span class="sq-icon">🍜</span>
-      <span class="sq-name"><b>Read a Menu</b><span class="zh">看菜单</span></span>
-      <span class="sq-frac">${Math.round(mp.pct * 100)}% legible</span>
-    </div>
-    ${menuBar(mp)}
-    <p class="note">${mp.known} of the ${mp.total} characters printed on the card.
-      ${menuLevelLine(mp)}</p>
-
-    ${pch ? `<div class="sq-target ${learnedIt ? "done" : ""}">
-      <span class="sq-glyph">${esc(pch.c)}</span>
-      <span class="sq-info">
-        <span class="t">${learnedIt ? "Today's menu character — learned" : "Today's menu character"}</span>
-        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}` : "One character a day, and it is printed on the menu as it stands."}</span>
-        ${learnedIt ? `<span class="p">Next one tomorrow.</span>` : `<span class="p">${esc(pch.words[0][0])} · ${esc(pch.words[0][2])}</span>`}
-      </span>
-    </div>` : `<div class="sq-target done">
-      <span class="sq-glyph">✓</span>
-      <span class="sq-info"><span class="t">Quest complete</span>
-      <span class="m">You can read every character printed on this menu — all ${mp.total} of them.</span></span>
-    </div>`}
-
-    <div class="sq-actions">
-      ${!learnedIt ? `<button class="btn btn-block" id="learnMenu">Learn ${esc(pch.c)}</button>` : ""}
-      <button class="btn btn-ghost" id="openMenuFull">See the full menu</button>
-    </div>
-
-  </div>`;
-  /* The whole menu used to be printed here — 352px of the side quest's 692,
-     and the same card is one click away behind "See the full menu", where it
-     has room to be read. On a dashboard this block's job is to say where the
-     quest has got to and what today's character is. */
+  const sideQuest = `<button class="sheet sq-peek" data-nav-to="menu">
+    <span class="sq-icon">🍜</span>
+    <span class="sq-peek-say">
+      <b>Read a Menu ${hanLabel("看菜单")}</b>
+      <small>${pick2.c
+        ? learnedIt
+          ? `Today's character <span class="han">${esc(pick2.c)}</span> is learned — ${Math.round(mp.pct * 100)}% of the menu is legible to you.`
+          : `Today's character is <span class="han">${esc(pick2.c)}</span>, printed on the menu as it stands. ${Math.round(mp.pct * 100)}% of it is legible to you.`
+        : `You can read every character on it. ${mp.total} of ${mp.total}.`}</small>
+    </span>
+    <span class="sq-peek-go" aria-hidden="true">→</span>
+  </button>`;
 
   $("#viewToday").innerHTML = `<div class="wrap">
     <div class="dash">
@@ -3265,22 +3380,7 @@ function renderToday() {
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
   $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
-  $("#openMenuFull")?.addEventListener("click", () => openQuest("menu"));
-  /* openMenuLesson() never existed — the name appeared exactly once in the
-     repository, at this call site, so "Learn 山" threw a ReferenceError and
-     did nothing at all. menuLearned() is the function that was written for
-     this button, in srs.js beside the rest of the quest's bookkeeping, and it
-     was dead for the same reason: nothing called it. The block above this
-     button already prints the character, its reading, its meaning and a word
-     it appears in, so tapping it is the lesson.
-
-     And a lesson is all it is: menuLearned() writes to state.menuTaught and
-     stops. It used to call introduce() and tally("new"), which put a character
-     you picked up on an errand into today's rail, counted it against the day's
-     goal and moved the ring — so "5 learned" meant six, on a day you had not
-     opened a session. No drill either: a drill would grade it, and grading is
-     the schedule. */
-  $("#learnMenu")?.addEventListener("click", () => { menuLearned(); renderToday(); });
+  $$("#viewToday [data-nav-to]").forEach(b => b.onclick = () => go(b.dataset.navTo));
   $("#ltMore")?.addEventListener("click", () => { todayOpen = !todayOpen; renderToday(); });
   $$("#viewToday .lt-arrow").forEach(b => b.onclick = () => {
     const rail = $("#ltStrip");
@@ -4918,8 +5018,18 @@ const COACH = {
       body: "The word of the week comes from what you said you were interested in. Below it, every character you know as flashcards." },
     { sel: ".deeper", k: "加练", title: "The part that compounds",
       body: "Reps past today's list, weakest first. None of it is required and none of it can be finished — that is what makes it the part that compounds." },
-    { sel: ".sq", k: "看菜单", title: "A side quest with an ending",
-      body: "One character a day from a real restaurant menu. Learn them all and you can read the whole thing." }
+    { sel: ".sq-peek", k: "看菜单", title: "A side quest with an ending",
+      body: "One character a day from a real restaurant menu. This is the way in; the menu itself has its own tab." }
+  ]},
+  menu: { label: "the Menu", steps: [
+    { sel: ".sq-target", k: "今日一字", title: "One character a day",
+      body: "Picked off the menu as it is printed for you right now, so it is always something you can go and find. Learning it here records it here — nothing on this tab enters your review queue or counts against the day." },
+    { sel: ".ink-read", k: "读得懂", title: "How much of the wall you can read",
+      body: "Counted in ink rather than in vocabulary: every character printed on the card, repeats and all, because one character in five dishes is five characters of wall that light up at once." },
+    { sel: ".menu-card", k: "菜单", title: "The menu itself",
+      body: "Black is a character you can read, grey is one you have not reached yet, red is today's. It grows in three levels — dish names, then the small print, then the specials board — and you get the next one when you can read this one." },
+    { sel: ".menu-say", k: "口语", title: "What you say to the waiter",
+      body: "Tap any of them to hear it. Six of the characters in these phrases are printed nowhere on the card, so this row is the only place they turn up." }
   ]},
   sprint: { label: "Sprint", steps: [
     { sel: ".sp-panels", k: "速练", title: "A sheet against the clock",
@@ -5051,7 +5161,7 @@ function renderCoach() {
   $("#coachNext").focus();
 }
 
-const RENDER = { today: renderToday, sprint: renderSprint, library: renderLibrary,
+const RENDER = { today: renderToday, menu: renderQuest, sprint: renderSprint, library: renderLibrary,
                  write: renderWrite, radicals: renderRadicals, record: renderRecord };
 
 function go(v) {
