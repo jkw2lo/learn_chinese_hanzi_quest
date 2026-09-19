@@ -2877,13 +2877,19 @@ function tierGateNote(t) {
 }
 
 function renderLibrary() {
+  /* The stage chips are "s" + the stage number, and this used to read the
+     number as `libFilter[1]` behind a `length === 2` guard — so it only ever
+     worked for the single-digit stages. There are thirteen now: s10 to s13
+     failed the guard, the clause never ran, and four chips lit up while
+     showing the whole library. Match the number however many digits it has. */
+  const stageOnly = /^s(\d+)$/.exec(libFilter);
   const chars = HQ.filter(ch => {
     const st = strength(ch.c);
     if (libFilter === "due" && st !== "due") return false;
     if (libFilter === "learning" && st !== "learning") return false;
     if (libFilter === "strong" && st !== "strong") return false;
     if (libFilter === "new" && isKnown(ch.c)) return false;
-    if (libFilter[0] === "s" && libFilter.length === 2 && ch.stage !== +libFilter[1]) return false;
+    if (stageOnly && ch.stage !== +stageOnly[1]) return false;
     if (libSearch && !(matches(ch, libSearch)
         || ch.words.some(w => w[0].includes(libSearch) || bare(w[2]).includes(bare(libSearch))))) return false;
     return true;

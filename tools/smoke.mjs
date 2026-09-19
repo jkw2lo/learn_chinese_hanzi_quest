@@ -615,6 +615,34 @@ console.log('\ntiers gate the library');
      fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
 }
 
+console.log("\nthe Library's stage chips reach every stage");
+{
+  /* The chips are "s" + the stage number, and the filter used to read that
+     number as libFilter[1] behind a `length === 2` guard. With thirteen
+     stages, s10 to s13 failed the guard, the clause never ran, and four chips
+     lit up while showing the whole library. */
+  const appjs = read('js/app.js');
+  ok('the single-digit guard is gone', !/libFilter\.length === 2/.test(appjs));
+  const lit = (appjs.match(/\/\^s\(\\d\+\)\$\//) || [])[0];
+  ok('the stage key is matched by digits, not by length', !!lit, lit || 'not found');
+  const re = new RegExp('^s(\\d+)$');
+
+  /* the chip keys the page actually builds, checked against the curriculum */
+  const keys = STAGES.map(st => 's' + st.n);
+  const parsed = keys.map(k => (re.exec(k) || [])[1]);
+  ok('every stage chip parses', parsed.every((n, i) => +n === STAGES[i].n),
+     keys.filter((k, i) => +parsed[i] !== STAGES[i].n).join(' ') || 'all');
+  ok('including the double-digit ones', STAGES.some(st => st.n >= 10) && +re.exec('s13')[1] === 13);
+  /* and each one picks out its own stage rather than the whole library */
+  const picked = STAGES.map(st => HQ.filter(ch => ch.stage === +re.exec('s' + st.n)[1]).length);
+  ok('and selects only its own characters', picked.every((n, i) => n > 0 && n < HQ.length),
+     picked.join(' '));
+  ok('the stages between them account for the whole library',
+     picked.reduce((a, b) => a + b, 0) === HQ.length, picked.reduce((a, b) => a + b, 0) + ' of ' + HQ.length);
+  /* "strong" also begins with s, and must not be read as a stage */
+  ok('a filter that merely starts with s is not a stage', !re.test('strong'));
+}
+
 console.log('\nthe tally stays in its corner');
 {
   /* tallyRow(n, max) draws complete 正 up to `max` and then collapses to one
