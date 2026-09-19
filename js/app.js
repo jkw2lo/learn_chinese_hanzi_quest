@@ -184,23 +184,36 @@ function playClip(text) {
   } catch { return false; }
 }
 
-let phraseTimer = null;
+let phraseTimer = null, phraseEnd = null, phraseActive = false;
 
 /* Only single characters have bundled clips, and the system voice can't be
    relied on here — so a word or sentence is read one character at a time from
    the clips. Not connected speech, but every character is actually spoken. */
+/* A chain cut short does not owe anyone the callback: otherwise skipping a
+   card would advance the next one early. */
 function stopPhrase() {
   clearTimeout(phraseTimer);
   phraseTimer = null;
+  phraseEnd = null;
   if (audioEl) audioEl.onended = null;
 }
 
-function sayPhrase(text, force) {
+/* Attach to a chain already in flight. settle() runs after the audio has
+   started — the drill speaks first and grades second — so it cannot pass a
+   callback in, and there is no length to know up front either: a line is one
+   clip per character and the clips load lazily. */
+function onPhraseEnd(fn) {
+  if (!phraseActive) return false;
+  phraseEnd = fn;
+  return true;
+}
+
+function sayPhrase(text, force, onDone) {
   if ((!state.audio && !force) || !text) return;
   const chars = [...text].filter(c => /[\u4e00-\u9fff]/.test(c));
   if (!chars.length) return;
   stopPhrase();
-  if (chars.length === 1) return say(chars[0], force);
+  if (chars.length === 1) { say(chars[0], force); if (onDone) onDone(); return; }
 
   /* One missing clip used to abandon the whole word to the system voice, which
      on a machine without a Chinese voice meant silence: 现金 said nothing
@@ -211,10 +224,18 @@ function sayPhrase(text, force) {
      keeps a bundle that has drifted from the data merely imperfect rather than
      mute. */
   lastSaid = text;
+  phraseActive = true;
+  phraseEnd = onDone || null;
   const a = ensureAudioEl();
   let i = 0;
+  const done = () => {
+    a.onended = null;
+    phraseActive = false;
+    const fn = phraseEnd; phraseEnd = null;
+    if (fn) fn();
+  };
   const step = () => {
-    if (i >= chars.length) { a.onended = null; return; }
+    if (i >= chars.length) { done(); return; }
     const c = chars[i++];
     if (!clipFor(c)) {           /* nothing recorded for this one — carry on */
       a.onended = null;
@@ -1038,8 +1059,32 @@ function renderStep() {
    land, then move on by itself — but only when it was right; a miss is the
    one time you actually need to read what's on screen. */
 const AUTO_ADVANCE_MS = 1400;
+
+/* Read them in context plays the line back when you answer it, and the next
+   card's renderStep() calls stopPhrase() — so a flat 1400ms advance was what
+   silenced the audio. Timed in the app: 我可以问你一个问题吗？ is 4957ms of
+   clips, so 1400 cut it off after 2.8 characters of ten. The advance waits for
+   the line to finish instead, then leaves a shorter tail — not the full 1400,
+   because you have already had five seconds of sentence to take it in. */
+const PHRASE_TAIL_MS = 650;
+
 let advanceTimer = null;
-function clearAdvance() { clearTimeout(advanceTimer); advanceTimer = null; }
+/* Bumped on every clear, and checked by anything queued behind a sentence, so
+   an advance waiting on audio cannot fire after you have pressed Next
+   yourself. */
+let advanceGen = 0;
+function clearAdvance() { clearTimeout(advanceTimer); advanceTimer = null; advanceGen++; }
+
+/* Wait for a phrase in flight before starting the countdown; if nothing is
+   playing, this is the plain 1400ms it always was. */
+function armAdvance(fn, ms = AUTO_ADVANCE_MS) {
+  const gen = advanceGen;
+  const start = () => { if (gen === advanceGen) advanceTimer = setTimeout(fn, ms); };
+  if (!onPhraseEnd(() => {
+    if (gen !== advanceGen) return;
+    advanceTimer = setTimeout(fn, PHRASE_TAIL_MS);
+  })) start();
+}
 
 const next = () => { clearAdvance(); session.idx++; renderStep(); };
 
@@ -1302,7 +1347,7 @@ function renderDrill(item, ch, body, foot) {
       if (b.dataset.v === correct) { b.classList.add("right"); b.insertAdjacentHTML("beforeend", `<span class="mk">✓</span>`); }
     });
     if (!ok) { btn.classList.remove("right"); btn.classList.add("wrong"); btn.querySelector(".mk")?.remove(); btn.insertAdjacentHTML("beforeend", `<span class="mk">✗</span>`); }
-    if (kind === "d") sayPhrase(spoken || ch.c);          /* the whole phrase shown */
+    if (kind === "d") { item.said = spoken || ch.c; sayPhrase(item.said); }  /* the whole phrase shown */
     else if (["p","r","l"].includes(kind)) say(ch.c);
     settle(item, ch, ok, foot);
   });
@@ -1362,16 +1407,25 @@ function settle(item, ch, ok, foot, extra, slips) {
     </div>
     <div class="split">
       ${ok || writing ? "" : `<button class="btn ${isLeech(ch.c) ? "btn-seal" : "btn-ghost"}" id="review">Study the card</button>`}
-      <button class="btn ${ok ? "btn-timed" : ""}" id="cont" style="--wait:${AUTO_ADVANCE_MS}ms">${ok ? "Next" : "Continue"}</button>
+      <button class="btn" id="cont" style="--wait:${AUTO_ADVANCE_MS}ms">${ok ? "Next" : "Continue"}</button>
     </div>`;
   /* listening again means you want to stay on this card */
   $("#replay")?.addEventListener("click", () => {
     clearAdvance();
     $("#cont")?.classList.remove("btn-timed");
-    say(ch.c, true);
+    /* what was read, not one character of it — the reading drill shows a whole
+       sentence and this used to answer it with the single character */
+    if (item.said) sayPhrase(item.said, true); else say(ch.c, true);
   });
   $("#cont").onclick = next;
-  if (ok) advanceTimer = setTimeout(next, AUTO_ADVANCE_MS);
+  /* The button's countdown is armed only for the part that is a countdown.
+     While the line is still playing it reads as a plain Next, which is true:
+     nothing is ticking, and pressing it still works. */
+  if (ok) {
+    const tick = () => $("#cont")?.classList.add("btn-timed");
+    if (phraseActive) onPhraseEnd(() => { tick(); armAdvance(next, PHRASE_TAIL_MS); });
+    else { tick(); armAdvance(next); }
+  }
   const rv = $("#review");
   if (rv) rv.onclick = () => { session.queue.splice(session.idx, 0, { t: "intro", c: ch.c }); renderStep(); };
   $("#cont").focus();

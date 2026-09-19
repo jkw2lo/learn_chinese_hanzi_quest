@@ -341,6 +341,48 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\na sentence gets to finish before the card moves');
+{
+  /* Read them in context plays the line back when you answer it, and the next
+     card's renderStep() calls stopPhrase() — so a flat 1400ms advance was
+     what silenced the audio. Timed in the app: 我可以问你一个问题吗？ is
+     4957ms of clips, so 1400 cut it off after 2.8 characters of ten. */
+  const appSrc = read('js/app.js');
+  ok('there is a shorter tail for after a line has played',
+     /const PHRASE_TAIL_MS = \d+;/.test(appSrc));
+  const tail = +(appSrc.match(/const PHRASE_TAIL_MS = (\d+);/) || [])[1];
+  const flat = +(appSrc.match(/const AUTO_ADVANCE_MS = (\d+);/) || [])[1];
+  ok('and it is shorter than the plain one, because you have already heard the line',
+     tail > 0 && tail < flat, tail + ' vs ' + flat);
+  ok('sayPhrase can tell you when it has finished',
+     /function sayPhrase\(text, force, onDone\)/.test(appSrc));
+  ok('and something already playing can be attached to',
+     /function onPhraseEnd\(fn\) \{[\s\S]*?if \(!phraseActive\) return false;/.test(appSrc));
+  ok('the advance waits for it', /function armAdvance\(/.test(appSrc));
+  ok('and settle arms through that rather than a bare timeout',
+     /armAdvance\(next/.test(appSrc) && !/advanceTimer = setTimeout\(next, AUTO_ADVANCE_MS\)/.test(appSrc));
+
+  /* the three details that make it safe */
+  ok('clearing an advance bumps a generation counter',
+     /function clearAdvance\(\) \{[^}]*advanceGen\+\+/.test(appSrc));
+  ok('and anything queued behind a line checks it before firing',
+     (appSrc.match(/if \(gen !== advanceGen\) return;/g) || []).length >= 1);
+  ok('a chain cut short drops its callback, so skipping cannot advance the next card early',
+     /function stopPhrase\(\) \{[^}]*phraseEnd = null;/.test(appSrc));
+  /* While the line plays the button reads as a plain Next, which is true:
+     nothing is ticking, and pressing it still works. */
+  ok('the Next button is not born with a countdown on it',
+     /<button class="btn" id="cont" style=/.test(appSrc));
+  ok('and gets one only when an advance is actually armed',
+     /classList\.add\("btn-timed"\)/.test(appSrc));
+
+  /* the second bug found in there */
+  ok('the verdict replays the line that was read, not one character of it',
+     /if \(item\.said\) sayPhrase\(item\.said, true\); else say\(ch\.c, true\);/.test(appSrc));
+  ok('and the reading drill records what it said',
+     /item\.said = spoken \|\| ch\.c;/.test(appSrc));
+}
+
 console.log('\nthe teaching card fits the screen it teaches on');
 {
   /* charCard() is six blocks in a 34rem column. Stacked, that measured 1313px
