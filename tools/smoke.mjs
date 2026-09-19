@@ -615,6 +615,25 @@ console.log('\ntiers gate the library');
      fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
 }
 
+console.log('\nevery speakable button has something listening');
+{
+  /* `data-speak` was on the menu's five "Say it out loud" phrases from the
+     start and nothing anywhere ever listened for it — a row of buttons that
+     did nothing at all. app.js needs a browser, so this reads the source: the
+     attribute and its reader have to travel together. */
+  const appjs = read('js/app.js');
+  const emitted = (appjs.match(/data-speak=/g) || []).length;
+  ok('the markup still marks phrases as speakable', emitted > 0, emitted + ' emitted');
+  ok('and a listener reads dataset.speak', /\bdataset\.speak\b/.test(appjs));
+  ok('it is a delegated listener, so markup rendered later is covered',
+     /document\.addEventListener\("click"[\s\S]{0,200}?closest\("\[data-speak\]"\)/.test(appjs));
+  ok('it speaks even with audio off, because the click is the request',
+     /sayPhrase\(text, true\)/.test(appjs));
+  ok('and init wires it up', /^\s*initSpeakables\(\);/m.test(appjs));
+  ok('a click that makes no sound still reads as a click',
+     /classList\.add\("said"\)/.test(appjs) && /\.phrase\.said/.test(read('css/app.css')));
+}
+
 console.log('\nspace moves you on; it does not answer for you');
 {
   /* app.js needs a browser, so this reads the source. #skipW was in the

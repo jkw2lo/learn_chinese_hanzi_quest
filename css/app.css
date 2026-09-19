@@ -1504,6 +1504,7 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 .nb-tools { display: flex; gap: .5rem; justify-content: center; }
 .phrase { cursor: pointer; }
 .phrase:hover { background: var(--sunken); }
+.phrase.said { background: var(--seal-wash); }
 
 .nb-progress { display: flex; align-items: center; gap: .6rem; width: min(26rem, 90vw); }
 .nb-count { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -1549,6 +1549,26 @@ function renderMenuCard(target, tall) {
   </div>`;
 }
 
+/* ---------- anything marked [data-speak] says itself ----------
+
+   data-speak was on the menu's five phrases from the start and nothing ever
+   listened for it: "Say it out loud" was a row of buttons that did nothing at
+   all. One delegated listener covers those and anything marked the same way
+   later. */
+function initSpeakables() {
+  document.addEventListener("click", e => {
+    const b = e.target instanceof Element ? e.target.closest("[data-speak]") : null;
+    if (!b) return;
+    const text = b.dataset.speak;
+    if (!text) return;
+    sayPhrase(text, true);
+    /* a beat of ink so a click that makes no sound still reads as a click —
+       the clips are per character and a phrase may have one missing */
+    b.classList.add("said");
+    setTimeout(() => b.classList.remove("said"), 420);
+  });
+}
+
 /* ---------- hover cards ---------- */
 
 let tipEl = null;
@@ -4116,6 +4136,7 @@ function boot() {
     else if (session.active) $("#sesClose").click();
   });
   initTips();
+  initSpeakables();
   $("#flashClose").onclick = closeFlash;
   $("#placeClose").onclick = closePlacement;
   $("#nbClose").onclick = closeNotebook;
