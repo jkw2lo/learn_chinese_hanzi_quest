@@ -3,11 +3,11 @@
      A browser that has cached js/app.js will keep serving it until something
      about the URL changes, which is why a push can be live and invisible at
      the same time. Bump with: node tools/version.mjs <next>  -->
-<script>const APP_VERSION = "1.7.7", APP_DATE = "2026-09-19";</script>
+<script>const APP_VERSION = "1.7.8", APP_DATE = "2026-09-19";</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/app.css?v=1.7.7">
+<link rel="stylesheet" href="css/app.css?v=1.7.8">
 
 <div class="app">
 
@@ -164,12 +164,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
-<script src="js/data.js?v=1.7.7"></script>
-<script src="js/strokes.js?v=1.7.7"></script>
+<script src="js/data.js?v=1.7.8"></script>
+<script src="js/strokes.js?v=1.7.8"></script>
 <!-- js/audio.js is deliberately not here. It is 859 KB gzipped of base64 speech
      that nothing needs in the first second, and as a blocking script it held up
      every view behind it. app.js fetches it after the first render. -->
-<script src="js/srs.js?v=1.7.7"></script>
+<script src="js/srs.js?v=1.7.8"></script>
 <!-- before app.js: app.js builds its RENDER map at load and names renderSprint in it -->
-<script src="js/sprint.js?v=1.7.7"></script>
-<script src="js/app.js?v=1.7.7"></script>
+<script src="js/sprint.js?v=1.7.8"></script>
+<script src="js/app.js?v=1.7.8"></script>

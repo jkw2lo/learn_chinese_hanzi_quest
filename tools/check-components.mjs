@@ -31,15 +31,26 @@ const src = readFileSync(fileURLToPath(new URL('../js/data.js', import.meta.url)
 const { HQ } = new Function(src + '\nreturn {HQ};')();
 
 const IDS = /[⿰-⿻]/g;
-/* a squeezed radical and its free-standing character are the same part */
-const VAR = {
-  '氵':'水','氺':'水','亻':'人','𠆢':'人','扌':'手','忄':'心','㣺':'心','⺗':'心',
-  '讠':'言','訁':'言','钅':'金','釒':'金','纟':'糸','糹':'糸','饣':'食','飠':'食',
-  '艹':'艸','灬':'火','⺌':'小','⺍':'小','⺼':'肉','犭':'犬','刂':'刀','礻':'示',
-  '衤':'衣','罒':'网','辶':'辵','辵':'辶','⻌':'辶','王':'玉','𤣩':'玉','攵':'攴',
-  '⺊':'卜','⺈':'刀','丷':'八','龸':'八','龶':'土','⺤':'爪','爫':'爪','⻖':'阜','阝':'阜'
-};
-const norm = c => VAR[c] || c;
+/* A squeezed radical and its free-standing character are the same part — and
+   a part can be written in MORE than two ways, which is why this is a group
+   per radical rather than one canonical form per variant.
+
+   The single-form version mapped the flesh radical to its dictionary key and
+   left the moon shape alone, so a claim of the one on a character whose
+   decomposition says the other read as a mistake. It is not one: the two
+   collapsed into a single shape, which is why RADICALS is named "moon /
+   flesh" and why the curriculum claims both. A map that cannot hold every
+   form of a part reports correct data as wrong, and a checker that does that
+   stops being believed. */
+const FORMS = [
+  '人亻𠆢', '水氵氺', '手扌', '心忄㣺⺗', '言讠訁', '金钅釒', '糸纟糹', '食饣飠',
+  '艸艹', '火灬', '小⺌⺍', '肉⺼月', '犬犭', '刀刂⺈', '示礻', '衣衤', '网罒',
+  '辵辶⻌', '玉王𤣩', '攴攵', '卜⺊', '八丷龸', '土龶', '爪⺤爫', '阜阝⻖'
+];
+const group = new Map();
+for (const g of FORMS) { const set = new Set([...g]); for (const f of set) group.set(f, set); }
+/* the same part, however it happens to be written */
+const same = (a, b) => a === b || !!group.get(a)?.has(b);
 
 function parts(ch, seen = new Set(), depth = 0) {
   const out = new Set();
@@ -60,7 +71,7 @@ for (const ch of HQ) {
   if (!e) { missing.push(ch.c); continue; }
   const real = parts(ch.c);
   const wrong = (ch.comp || []).filter(k =>
-    !real.has(k) && ![...real].some(r => norm(r) === norm(k)));
+    !real.has(k) && ![...real].some(r => same(r, k)));
   if (wrong.length) bad.push(`${ch.c}  claims ${ch.comp.join('+')} — ${wrong.join(' ')} isn't there (real: ${e.decomposition})`);
 }
 
