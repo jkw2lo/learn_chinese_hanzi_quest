@@ -452,6 +452,68 @@ console.log('\na sentence gets to finish before the card moves');
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
 }
 
+console.log('\nthe radicals page has a way in');
+{
+  /* 15,376px of wall: thirty cards of prose in one flat list and a 66-group
+     tail below them, with nothing at the top saying what a radical IS.
+     Someone new to the writing system arrived at a reference work and was
+     expected to know what to do with it. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+
+  /* 1. show it — one worked example, built from the curriculum's own comp
+     data so it cannot drift out of step with the character it describes */
+  ok('there is a worked example', /function radDemo\(\)/.test(appSrc) && /\$\{radDemo\(\)\}/.test(appSrc));
+  const demo = (appSrc.match(/const RAD_DEMO = "(.)"/) || [])[1];
+  ok('and its character is taught here', !!demo && !!CHAR_INDEX[demo], demo);
+  const dch = CHAR_INDEX[demo] || {};
+  ok('with a meaning part and a sound part to show',
+     (dch.comp || []).length >= 2, (dch.comp || []).join('+'));
+  ok('the example reads its parts from the data, not from prose',
+     /const \[mean, sound\] = ch\.comp;/.test(appSrc));
+  ok('and both of its parts are themselves taught',
+     (dch.comp || []).slice(0, 2).every(k => CHAR_INDEX[k] || api.RADICALS[k]),
+     (dch.comp || []).slice(0, 2).join(' '));
+  ok('meaning is marked one colour and sound another',
+     /\.rx-part\.mean \.rx-z \{ border-bottom-color: var\(--jade\)/.test(css)
+     && /\.rx-part\.sound \.rx-z \{ border-bottom-color: var\(--gold\)/.test(css));
+
+  /* 2. a map before the territory */
+  ok('every radical appears as a chip, anchored to its card',
+     /class="rad-chip[\s\S]{0,80}?href="#rad-\$\{esc\(k\)\}"/.test(appSrc)
+     && /id="rad-\$\{esc\(k\)\}"/.test(appSrc));
+  ok('and each chip carries how far through it you are', /class="rc-bar"/.test(appSrc));
+
+  /* 3. themes, not a flat list — the 214 ordering is by stroke count, which is
+     for paper dictionaries and useless for learning what the parts mean */
+  const themeBlock = appSrc.slice(appSrc.indexOf('const RAD_THEMES'), appSrc.indexOf('const RAD_DEMO'));
+  const themes = (themeBlock.match(/\{ k: "\w+",/g) || []).length;
+  ok(`the radicals are grouped by theme (${themes})`, themes >= 4);
+  ok('and anything not hand-placed lands in a catch-all rather than vanishing',
+     /const strays = documented\.filter\(k => !placed\.has\(k\)\);/.test(appSrc)
+     && /name: "Others"/.test(appSrc));
+
+  /* every key named in a theme has to be a radical that exists */
+  const keys = [...appSrc.matchAll(/keys: \[([^\]]*)\]/g)]
+    .flatMap(m => [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]));
+  const unknown = keys.filter(k => !api.RADICALS[k]);
+  ok(`every themed key is a real radical (${keys.length} keys)`, !unknown.length, unknown.join(' '));
+  ok('and no radical is named twice', new Set(keys).size === keys.length);
+  /* a radical in the data but in no theme is allowed — it goes to Others —
+     but it is worth knowing how many are sitting there */
+  const documented = Object.keys(api.RADICALS).filter(k => api.FAMILIES[k] && api.FAMILIES[k].length);
+  const strays = documented.filter(k => !keys.includes(k));
+  ok('and nothing is in Others right now', !strays.length, strays.join(' '));
+
+  /* the long tail, folded */
+  ok('the other shared parts fold away', /<details class="rad-more">/.test(appSrc));
+
+  /* §11: a number like this goes stale the moment the library grows */
+  ok('the coverage line counts rather than states',
+     /\$\{214 - documented\.length\}/.test(appSrc));
+  ok('and no count in it is typed out',
+     !/other 184 are real/.test(appSrc) && !/These 30 are the ones/.test(appSrc));
+}
+
 console.log('\nwriting practice: two exercises, not one control');
 {
   /* The source switch was a segmented control — one box split in half, the

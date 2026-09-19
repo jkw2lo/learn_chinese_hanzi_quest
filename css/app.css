@@ -2618,3 +2618,87 @@ button.tier-head:hover { border-color: var(--ink-3); }
   }
   .dash-side .wotw .wotw-word { background: var(--sheet); }
 }
+
+/* ============================================================
+   部首 — what a radical is, before a list of them
+
+   The page was 15,376px of wall: thirty cards of prose in one flat list and a
+   66-group tail below them, with nothing at the top saying what the thing
+   was. Someone new to the writing system arrived at a reference work and was
+   expected to know what to do with it. A worked example, a map, and four
+   themed groups replace the wall with a way in.
+   ============================================================ */
+
+.rad-intro { margin-bottom: .8rem; }
+
+/* ---- the worked example ---- */
+.rx { padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: .8rem; }
+.rx-lede { margin: .35rem 0 0; font-size: .86rem; line-height: 1.55; color: var(--ink-2); max-width: 44rem; }
+.rx-sum {
+  display: flex; align-items: center; justify-content: center; gap: .9rem; flex-wrap: wrap;
+  padding: .9rem .6rem; border-radius: 10px;
+  background: var(--sunken); border: 1px solid var(--rule-2);
+}
+.rx-part { display: flex; flex-direction: column; align-items: center; gap: .12rem; min-width: 5.5rem; }
+.rx-z {
+  font-size: 3.1rem; line-height: 1.05; color: var(--ink);
+  border-bottom: 3px solid transparent; padding: 0 .1em;
+}
+/* the meaning part underlined in jade, the sound part in gold — the whole
+   idea of the page, said once in colour */
+.rx-part.mean .rx-z { border-bottom-color: var(--jade); }
+.rx-part.sound .rx-z { border-bottom-color: var(--gold); }
+.rx-out .rx-z { font-size: 3.6rem; color: var(--seal); }
+.rx-p { font-family: var(--f-pin); font-size: .82rem; color: var(--ink-2); }
+.rx-role { font-size: .68rem; color: var(--ink-3); text-align: center; max-width: 8rem; }
+.rx-part.mean .rx-role { color: var(--jade); }
+.rx-part.sound .rx-role { color: var(--gold); }
+.rx-op { font-size: 1.3rem; color: var(--ink-3); font-weight: 300; }
+.rx-foot { margin: 0; font-size: .8rem; line-height: 1.55; color: var(--ink-2); max-width: 46rem; }
+
+/* ---- the map: a map before the territory ---- */
+.rad-map { padding: .9rem 1rem 1rem; display: flex; flex-direction: column; gap: .7rem; }
+.rad-map-head { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; flex-wrap: wrap; }
+.rad-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr)); gap: .4rem; }
+.rad-chip {
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+  padding: .4rem .3rem .45rem; border-radius: 8px; text-decoration: none;
+  border: 1px solid var(--rule-2); background: var(--sheet); color: var(--ink);
+}
+.rad-chip:hover { border-color: var(--ink-3); background: var(--sunken); }
+.rad-chip.part { border-color: color-mix(in srgb, var(--gold) 40%, transparent); }
+.rad-chip.full { border-color: color-mix(in srgb, var(--jade) 45%, transparent); background: var(--jade-wash); }
+.rc-z { font-family: var(--f-han); font-size: 1.5rem; line-height: 1.1; }
+.rc-n { font-size: .64rem; color: var(--ink-3); text-align: center; line-height: 1.2; }
+.rc-bar { width: 100%; height: 3px; border-radius: 2px; background: var(--rule-2); overflow: hidden; margin-top: .15rem; }
+.rc-bar > i { display: block; height: 100%; background: var(--jade); }
+.rad-scope { margin: 0 0 .2rem; font-size: .78rem; line-height: 1.55; max-width: 52rem; }
+
+/* ---- the themes ---- */
+.rad-theme { margin-top: 1.5rem; }
+.rad-theme-head { margin-bottom: .6rem; }
+.rad-theme-head h2 { font-size: 1.05rem; }
+.rad-theme-head .note { margin: .2rem 0 0; font-size: .78rem; }
+
+/* A radical with one character in it does not need the height of one with
+   twenty. */
+.rad.solo { padding-top: .7rem; padding-bottom: .7rem; }
+.rad.solo .rad-does { font-size: .78rem; }
+
+/* ---- the long tail, folded away ---- */
+.rad-more { margin-top: 1.6rem; }
+.rad-more > summary {
+  cursor: pointer; padding: .6rem .8rem; border-radius: 9px;
+  border: 1px solid var(--rule-2); background: var(--sunken);
+  font-weight: 600; font-size: .88rem;
+}
+.rad-more > summary .dim { display: block; font-weight: 400; font-size: .74rem; color: var(--ink-3); margin-top: .15rem; }
+.rad-more[open] > summary { margin-bottom: .8rem; }
+
+/* Two across where there is room. Thirty cards in a single column is most of
+   what made this page a wall. */
+@media (min-width: 900px) {
+  .rad-grid { grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); align-items: start; }
+  /* the big families earn the full width — 口 alone has 119 */
+  .rad-grid > .rad.wide { grid-column: 1 / -1; }
+}

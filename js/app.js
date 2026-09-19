@@ -3318,57 +3318,165 @@ function renderLibrary() {
 
 /* ---------- radicals ---------- */
 
+/* Which family of ideas each radical belongs to. Hand-grouped on purpose: the
+   traditional 214-radical ordering is by stroke count, which is useful for
+   looking a character up in a paper dictionary and useless for learning what
+   the parts mean. Anything not placed here lands in a catch-all rather than
+   vanishing off the page — so a radical added to the data shows up untidily
+   instead of not at all. */
+const RAD_THEMES = [
+  { k: "body",   zh: "身体", name: "The body",
+    blurb: "Parts of a person. These turn up in what people do with them.",
+    keys: ["口", "目", "心", "手", "又", "力", "足"] },
+  { k: "people", zh: "人物", name: "People",
+    blurb: "Who someone is, and who they are to each other.",
+    keys: ["人", "女", "立"] },
+  { k: "world",  zh: "自然", name: "The natural world",
+    blurb: "What things are made of and where they come from.",
+    keys: ["水", "火", "木", "日", "月", "土", "石", "钅", "虫", "鸟", "田", "王"] },
+  { k: "made",   zh: "事物", name: "Made and done",
+    blurb: "Things people built, and the actions they built them for.",
+    keys: ["讠", "食", "门", "贝", "辶", "纟", "刀", "衣"] }
+];
+
+/* The worked example, chosen because it is unusually clean: a meaning part and
+   a sound part, both of which the learner will already have met. Built from
+   the curriculum's own comp data rather than hand-written, so it cannot drift
+   out of step with the character it describes. */
+const RAD_DEMO = "妈";
+
+function radDemo() {
+  const ch = CHAR_INDEX[RAD_DEMO];
+  if (!ch || ch.comp.length < 2) return "";
+  const [mean, sound] = ch.comp;
+  const [mp, mm] = gloss(mean);
+  const [sp] = gloss(sound);
+  const part = (c, pin, label, role) => `<span class="rx-part ${role}">
+      <span class="rx-z han" data-ch="${esc(c)}">${esc(c)}</span>
+      <span class="rx-p">${esc(pin)}</span>
+      <span class="rx-role">${esc(label)}</span>
+    </span>`;
+  return `<div class="sheet rx">
+    <div class="rx-head">
+      <span class="eyebrow">Start here ${hanLabel("怎么看一个字")}</span>
+      <p class="rx-lede">A character is not a picture to memorise whole. Nearly all of them are
+        <b>two parts</b>: one hinting at the meaning, one at the sound.</p>
+    </div>
+    <div class="rx-sum">
+      ${part(mean, mp || "", mm ? `means: ${shortMeaning(mm)}` : "the meaning", "mean")}
+      <span class="rx-op">+</span>
+      ${part(sound, sp || "", `sounds like: ${sp || "?"}`, "sound")}
+      <span class="rx-op">=</span>
+      <span class="rx-part rx-out">
+        <span class="rx-z han" data-ch="${esc(ch.c)}">${esc(ch.c)}</span>
+        <span class="rx-p">${esc(ch.p)}</span>
+        <span class="rx-role">${esc(ch.m)}</span>
+      </span>
+    </div>
+    <p class="rx-foot">The left half is the <b>radical</b> — ${esc(mm || "the meaning part")}. Learn it once and you
+      have a running start on every other character carrying it. That is what this page is a list of.</p>
+  </div>`;
+}
+
 function renderRadicals() {
-  const documented = Object.keys(RADICALS)
-    .filter(k => FAMILIES[k] && FAMILIES[k].length)
-    .sort((a, b) => FAMILIES[b].length - FAMILIES[a].length);
+  const documented = Object.keys(RADICALS).filter(k => FAMILIES[k] && FAMILIES[k].length);
   const others = Object.entries(FAMILIES)
     .filter(([k, v]) => v.length > 1 && !RADICALS[k])
     .sort((a, b) => b[1].length - a[1].length);
 
-  $("#viewRadicals").innerHTML = `<div class="wrap">
-    <div class="today-head">
-      <h1>Characters come in families</h1>
-      <p class="note">Chinese isn't a few thousand unrelated symbols. Almost every character is built from a small set of parts called radicals: one part hints at the meaning, another at the sound. Learn a radical and you get a discount on everything containing it.</p>
+  /* anything hand-grouped goes in its theme; anything new in the data lands in
+     a catch-all rather than silently disappearing off the page */
+  const placed = new Set(RAD_THEMES.flatMap(t => t.keys));
+  const strays = documented.filter(k => !placed.has(k));
+  const themes = RAD_THEMES.map(t => ({ ...t, keys: t.keys.filter(k => documented.includes(k)) }))
+    .concat(strays.length ? [{ k: "more", zh: "其他", name: "Others", blurb: "", keys: strays }] : [])
+    .filter(t => t.keys.length);
+
+  const tally = k => {
+    const kids = FAMILIES[k];
+    return { kids, known: kids.filter(isKnown).length };
+  };
+
+  /* ---- the map: every radical, how far through, one click to its card ---- */
+  const map = `<div class="sheet rad-map">
+    <div class="rad-map-head">
+      <span class="eyebrow">All of them ${hanLabel("部首表")}</span>
+      <span class="dim" style="font-size:.74rem">${documented.length} of 214 ·
+        ${documented.reduce((a, k) => a + tally(k).known, 0)} of
+        ${documented.reduce((a, k) => a + tally(k).kids.length, 0)} characters</span>
     </div>
-    <div class="rad-grid">
-      ${documented.map(k => {
-        const r = RADICALS[k], kids = FAMILIES[k];
-        const known = kids.filter(isKnown).length;
-        return `<div class="sheet rad">
-          <div class="rad-top">
-            <span class="rad-glyph">${esc(r.form)}</span>
-            <span class="rad-id">
-              <b>${esc(r.name)}</b>
-              <small>${esc(r.pin)} · ${r.strokes} strokes${r.variants ? ` · written ${esc(r.variants)}` : ""}</small>
-            </span>
-            <span class="quest-frac">${known}/${kids.length}</span>
-          </div>
-          <p class="rad-does">${esc(r.does)}</p>
-          <div class="rad-kids">${kids.map(c => `<button class="rad-kid ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
-            <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
-        </div>`;
-      }).join("")}
+    <p class="note rad-scope">No, this isn't all of them — the full traditional set is <b>214</b>, and a big
+      dictionary indexes every character under one of them. These ${documented.length} are the ones that
+      actually earn their keep in this library: each has at least one character you are being taught. The
+      other ${214 - documented.length} are real, but you would be learning them for characters that
+      aren't here yet.</p>
+    <div class="rad-map-grid">
+      ${themes.map(t => t.keys.map(k => {
+        const r = RADICALS[k], { kids, known } = tally(k);
+        const pct = Math.round(known / kids.length * 100);
+        return `<a class="rad-chip ${known === kids.length ? "full" : known ? "part" : ""}" href="#rad-${esc(k)}"
+            title="${esc(r.name)} — ${known} of ${kids.length} learned">
+            <span class="rc-z han">${esc(r.form)}</span>
+            <span class="rc-n">${esc(r.name)}</span>
+            <span class="rc-bar"><i style="width:${pct}%"></i></span>
+          </a>`;
+      }).join("")).join("")}
+    </div>
+  </div>`;
+
+  const card = k => {
+    const r = RADICALS[k], { kids, known } = tally(k);
+    return `<div class="sheet rad ${kids.length === 1 ? "solo" : ""} ${kids.length > 8 ? "wide" : ""}" id="rad-${esc(k)}">
+      <div class="rad-top">
+        <span class="rad-glyph">${esc(r.form)}</span>
+        <span class="rad-id">
+          <b>${esc(r.name)}</b>
+          <small>${esc(r.pin)} · ${r.strokes} strokes${r.variants ? ` · written ${esc(r.variants)}` : ""}</small>
+        </span>
+        <span class="quest-frac">${known}/${kids.length}</span>
+      </div>
+      <p class="rad-does">${esc(r.does)}</p>
+      <div class="rad-kids">${kids.map(c => `<button class="rad-kid ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
+        <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
+    </div>`;
+  };
+
+  $("#viewRadicals").innerHTML = `<div class="wrap">
+    <div class="today-head rad-intro">
+      <h1>Characters come in families</h1>
+      <p class="note">Chinese isn't a few thousand unrelated symbols. Learn a part once and you get a
+        discount on everything containing it.</p>
     </div>
 
-    ${others.length ? `<div class="sec-head" style="margin:1.4rem 0 .7rem">
-      <h2>Other shared parts</h2>
-      <span class="dim" style="font-size:.78rem">${others.length} groups</span>
-    </div>
-    <div class="section">
-      ${others.map(([root, kids]) => {
-        const [p, m] = gloss(root);
-        return `<div class="sheet tree">
-          <div class="tree-root">
-            <span class="z han">${esc(root)}</span>
-            <span class="m"><b>${esc(p)}</b><small>${esc(m)}</small></span>
-            <span class="n">${kids.filter(isKnown).length}/${kids.length}</span>
-          </div>
-          <div class="branches">${kids.map(c => `<button class="branch ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
-            <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
-        </div>`;
-      }).join("")}
-    </div>` : ""}
+    ${radDemo()}
+    ${map}
+
+    ${themes.map(t => `<section class="rad-theme">
+      <div class="rad-theme-head">
+        <h2>${esc(t.name)} ${hanLabel(t.zh)}</h2>
+        ${t.blurb ? `<p class="note">${esc(t.blurb)}</p>` : ""}
+      </div>
+      <div class="rad-grid">${[...t.keys].sort((a, b) => FAMILIES[b].length - FAMILIES[a].length).map(card).join("")}</div>
+    </section>`).join("")}
+
+    ${others.length ? `<details class="rad-more">
+      <summary>Other shared parts — ${others.length} more groups<span class="dim">
+        parts that repeat across the library without being radicals in their own right</span></summary>
+      <div class="section">
+        ${others.map(([root, kids]) => {
+          const [p, m] = gloss(root);
+          return `<div class="sheet tree">
+            <div class="tree-root">
+              <span class="z han">${esc(root)}</span>
+              <span class="m"><b>${esc(p)}</b><small>${esc(m)}</small></span>
+              <span class="n">${kids.filter(isKnown).length}/${kids.length}</span>
+            </div>
+            <div class="branches">${kids.map(c => `<button class="branch ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
+              <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </details>` : ""}
   </div>`;
 
   $$("#viewRadicals [data-c]").forEach(b => b.onclick = () => openChar(b.dataset.c));
