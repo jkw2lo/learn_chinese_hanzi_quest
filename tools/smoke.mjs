@@ -23,7 +23,7 @@ const CONTRACT = [
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay', 'dayReps',
   'studyAhead', 'aheadToday', 'dayGoal', 'newLeftToday', 'GOAL_MIN', 'GOAL_MAX',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
-  'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
+  'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle', 'fillInterests',
   'MILESTONES', 'milestoneDue', 'markMilestone', 'hailed',
   'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
@@ -473,6 +473,77 @@ console.log('\na sentence gets to finish before the card moves');
      /if \(item\.said\) sayPhrase\(item\.said, true\); else say\(ch\.c, true\);/.test(appSrc));
   ok('and the reading drill records what it said',
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
+}
+
+console.log('\nthe first run is four stages, and none of them a form');
+{
+  const appSrc = read('js/app.js'), html = read('index.html'), css = read('css/app.css');
+  ok('there is an introduction to open', /<div class="intro" id="intro"/.test(html)
+     && /function startIntro\(/.test(appSrc));
+  ok('and boot opens it rather than the tour', /^  startIntro\(\);/m.test(appSrc)
+     && !/^  startTour\(\);/m.test(appSrc));
+  const stages = (appSrc.match(/\[renderIntroHello, renderIntroAbout, renderIntroChar, renderIntroHow\]/) || [])[0];
+  ok('it is four stages', !!stages);
+  ok('and each one is written', ['renderIntroHello', 'renderIntroAbout', 'renderIntroChar', 'renderIntroHow']
+     .every(f => new RegExp('function ' + f + '\\(').test(appSrc)));
+
+  /* the hello has to finish: it used to cut away on a flat timeout that
+     clipped the second character */
+  ok('the greeting is timed from the real strokes, not a flat wait',
+     /STROKE_DATA\[c\] \|\| \{\}\)\.strokes \|\| \[\]\)\.length \* \(STROKE_MS/.test(appSrc));
+  ok('with time to look at it afterwards', /LOOK_MS = \d{4}/.test(appSrc));
+  ok('and a click skips it', /host\.onclick = introNext;/.test(appSrc));
+
+  /* the questionnaire moved inside the introduction: two questions after a
+     greeting read as someone saying hello back */
+  ok('the questions are a stage, not a dialog after the tour',
+     /function renderIntroAbout/.test(appSrc)
+     && !/maybeOfferProfile\(\);/.test(appSrc.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('and the old placement dialog no longer chains off the tour',
+     !/function maybeOfferPlacement/.test(appSrc));
+
+  /* stages 3 and 4 wait for Next and have nothing else to click */
+  ok('the explanatory stages have one control each',
+     (appSrc.match(/host\.onclick = null;/g) || []).length >= 3);
+  ok('and the wordmark reopens them', /function replayIntro\(\)[\s\S]{0,120}?introStep = 2;/.test(appSrc)
+     && /id="brandBtn"/.test(html));
+  ok('the seven-card tour is kept, in Settings',
+     /const TOUR = \[/.test(appSrc) && appSrc.includes('id="tourBtn"'));
+}
+
+console.log('\nplacement waits for the moment it is relevant');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' + 'return {blank,load,INTEREST_KEYS,INTERESTS,wordOfWeek,state};')();
+  const appSrc = read('js/app.js');
+
+  ok('a fresh record has been asked nothing', a.blank().levelAsked === false && a.blank().level === null);
+  ok('the introduction asks with a gauge rather than a quiz',
+     /const LEVELS = \[/.test(appSrc) && /none at all/i.test(appSrc));
+  ok('and the first press of the session button is where it is acted on',
+     /async function maybeAskLevel\(\)/.test(appSrc)
+     && /if \(await maybeAskLevel\(\)\) startSession\(\)/.test(appSrc));
+  ok('study ahead starts the same session, so it asks too',
+     /if \(await maybeAskLevel\(\)\) \{ studyAhead\(5\); startSession\(\); \}/.test(appSrc));
+  ok('"none at all" is not asked at all', /if \(!state\.level \|\| state\.level === "none"\) return true;/.test(appSrc));
+  ok('the wording quotes what they said', /You said \$\{said\}/.test(appSrc));
+  ok('and it is asked once, for good', /state\.levelAsked = true; save\(\);/.test(appSrc));
+  /* the level is kept and not otherwise acted on — we do not yet know what
+     else to do with it, and collecting it costs nothing */
+  ok('the level itself is only recorded',
+     (appSrc.match(/state\.level\b/g) || []).length <= 5,
+     String((appSrc.match(/state\.level\b/g) || []).length));
+  /* Nothing chosen means everything: the word of the week is purely a reward,
+     and nobody should meet the card explaining why it is empty. */
+  const st = (() => {
+    globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), { interests: [] }));
+    return a.load();
+  })();
+  ok('an empty interest list fills itself on load',
+     st.interests.length === a.INTEREST_KEYS.length, String(st.interests.length));
+  ok('so the word of the week always has something to pick', !!a.wordOfWeek());
+  ok('and the same rule runs where the questions are answered',
+     /fillInterests\(\);\s*\/\* nothing chosen means everything \*\//.test(appSrc));
 }
 
 console.log('\nmilestones');
@@ -1806,8 +1877,12 @@ console.log('\nsprint: the record behind the sheets');
      function it was meant to catch was called on line three. */
   const OPEN = /(?:\.onclick\s*=|addEventListener\(\s*["'][a-z]+["']\s*,)\s*(?:async\s*)?(?:\(\s*[\w$,\s]*\)|[\w$]+)?\s*=>\s*/g;
   const DIRECT = /\.onclick\s*=\s*([A-Za-z_$][\w$]*)\s*;/g;
+  /* `el.onclick = null` CLEARS a handler rather than naming one, and so do
+     the other literals. Reading them as called names is the checker crying
+     wolf, which is how a checker gets ignored. */
+  const CLEARS = new Set(['null', 'undefined', 'false', 'true']);
   const called = new Set();
-  for (const m of appSrc.matchAll(DIRECT)) called.add(m[1]);
+  for (const m of appSrc.matchAll(DIRECT)) if (!CLEARS.has(m[1])) called.add(m[1]);
   for (const m of appSrc.matchAll(OPEN)) {
     let i = m.index + m[0].length;
     let body;

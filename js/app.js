@@ -3201,8 +3201,8 @@ function renderToday() {
     if (e) sayPhrase(e.word[0], true);
     renderToday();
   });
-  $("#startBtn")?.addEventListener("click", startSession);
-  $("#aheadBtn")?.addEventListener("click", () => { studyAhead(5); startSession(); });
+  $("#startBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) startSession(); });
+  $("#aheadBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) { studyAhead(5); startSession(); } });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
   $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
@@ -4300,7 +4300,7 @@ function closePlacement() {
   $("#place").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
-  maybeOfferProfile();
+  /* The two questions were asked in the introduction, before any of this. */
 }
 
 function placementOptions(c) {
@@ -4474,6 +4474,277 @@ const asking = () => !!askDone;
    A short walk round, the first time only
    ============================================================ */
 
+
+/* ============================================================
+   The first run: four stages, and none of them a form
+
+   This used to be seven prose cards, then a dialog asking about placement,
+   then a dialog asking two questions — a gauntlet you clicked through to
+   reach the app, and the prose got clicked through unread, which is worse
+   than not showing it.
+
+   Four stages now, more picture than paragraph:
+
+     1. hello       — 你好, written by the app's own animator
+     2. about you   — the two questions, straight after the greeting
+     3. a character — 妈 is 女 + 马, the whole writing system in one line
+     4. how it goes — learn, practise, go deeper, and the two extras
+
+   Stages 3 and 4 wait for Next and have nothing else to click; that is the
+   gate. Afterwards the wordmark reopens them, because "what was that about
+   the parts" is a day-three question, and the seven-card tab tour stays in
+   Settings for anyone who wants it.
+   ============================================================ */
+
+let introStep = 0, introTimer = null, introWriters = [];
+
+/* Stage 1 needs to finish. It used to cut away on a flat timeout, which
+   clipped the second character; the wait is taken from the real strokes
+   instead — hanzi-writer runs about 330ms a stroke plus its own gap — and
+   then there are two seconds to look at what it drew. A click skips. */
+const STROKE_MS = 330, STROKE_GAP = 180, LOOK_MS = 2000;
+const helloMs = word => [...word].reduce((a, c) =>
+  a + ((window.STROKE_DATA[c] || {}).strokes || []).length * (STROKE_MS + STROKE_GAP), 0) + LOOK_MS;
+
+const HELLO = "你好";
+
+function startIntro(force) {
+  if (!force && state.intro) return;
+  introStep = 0;
+  $("#intro").hidden = false;
+  document.body.style.overflow = "hidden";
+  renderIntro();
+}
+
+/* The wordmark reopens the two explanatory stages — not the greeting, which
+   is a one-off, and not the questions, which live in Settings. */
+function replayIntro() {
+  introStep = 2;
+  $("#intro").hidden = false;
+  document.body.style.overflow = "hidden";
+  renderIntro();
+}
+
+function closeIntro() {
+  clearTimeout(introTimer); introTimer = null;
+  introWriters = [];
+  state.intro = true; save();
+  $("#intro").hidden = true;
+  document.body.style.overflow = "";
+  renderAll();
+}
+
+const introNext = () => { clearTimeout(introTimer); introTimer = null; introStep++; renderIntro(); };
+
+function renderIntro() {
+  const host = $("#introCard");
+  if (introStep > 3) return closeIntro();
+  host.className = "intro-card stage-" + introStep;
+  [renderIntroHello, renderIntroAbout, renderIntroChar, renderIntroHow][introStep](host);
+}
+
+/* ---- 1. hello ---- */
+function renderIntroHello(host) {
+  host.innerHTML = `
+    <div class="intro-hello">
+      <span class="intro-seal han">汉</span>
+      <div class="intro-boxes">
+        ${[...HELLO].map((c, i) => `<div class="tian">${TIAN_SVG}
+          <div class="tian-slot"><div id="hi${i}"></div></div></div>`).join("")}
+      </div>
+      <div class="intro-say">
+        <span class="p">nǐ hǎo</span>
+        <span class="m">hello</span>
+      </div>
+      <p class="intro-skip">Click to skip</p>
+    </div>`;
+  introWriters = [...HELLO].map((c, i) => {
+    const w = makeWriter($("#hi" + i), c, { width: 128, height: 128, showCharacter: false });
+    return w;
+  });
+  /* one after the other, so it reads as a word being written rather than two
+     characters racing */
+  let at = 0;
+  const draw = () => {
+    const w = introWriters[at];
+    if (!w) return;
+    w.animateCharacter({ onComplete: () => { at++; if (at < introWriters.length) draw(); } });
+  };
+  setTimeout(draw, 260);
+  introTimer = setTimeout(introNext, helloMs(HELLO));
+  host.onclick = introNext;
+}
+
+/* ---- 2. the two questions, and the gauge ---- */
+const LEVELS = [
+  { k: "none",  zh: "从零",  label: "None at all",   note: "Start at the first character." },
+  { k: "few",   zh: "几个",  label: "A few words",   note: "Hello, thank you, a number or two." },
+  { k: "some",  zh: "日常",  label: "I can get by",  note: "Signs, a menu, the gist of a message." },
+  { k: "read",  zh: "会读",  label: "I read some",   note: "Whole sentences, with gaps." }
+];
+
+function renderIntroAbout(host) {
+  const chosen = new Set(fillInterests());
+  let level = state.level || null;
+  host.onclick = null;
+  host.innerHTML = `
+    <div class="intro-head">
+      <span class="eyebrow">About you ${hanLabel("关于你")}</span>
+      <h2>Two quick questions${state.name ? ", " + esc(state.name.split(/\\s+/)[0]) : ""}.</h2>
+      <p>Both optional. Your name is only ever used to address you; the rest picks the word of
+        the week and where to start.</p>
+    </div>
+    <label class="intro-field">What should we call you?
+      <input type="text" id="inName" class="search" maxlength="40" placeholder="Your name"
+        value="${esc(state.name || "")}" autocomplete="given-name">
+    </label>
+    <div class="intro-field">How much Chinese can you read already?
+      <div class="intro-levels">
+        ${LEVELS.map(l => `<button class="intro-level ${level === l.k ? "on" : ""}" data-lvl="${l.k}"
+          aria-pressed="${level === l.k}">
+          <span class="han">${l.zh}</span><b>${esc(l.label)}</b><small>${esc(l.note)}</small></button>`).join("")}
+      </div>
+    </div>
+    <div class="intro-field">What are you into?
+      <p class="intro-hint">One real word a week from whatever you pick — usually made of characters
+        well past where you have got to. It changes nothing else.</p>
+      <div class="int-grid">
+        ${INTEREST_KEYS.map(k => {
+          const it = INTERESTS[k];
+          return `<button class="int ${chosen.has(k) ? "on" : ""}" data-int="${esc(k)}" aria-pressed="${chosen.has(k)}">
+            <span class="int-icon">${esc(it.icon)}</span>
+            <span class="int-body"><b>${esc(it.name)}</b><span class="han">${esc(it.zh)}</span></span>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+    <button class="btn btn-seal btn-block" id="introOn">That's me — keep going</button>`;
+
+  $$("#introCard .int").forEach(b => b.onclick = () => {
+    const k = b.dataset.int;
+    if (chosen.has(k)) chosen.delete(k); else chosen.add(k);
+    b.classList.toggle("on", chosen.has(k));
+    b.setAttribute("aria-pressed", chosen.has(k));
+  });
+  $$("#introCard .intro-level").forEach(b => b.onclick = () => {
+    level = b.dataset.lvl;
+    $$("#introCard .intro-level").forEach(x => {
+      x.classList.toggle("on", x === b);
+      x.setAttribute("aria-pressed", x === b);
+    });
+  });
+  $("#introOn").onclick = () => {
+    state.name = capName($("#inName").value).slice(0, 40);
+    const next = [...chosen];
+    if ((state.interests || []).join() !== next.join()) state.wotw = null;
+    state.interests = next;
+    fillInterests();                 /* nothing chosen means everything */
+    state.level = level;
+    state.profiled = true;
+    save();
+    introNext();
+  };
+}
+
+/* ---- 3. what a character is ---- */
+function renderIntroChar(host) {
+  const ch = CHAR_INDEX["妈"];
+  host.onclick = null;
+  const [mp, mm] = gloss("女"), [sp] = gloss("马");
+  host.innerHTML = `
+    <div class="intro-head">
+      <span class="eyebrow">A character, taken apart ${hanLabel("怎么看一个字")}</span>
+      <h2>Almost none of them are pictures.</h2>
+      <p>Nearly every character is two parts: one hinting at the <b>meaning</b>, one at the
+        <b>sound</b>. Learn the parts and each new character is mostly things you already know.</p>
+    </div>
+    <div class="rx-sum">
+      <span class="rx-part mean">
+        <span class="rx-z han">女</span><span class="rx-p">${esc(mp)}</span>
+        <span class="rx-role">means: ${esc(shortMeaning(mm))}</span>
+      </span>
+      <span class="rx-op">+</span>
+      <span class="rx-part sound">
+        <span class="rx-z han">马</span><span class="rx-p">${esc(sp)}</span>
+        <span class="rx-role">sounds like: ${esc(sp)}</span>
+      </span>
+      <span class="rx-op">=</span>
+      <span class="rx-part rx-out">
+        <span class="rx-z han">${esc(ch.c)}</span><span class="rx-p">${esc(ch.p)}</span>
+        <span class="rx-role">${esc(ch.m)}</span>
+      </span>
+    </div>
+    <p class="intro-foot">That left-hand part is called a <b>radical</b>, and there are only about
+      thirty worth knowing. The 部首 tab is the list.</p>
+    <div class="intro-foot-row">
+      <div class="intro-dots">${[0,1,2,3].map(i =>
+        `<span class="${i === introStep ? "on" : ""}"></span>`).join("")}</div>
+      <button class="btn btn-seal" id="introOn">Next</button>
+    </div>`;
+  $("#introOn").onclick = introNext;
+}
+
+/* ---- 4. how the app goes about it ---- */
+function renderIntroHow(host) {
+  host.onclick = null;
+  host.innerHTML = `
+    <div class="intro-head">
+      <span class="eyebrow">How this goes ${hanLabel("怎么学")}</span>
+      <h2>A short list, every day.</h2>
+      <p>${HQ.length} characters in an order where each one makes the next easier — you meet 马
+        just before 妈 and 吗, so by then you already own both halves.</p>
+    </div>
+    <div class="intro-flow">
+      <div class="intro-step"><span class="k han">学习</span><b>Learn</b>
+        <small>Meet the day's characters, one card each.</small></div>
+      <span class="intro-arrow">→</span>
+      <div class="intro-step"><span class="k han">今日练习</span><b>Practise</b>
+        <small>Recognise, read, say and write what you just met.</small></div>
+      <span class="intro-arrow">→</span>
+      <div class="intro-step"><span class="k han">加练</span><b>Go deeper</b>
+        <small>Unbounded reps over everything you know. Never finishable.</small></div>
+    </div>
+    <div class="intro-extras">
+      <div class="intro-extra"><span class="k">🍜</span><b>Read a menu</b>
+        <small>One character a day from a real restaurant menu, until you can read the whole thing.</small></div>
+      <div class="intro-extra"><span class="k han">速练</span><b>A minute, timed</b>
+        <small>A sheet against the clock. Whatever you keep missing goes in a 错字本.</small></div>
+    </div>
+    <div class="intro-foot-row">
+      <div class="intro-dots">${[0,1,2,3].map(i =>
+        `<span class="${i === introStep ? "on" : ""}"></span>`).join("")}</div>
+      <button class="btn btn-seal" id="introOn">Start</button>
+    </div>`;
+  $("#introOn").onclick = introNext;
+}
+
+/* ---- placement, asked where it is finally relevant ----
+
+   It used to be a stranger's opening question, and for a complete beginner a
+   quiz whose only possible result was "you know nothing". The introduction
+   asks what they can read; the FIRST press of the session button is where
+   that answer is finally worth acting on. After that it is an ordinary
+   button for good. */
+async function maybeAskLevel() {
+  if (state.levelAsked || wasPlaced() || Object.keys(state.chars).length) return true;
+  state.levelAsked = true; save();
+  if (!state.level || state.level === "none") return true;
+  const said = { few: "a few words", some: "you can get by", read: "you read some" }[state.level];
+  const yes = await askConfirm({
+    k: "定位",
+    title: "Shall we find where to start?",
+    body: `You said ${said}. A quick check walks the ${HQ.length} characters in order and finds where `
+        + "your recognition gives out, so you don't spend a fortnight on characters you have known "
+        + "for years. Under two minutes — or start from the beginning anyway.",
+    yes: "Find my level", no: "Start from the beginning"
+  });
+  if (yes) { openPlacement(); return false; }
+  state.placed = { at: 0, on: dayKey() }; save();
+  return true;
+}
+
+/* The seven-card tab tour. Dropped from the first run — it said the same
+   things less well and made four stages into five — and kept in Settings. */
 const TOUR = [
   { k: "汉", title: "Welcome",
     body: `${HQ.length} characters, taught in an order where each one makes the next easier —
@@ -4520,30 +4791,13 @@ function endTour() {
   state.tour = true; save();
   $("#tour").classList.remove("on");
   document.body.style.overflow = "";
-  maybeOfferPlacement();
 }
 
-/* Offered once, at the end of the tour, and only to a genuinely empty record —
-   asking someone mid-streak where they'd like to start would be alarming. */
-async function maybeOfferPlacement() {
-  if (wasPlaced() || Object.keys(state.chars).length) return;
-  const yes = await askConfirm({
-    k: "定位",
-    title: "Do you already read some Chinese?",
-    body: `A quick check walks the ${HQ.length} characters in order and finds where your recognition starts to give out, `
-        + "so you don't spend a fortnight on characters you have known for years. Under two minutes.",
-    yes: "Find my level", no: "Start from scratch"
-  });
-  if (yes) openPlacement();
-  else { state.placed = { at: 0, on: dayKey() }; save(); maybeOfferProfile(); }
-}
-
-/* Asked once, after placement is settled, so the first run is two short
-   questions rather than a gauntlet of dialogs. */
-function maybeOfferProfile() {
-  if (state.profiled) return;
-  setTimeout(() => { if (!state.profiled) openProfile(true); }, 400);
-}
+/* maybeOfferPlacement() and maybeOfferProfile() used to live here and fire
+   one after the other at the end of the tour. Both questions are inside the
+   introduction now — the two about you straight after the greeting, and the
+   placement one at the first press of the session button, where it is finally
+   relevant. See maybeAskLevel(). */
 
 function renderTour() {
   const t = TOUR[tourStep], last = tourStep === TOUR.length - 1;
@@ -4694,6 +4948,7 @@ function boot() {
     pop.addEventListener("mouseleave", () => pop.classList.remove("shut"));
   });
   document.addEventListener("click", () => $$(".streak-pop.on").forEach(closePop));
+  $("#brandBtn")?.addEventListener("click", replayIntro);
   $$(".settings-btn").forEach(b => b.onclick = openSettings);
   $$(".save-btn").forEach(b => b.onclick = openBackup);
   $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };
@@ -4706,7 +4961,7 @@ function boot() {
      the first render triggered by something else. */
   renderStreakChip();
   renderTracker();
-  startTour();
+  startIntro();
   connectRemote().then(changed => { if (changed) renderAll(); });
 }
 

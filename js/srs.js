@@ -62,6 +62,9 @@ const blank = () => ({
   name: "",
   interests: [],
   profiled: false,
+  intro: false,         /* the four-stage introduction has been through once */
+  level: null,          /* what they said they could already read, in the introduction */
+  levelAsked: false,    /* the one-off "take the check?" on the first session */
   updated: Date.now()
 });
 
@@ -84,6 +87,7 @@ function load() {
     if (raw) state = Object.assign(blank(), JSON.parse(raw));
     if (!(state.goalNew >= GOAL_MIN && state.goalNew <= GOAL_MAX)) state.goalNew = blank().goalNew;
     if (state.name) state.name = capName(state.name);
+    fillInterests();
   } catch { /* private mode, cleared storage — carry on with a fresh record */ }
   return state;
 }
@@ -372,6 +376,18 @@ function nextNew(n) {
 /* What is left that you're actually allowed to start on. Counting the whole
    library here would promise "study ahead" sessions the gate then refuses. */
 const remainingNew = () => HQ.slice(0, unlockedCeiling()).filter(ch => !state.chars[ch.c]).length;
+
+/* Nothing chosen means everything.
+
+   The word of the week is purely a reward — it never changes what is taught or
+   when — so an empty interest list has no upside at all: it just means the card
+   sits there explaining why it is empty. Nobody should ever meet that card. On
+   save, on skip, and here on load for the records that already exist. */
+function fillInterests() {
+  if (!(state.interests || []).filter(k => INTERESTS[k]).length)
+    state.interests = [...INTEREST_KEYS];
+  return state.interests;
+}
 
 /* ---------- milestones ----------
 

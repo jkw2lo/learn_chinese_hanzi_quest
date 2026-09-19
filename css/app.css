@@ -119,7 +119,12 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--rule-2);
 }
-.brand { display: flex; align-items: center; gap: .5rem; margin-right: auto; min-width: 0; }
+.brand {
+  display: flex; align-items: center; gap: .5rem; margin-right: auto; min-width: 0;
+  background: none; border: 0; padding: 0; color: inherit; cursor: pointer;
+  border-radius: 8px;
+}
+.brand:hover .brand-name { color: var(--seal); }
 .brand-seal {
   width: 27px; height: 27px; flex: none; display: grid; place-items: center;
   background: var(--seal); color: #fff;
@@ -2752,4 +2757,99 @@ button.tier-head:hover { border-color: var(--ink-3); }
 @keyframes hail-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .hail-card, .hail-seal { animation: none; }
+}
+
+/* ============================================================
+   The first run: four stages, and none of them a form
+
+   More picture than paragraph, deliberately. The seven prose cards this
+   replaced were clicked through unread, which is worse than not showing them.
+   ============================================================ */
+
+.intro { position: fixed; inset: 0; z-index: 74; display: grid; place-items: center; padding: 1rem; }
+.intro[hidden] { display: none; }
+.intro-veil { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 68%, transparent); }
+.intro-card {
+  position: relative; z-index: 1; width: min(38rem, 100%);
+  max-height: calc(100vh - 2rem); overflow-y: auto;
+  padding: 1.4rem 1.3rem 1.2rem; border-radius: 14px;
+  background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: .9rem;
+  animation: hail-rise .3s cubic-bezier(.2,.9,.3,1) both;
+}
+/* the greeting is the one stage that is only a picture */
+.intro-card.stage-0 { width: min(24rem, 100%); cursor: pointer; text-align: center; }
+
+.intro-head { display: flex; flex-direction: column; gap: .3rem; }
+.intro-head h2 { font-size: 1.25rem; line-height: 1.2; }
+.intro-head p { margin: 0; font-size: .85rem; line-height: 1.6; color: var(--ink-2); }
+
+/* ---- 1. hello ---- */
+.intro-hello { display: flex; flex-direction: column; align-items: center; gap: .8rem; }
+.intro-seal {
+  width: 58px; height: 58px; border: 3px solid var(--seal); border-radius: 8px;
+  display: grid; place-items: center; color: var(--seal);
+  font-family: var(--f-han-ui); font-size: 1.6rem; transform: rotate(-7deg);
+  animation: stamp .5s cubic-bezier(.2,1.4,.4,1) both;
+}
+.intro-boxes { display: flex; gap: .6rem; }
+.intro-boxes .tian { width: 128px; height: 128px; }
+.intro-say { display: flex; flex-direction: column; gap: .1rem; }
+.intro-say .p { font-family: var(--f-pin); font-size: 1.1rem; color: var(--ink); }
+.intro-say .m { font-size: .82rem; color: var(--ink-3); }
+.intro-skip { margin: 0; font-size: .68rem; color: var(--ink-3); opacity: .75; }
+
+/* ---- 2. about you ---- */
+.intro-field { display: flex; flex-direction: column; gap: .4rem; font-size: .82rem; font-weight: 600; }
+.intro-hint { margin: 0; font-size: .76rem; line-height: 1.5; color: var(--ink-3); font-weight: 400; }
+.intro-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .4rem; }
+.intro-level {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .05rem;
+  padding: .5rem .6rem; border-radius: 9px; text-align: left; font-weight: 400;
+  border: 1px solid var(--rule); background: var(--sheet); color: var(--ink);
+}
+.intro-level .han { font-family: var(--f-han-ui); font-size: .84rem; color: var(--seal); }
+.intro-level b { font-size: .86rem; }
+.intro-level small { font-size: .68rem; color: var(--ink-3); line-height: 1.35; }
+.intro-level:hover:not(.on) { border-color: var(--ink-3); background: var(--sunken); }
+/* chosen reads as chosen, the same way the writing sources do */
+.intro-level.on { border-color: var(--seal); background: var(--seal-wash); }
+
+/* ---- 3. a character, taken apart ---- */
+.intro-foot { margin: 0; font-size: .8rem; line-height: 1.55; color: var(--ink-2); }
+
+/* ---- 4. how it goes ---- */
+.intro-flow { display: flex; align-items: stretch; gap: .5rem; }
+.intro-step {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem;
+  padding: .6rem .65rem; border-radius: 10px;
+  border: 1px solid var(--rule-2); background: var(--sunken);
+}
+.intro-step .k { font-family: var(--f-han-ui); font-size: .9rem; color: var(--seal); }
+.intro-step b { font-size: .88rem; }
+.intro-step small { font-size: .7rem; line-height: 1.4; color: var(--ink-3); }
+.intro-arrow { align-self: center; color: var(--ink-3); flex: none; }
+.intro-extras { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.intro-extra {
+  display: flex; flex-direction: column; gap: .15rem;
+  padding: .6rem .65rem; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, transparent);
+  background: color-mix(in srgb, var(--gold) 9%, var(--sheet));
+}
+.intro-extra .k { font-family: var(--f-han-ui); font-size: .95rem; }
+.intro-extra b { font-size: .86rem; }
+.intro-extra small { font-size: .7rem; line-height: 1.4; color: var(--ink-3); }
+
+.intro-foot-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .2rem; }
+.intro-dots { display: flex; gap: .3rem; }
+.intro-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--rule); }
+.intro-dots span.on { background: var(--seal); }
+
+@media (max-width: 620px) {
+  .intro-flow { flex-direction: column; }
+  .intro-arrow { transform: rotate(90deg); }
+  .intro-extras { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-card, .intro-seal { animation: none; }
 }
