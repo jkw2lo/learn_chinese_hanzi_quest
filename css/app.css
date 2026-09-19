@@ -1257,6 +1257,17 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 }
 .deck:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
 .deck:disabled { opacity: .5; cursor: default; }
+/* An empty deck, dimmed — and NOT called .empty.
+
+   .empty is a general-purpose empty-state panel elsewhere in this stylesheet
+   (text-align: center; flex-direction: column; padding: 2.5rem 1rem), so
+   borrowing the name turned each of the three decks from 60px into 178, the
+   side column into 842px of natural height, and — because the dashboard
+   columns are deliberately equal-height — made every other block stretch to
+   match. It read as a layout problem and was not one. Grep before naming a
+   class. */
+.deck-bare { opacity: .55; }
+.deck-bare .deck-go { visibility: hidden; }
 
 .deck-cards { position: relative; width: 46px; height: 58px; flex: none; }
 .deck-cards .dc {

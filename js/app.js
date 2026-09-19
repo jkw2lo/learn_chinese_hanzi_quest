@@ -2719,7 +2719,7 @@ function renderToday() {
   /* ---- both decks, together ---- */
   const all = knownChars();
   const oneDeck = (id, deck, title, sub, tone, face, empty) => `
-    <button class="deck deck-${tone} ${deck.length ? "" : "empty"}" id="${id}" ${deck.length ? "" : "disabled"}>
+    <button class="deck deck-${tone} ${deck.length ? "" : "deck-bare"}" id="${id}" ${deck.length ? "" : "disabled"}>
       <span class="deck-cards" aria-hidden="true">
         <span class="dc dc3"></span>
         <span class="dc dc2"></span>

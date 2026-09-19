@@ -452,6 +452,32 @@ console.log('\na sentence gets to finish before the card moves');
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
 }
 
+console.log('\nno block borrows a class name that already means something');
+{
+  /* Day one looked padded out: three empty flashcard decks at 178px each
+     instead of 60. oneDeck() marked an empty deck ".empty" — and .empty is a
+     general-purpose empty-state panel in this stylesheet (text-align: center;
+     flex-direction: column; padding: 2.5rem 1rem). It read as a layout
+     problem and was not one.
+
+     This is the second class-name collision in this app; .menu-head was the
+     first. So: every class the markup asks for, checked against what the
+     stylesheet says it means. */
+  const appSrc = read('js/app.js'), sprintSrc = read('js/sprint.js'), css = read('css/app.css');
+  ok('an empty deck has a name of its own', /deck-bare/.test(appSrc) && /\.deck-bare \{/.test(css));
+  ok('and does not borrow the empty-state panel',
+     !/class="deck deck-\$\{tone\} \$\{deck\.length \? "" : "empty"\}/.test(appSrc));
+
+  /* .empty is still the panel it always was, and only panels use it */
+  ok('.empty is still a full empty-state panel', /\.empty \{[^}]*padding: 2\.5rem/.test(css));
+  /* as a whole token in the class list — learned-empty and wotw-empty are
+     their own names and are not this one */
+  const borrowers = [...(appSrc + sprintSrc).matchAll(/class="([^"]*)"/g)]
+    .map(m => m[1]).filter(c => c.split(/\s+/).includes('empty'));
+  ok('nothing uses it as a modifier on something else',
+     borrowers.every(c => c.trim() === 'empty'), borrowers.join(' | '));
+}
+
 console.log('\nthe teaching card fits the screen it teaches on');
 {
   /* charCard() is six blocks in a 34rem column. Stacked, that measured 1313px
