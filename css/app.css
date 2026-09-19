@@ -2089,6 +2089,16 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .sp-marks { max-width: 34rem; }
 }
 
+/* A character with no stroke data, set in type rather than built stroke by
+   stroke. Sized to sit in the 田字格 the way the animated one does. */
+.tian-plain {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  font-size: 7.2rem; line-height: 1; color: var(--ink);
+  user-select: none;
+}
+.no-strokes { text-align: center; max-width: 26rem; margin: 0 auto; font-size: .76rem; }
+.no-strokes .han { font-family: var(--f-han-ui); color: var(--ink-2); }
+
 /* ============================================================
    The teaching card, on a screen wider than a phone
 

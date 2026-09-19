@@ -341,6 +341,34 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\na character with no stroke data is still drawn');
+{
+  /* hanzi-writer fills an empty mount, so a character it has no data for
+     leaves the 田字格 blank — a sound and a meaning attached to nothing, and
+     no error anywhere to say why. Every character in this curriculum has data
+     today; this is a guard, because the failure mode is silent and the fix
+     costs nothing while the data is there. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  ok('there is one test for whether a character can be animated',
+     /const drawable = c => !!\(window\.STROKE_DATA && window\.STROKE_DATA\[c\]\);/.test(appSrc));
+  ok('the box sets the character in type when it cannot be built',
+     /function writerBox[\s\S]*?drawable\(char\)[\s\S]*?tian-plain/.test(appSrc));
+  ok('and the stylesheet sizes it to sit in the 田字格',
+     /\.tian-plain \{[^}]*place-items: center/.test(css));
+  ok('the stroke-order and writing buttons are hidden rather than left to fail',
+     /\$\{drawable\(ch\.c\) \? `[\s\S]*?data-act="animate"[\s\S]*?data-act="practise"[\s\S]*?` : ""\}/.test(appSrc));
+  ok('and a note under the card says why', /class="note no-strokes"/.test(appSrc)
+     && /\.no-strokes \{/.test(css));
+
+  /* the guard is dormant only as long as the data is complete — if that ever
+     stops being true, tools/audit-strokes.mjs is what says so */
+  let bundle = null;
+  try { const w = {}; new Function('window', read('js/strokes.js'))(w); bundle = w.STROKE_DATA; } catch { /* not bundled */ }
+  const gaps = bundle ? HQ.filter(c => !bundle[c.c]).map(c => c.c) : null;
+  ok('every character in the curriculum has stroke data right now',
+     gaps && !gaps.length, gaps ? gaps.join(' ') : 'strokes.js unreadable');
+}
+
 console.log('\na sentence gets to finish before the card moves');
 {
   /* Read them in context plays the line back when you answer it, and the next

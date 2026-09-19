@@ -408,9 +408,28 @@ function makeWriter(mount, char, opts = {}) {
     charDataLoader: (ch, onComplete) => onComplete(window.STROKE_DATA[ch])
   }, opts));
 }
+/* Whether the stroke-by-stroke animation can be built for this character.
+   Everything else about it — reading it, saying it, setting it in type —
+   works either way. */
+const drawable = c => !!(window.STROKE_DATA && window.STROKE_DATA[c]);
+
+/* The 田字格, with the character in it.
+
+   hanzi-writer fills an empty mount, so a character it has no data for leaves
+   the box simply blank — a sound and a meaning attached to nothing, with no
+   error anywhere to say why. The font draws these perfectly well; it is only
+   the animation that needs the data. So when there is none the character is
+   set in type instead of being built, and the box says what it is rather than
+   showing nothing at all.
+
+   Every character in this curriculum has data today. This is a guard: the
+   failure mode is silent, and the fix costs nothing while the data is there. */
 function writerBox(char, id) {
-  return `<div class="writer-box"><div class="tian">${TIAN_SVG}
-    <div class="tian-slot"><div id="${id}"></div></div></div></div>`;
+  const inner = drawable(char)
+    ? `<div class="tian-slot"><div id="${id}"></div></div>`
+    : `<div class="tian-slot"><div id="${id}" class="tian-plain han"
+         title="No stroke-order data has been published for this character">${esc(char)}</div></div>`;
+  return `<div class="writer-box"><div class="tian">${TIAN_SVG}${inner}</div></div>`;
 }
 
 /* ============================================================
@@ -713,9 +732,13 @@ function charCard(ch, { writerId, topper = "" }) {
     </div>
     <div class="tools">
       <button class="tool" data-act="say" data-text="${esc(ch.c)}"><span class="han">发音</span> Hear it</button>
+      ${drawable(ch.c) ? `
       <button class="tool" data-act="animate"><span class="han">笔顺</span> Stroke order</button>
-      <button class="tool" data-act="practise"><span class="han">默写</span> Try writing</button>
+      <button class="tool" data-act="practise"><span class="han">默写</span> Try writing</button>` : ""}
     </div>
+    ${drawable(ch.c) ? "" : `<p class="note no-strokes">No stroke-order data has been published for
+      <b class="han">${esc(ch.c)}</b>, so the app can't animate it or check your writing. You can read it
+      and say it as usual.</p>`}
   </div>
 
   <div class="cardx-blocks">
