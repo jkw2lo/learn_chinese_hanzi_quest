@@ -341,6 +341,42 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\nthe radical cards count the form they print');
+{
+  /* RADICALS[].strokes is prose beside a glyph, and the glyph is `form` — the
+     squeezed shape, not the dictionary key. 心 is four strokes and 忄 is
+     three; the card shows 忄, so "3 strokes" is the true statement and the
+     entry said 4. tools/audit-strokes.mjs found that by deriving every count
+     from Make Me a Hanzi; this pins the answers so the fix cannot quietly
+     come undone between audits.
+
+     23 of the 30 printed forms are characters in their own right and are
+     checked against the bundle directly. The other seven are left-edge forms
+     with no glyph entry anywhere — 亻 and 氵 are not characters — so their
+     counts are pinned here, each one derived by the audit from a character
+     built out of it (忄 from 忙, 氵 from 汉, and so on). Run
+     `node tools/audit-strokes.mjs` to re-derive them from upstream. */
+  const SQUEEZED = { "亻": 2, "氵": 3, "忄": 3, "扌": 3, "饣": 3, "刂": 2, "衤": 5 };
+  let bundle = null;
+  try { const w = {}; new Function('window', read('js/strokes.js'))(w); bundle = w.STROKE_DATA; } catch { /* not bundled */ }
+  const wrong = [], unchecked = [];
+  for (const [key, r] of Object.entries(api.RADICALS)) {
+    const form = r.form || key;
+    const n = bundle && bundle[form] ? bundle[form].strokes.length
+            : SQUEEZED[form] !== undefined ? SQUEEZED[form] : null;
+    if (n === null) { unchecked.push(key + ' ' + form); continue; }
+    if (n !== r.strokes) wrong.push(`${key} prints ${form}, says ${r.strokes}, is ${n}`);
+  }
+  ok(`every radical card states the stroke count of the form it prints (${Object.keys(api.RADICALS).length} cards)`,
+     !wrong.length, wrong.join('; '));
+  ok('and every printed form has something to check it against', !unchecked.length, unchecked.join(' '));
+  /* the audit is the thing that derives these from upstream — it has to exist */
+  const audit = read('tools/audit-strokes.mjs');
+  ok('the stroke audit covers all five passes',
+     ['coverage', 'simplified forms', 'stated stroke counts', 'structure', 'components']
+       .every(p => audit.includes(p)));
+}
+
 console.log('\nno drill shows a character you have not met');
 {
   /* The build-the-word drill filtered its target on CHAR_INDEX — is this in

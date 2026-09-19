@@ -1088,7 +1088,7 @@ const RADICALS = {
     does:"On the left edge it squeezes to 亻. It marks people, roles and things people do to each other."},
   "水": {form:"氵", variants:"水 氵", name:"water", pin:"shuǐ", strokes:3,
     does:"Three drops on the left. Every liquid, every river, and every action involving washing or pouring."},
-  "心": {form:"忄", variants:"心 忄", name:"heart", pin:"xīn", strokes:4,
+  "心": {form:"忄", variants:"心 忄", name:"heart", pin:"xīn", strokes:3,
     does:"Chinese put thought and feeling in the heart, not the head — so this radical marks emotions and mental states alike."},
   "手": {form:"扌", variants:"手 扌", name:"hand", pin:"shǒu", strokes:3,
     does:"Flattened to 扌 on the left. It marks verbs done with the hands: pushing, pulling, carrying, striking."},
