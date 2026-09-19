@@ -3,11 +3,11 @@
      A browser that has cached js/app.js will keep serving it until something
      about the URL changes, which is why a push can be live and invisible at
      the same time. Bump with: node tools/version.mjs <next>  -->
-<script>const APP_VERSION = "1.9.0", APP_DATE = "2026-09-19";</script>
+<script>const APP_VERSION = "1.10.0", APP_DATE = "2026-09-19";</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/app.css?v=1.9.0">
+<link rel="stylesheet" href="css/app.css?v=1.10.0">
 
 <div class="app">
 
@@ -19,12 +19,15 @@
       <span class="brand-name">Hanzi Quest</span>
     </button>
     <nav class="top-nav" aria-label="Sections">
+      <!-- Four groups, divided: the daily loop, the two ways of practising,
+           the two references, and the record. A seven-tab row with no seams
+           reads as seven equal things; it is not. -->
       <button data-nav="today" class="on"><span class="nz">今天</span> Today</button>
-      <button data-nav="menu"><span class="nz">菜单</span> Menu</button>
+      <button data-nav="menu" class="grp-end"><span class="nz">菜单</span> Menu</button>
       <button data-nav="sprint"><span class="nz">速练</span> Sprint</button>
+      <button data-nav="write" class="grp-end"><span class="nz">练字</span> Write</button>
       <button data-nav="library"><span class="nz">字库</span> Library</button>
-      <button data-nav="write"><span class="nz">练字</span> Write</button>
-      <button data-nav="radicals"><span class="nz">部首</span> Radicals</button>
+      <button data-nav="radicals" class="grp-end"><span class="nz">部首</span> Radicals</button>
       <button data-nav="record"><span class="nz">记录</span> Record</button>
     </nav>
     <!-- The four-week tracker used to be a bar of its own under the top bar,
@@ -34,6 +37,10 @@
       <button class="chip chip-streak cold streak-chip" aria-haspopup="true" aria-expanded="false">🔥 0</button>
       <div class="tracker" id="tracker" role="note"></div>
     </div>
+    <!-- Second, next to the streak, because the thing a lost reader reaches
+         for should sit where the eye already is — and still the quietest
+         glyph in the row: a guide you cannot escape is worse than none. -->
+    <button class="icon-btn help-btn" id="helpBtn" title="How this page works" aria-label="How this page works" hidden>?</button>
     <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">💾</button>
     <!-- Not ⚙ (U+2699), which renders as thin monochrome text and all but
          vanished beside its neighbours — and not ⚙️ either, whose emoji
@@ -47,29 +54,25 @@
       </svg>
     </button>
     <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">◐</button>
-    <!-- Deliberately last in the row and the quietest thing in it: a guide you
-         have to notice is worse than no guide, and one you cannot escape is
-         worse again. -->
-    <button class="icon-btn help-btn" id="helpBtn" title="How this page works" aria-label="How this page works" hidden>?</button>
   </header>
 
   <main>
     <section class="view on" id="viewToday"></section>
     <section class="view" id="viewMenu"></section>
     <section class="view" id="viewSprint"></section>
-    <section class="view" id="viewLibrary"></section>
     <section class="view" id="viewWrite"></section>
+    <section class="view" id="viewLibrary"></section>
     <section class="view" id="viewRadicals"></section>
     <section class="view" id="viewRecord"></section>
   </main>
 
   <nav class="nav" aria-label="Sections">
     <button data-nav="today" class="on"><span class="nz">今天</span><span class="nl">Today</span></button>
-    <button data-nav="menu"><span class="nz">菜单</span><span class="nl">Menu</span></button>
+    <button data-nav="menu" class="grp-end"><span class="nz">菜单</span><span class="nl">Menu</span></button>
     <button data-nav="sprint"><span class="nz">速练</span><span class="nl">Sprint</span></button>
+    <button data-nav="write" class="grp-end"><span class="nz">练字</span><span class="nl">Write</span></button>
     <button data-nav="library"><span class="nz">字库</span><span class="nl">Library</span></button>
-    <button data-nav="write"><span class="nz">练字</span><span class="nl">Write</span></button>
-    <button data-nav="radicals"><span class="nz">部首</span><span class="nl">Radicals</span></button>
+    <button data-nav="radicals" class="grp-end"><span class="nz">部首</span><span class="nl">Radicals</span></button>
     <button data-nav="record"><span class="nz">记录</span><span class="nl">Record</span></button>
   </nav>
 </div>
@@ -125,6 +128,12 @@
       <button class="btn btn-ghost" id="flashPrev">Back</button>
       <button class="btn" id="flashNext">Next</button>
     </div>
+    <!-- The card used to carry "Tap to flip", which is a caption on a card.
+         What the keys do is the thing nobody could have guessed. -->
+    <p class="flash-keys"><kbd>space</kbd> hear it &nbsp;·&nbsp;
+      <kbd>space</kbd> <kbd>space</kbd> next card &nbsp;·&nbsp;
+      <kbd>hold space</kbd> peek at the back &nbsp;·&nbsp;
+      <kbd>←</kbd> <kbd>→</kbd> back and forward</p>
   </div>
 </div>
 
@@ -206,12 +215,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
-<script src="js/data.js?v=1.9.0"></script>
-<script src="js/strokes.js?v=1.9.0"></script>
+<script src="js/data.js?v=1.10.0"></script>
+<script src="js/strokes.js?v=1.10.0"></script>
 <!-- js/audio.js is deliberately not here. It is 859 KB gzipped of base64 speech
      that nothing needs in the first second, and as a blocking script it held up
      every view behind it. app.js fetches it after the first render. -->
-<script src="js/srs.js?v=1.9.0"></script>
+<script src="js/srs.js?v=1.10.0"></script>
 <!-- before app.js: app.js builds its RENDER map at load and names renderSprint in it -->
-<script src="js/sprint.js?v=1.9.0"></script>
-<script src="js/app.js?v=1.9.0"></script>
+<script src="js/sprint.js?v=1.10.0"></script>
+<script src="js/app.js?v=1.10.0"></script>

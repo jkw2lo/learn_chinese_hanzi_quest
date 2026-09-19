@@ -143,6 +143,15 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
 .top-nav button:hover { background: var(--sunken); color: var(--ink); }
 .top-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
 .top-nav button.on .nz { color: var(--seal); }
+/* ---------- four groups, not seven equal things ----------
+   The daily loop, the two ways of practising, the two references, and the
+   record. A hairline after each group but the last; absolutely positioned so
+   it does not become a flex child of the button it hangs off. */
+.top-nav .grp-end { margin-right: .55rem; position: relative; }
+.top-nav .grp-end::after {
+  content: ""; position: absolute; right: -.33rem; top: 50%; transform: translateY(-50%);
+  width: 1px; height: 1.15em; background: var(--rule); opacity: .8;
+}
 
 .chip {
   display: inline-flex; align-items: center; gap: .3rem;
@@ -216,7 +225,7 @@ main { flex: 1; width: 100%; }
 /* mobile bottom bar */
 .nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-template-columns: repeat(7, 1fr);
   background: color-mix(in srgb, var(--paper) 93%, transparent);
   backdrop-filter: blur(14px);
   border-top: 1px solid var(--rule-2);
@@ -230,6 +239,11 @@ main { flex: 1; width: 100%; }
 .nav button .nz { font-family: var(--f-han-ui); font-size: 1.05rem; line-height: 1.1; }
 .nav button .nl { font-size: .58rem; letter-spacing: .03em; text-transform: uppercase; }
 @media (max-width: 360px) { .nav button .nl { font-size: .52rem; letter-spacing: 0; } }
+/* the same four groups, divided the same way */
+.nav .grp-end::after {
+  content: ""; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  width: 1px; height: 54%; background: var(--rule); opacity: .75;
+}
 .nav button.on { color: var(--ink); }
 .nav button.on::before {
   content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
@@ -1073,22 +1087,6 @@ code {
 /* the level sentence sits under the headline one, quieter */
 .sq-lvl { color: var(--ink-3); }
 
-/* ---------- the way in, from the dashboard ----------
-   Not the quest in miniature — one line saying what is waiting and where. */
-.sq-peek {
-  display: flex; align-items: center; gap: .8rem; width: 100%;
-  padding: .85rem 1rem; text-align: left; cursor: pointer;
-  border: 1px solid var(--rule-2); background: var(--sheet);
-  transition: border-color .2s, background .2s;
-}
-.sq-peek:hover { border-color: color-mix(in srgb, var(--seal) 35%, transparent); background: var(--seal-wash); }
-.sq-peek-say { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
-.sq-peek-say b { font-family: var(--f-display); font-size: .98rem; font-weight: 600; }
-.sq-peek-say small { font-size: .78rem; color: var(--ink-3); line-height: 1.5; }
-.sq-peek-say .han { font-family: var(--f-han-ui); color: var(--seal); }
-.sq-peek-go { flex: none; color: var(--ink-3); font-size: 1.1rem; }
-.sq-peek:hover .sq-peek-go { color: var(--seal); }
-
 /* ---------- how much of the wall you can read ----------
    A percentage, a bar, and the ceiling drawn on it. See menuProgress(). */
 .ink-read {
@@ -1151,10 +1149,59 @@ code {
 .msec-head .e { font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
 .msec-head::after { content: ""; flex: 1; border-bottom: 1px dotted var(--rule); }
 
-.mrow { display: flex; align-items: baseline; gap: .4rem; padding: .22rem 0; }
-.mrow .dish { font-family: var(--f-han-ui); font-size: 1.05rem; letter-spacing: .02em; }
-.mrow .dots { flex: 1; border-bottom: 1px dotted var(--rule); transform: translateY(-.2em); min-width: 1.5rem; }
-.mrow .price { font-family: var(--f-pin); font-size: .82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* A row is a button now: the whole dish is one target, so the reading and the
+   price come with it when you tap to hear it. */
+.mrow {
+  display: flex; align-items: baseline; gap: .4rem; padding: .22rem .25rem;
+  width: 100%; text-align: left; background: none; border: 0;
+  border-radius: 5px; cursor: pointer; color: inherit; font: inherit;
+}
+.mrow:hover { background: var(--sunken); }
+.mrow.said { background: var(--seal-wash); }
+.mrow .dish { flex: none; font-family: var(--f-han-ui); font-size: 1.05rem; letter-spacing: .02em; }
+/* The sound, beside the spelling. It is allowed to disappear before the dish
+   name does when a column gets tight — the characters are what the page is
+   for, and the price still has to land on the right. */
+.mpin {
+  font-family: var(--f-pin); font-size: .72rem; color: var(--ink-3);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mrow .dots { flex: 1 1 auto; border-bottom: 1px dotted var(--rule); transform: translateY(-.2em); min-width: .75rem; }
+.mrow .price { flex: none; font-family: var(--f-pin); font-size: .82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   A menu is set in columns
+
+   Printed down a single list, this card was about 1600px tall on the tab —
+   most of it below the fold, on a page whose entire point is that you can
+   look at the thing and read it. A real menu solves this the same way: the
+   sections run in columns and the masthead spans them. It takes roughly a
+   third of the height and you can see the lot.
+
+   `break-inside: avoid` on a section keeps a heading with its dishes; without
+   it 面 lands at the foot of one column and its noodles at the head of the
+   next. The specials board spans, because it is a board.
+   ============================================================ */
+@media (min-width: 620px) {
+  .menu-card { columns: 2; column-gap: 1.7rem; }
+  .msec { break-inside: avoid; }
+  .menu-top { column-span: all; }
+  .msec.special { column-span: all; }
+}
+@media (min-width: 1040px) {
+  .menu-card { columns: 3; column-gap: 1.5rem; padding: 1.2rem 1.3rem; }
+}
+
+/* Set tight: it has to fit on one card a waiter could hand you. */
+.menu-card .menu-top { padding-bottom: .5rem; margin-bottom: .7rem; }
+.menu-card .menu-top .t { font-size: 1.35rem; letter-spacing: .18em; }
+.menu-card .menu-top .n { font-size: .82rem; margin-top: .1rem; }
+.menu-card .menu-top .e { font-size: .58rem; margin-top: .15rem; }
+.menu-card .msec { margin-bottom: .7rem; }
+.menu-card .msec-head { margin-bottom: .15rem; }
+.menu-card .msec-head .z { font-size: .95rem; }
+.menu-card .mrow .dish { font-size: .98rem; }
+.menu-card .mdesc { font-size: .7rem; margin: 0 0 .15rem .25rem; padding: 0 0 .15rem .55rem; }
 
 /* every glyph on the menu is hoverable */
 .g {
@@ -1226,6 +1273,18 @@ code {
   text-align: center; max-width: 92%; line-height: 1.5;
 }
 .card-back .sm { font-family: var(--f-han); font-size: 2.6rem; color: var(--ink-3); line-height: 1; }
+
+.flash-keys {
+  margin: .5rem 0 0; text-align: center;
+  font-size: .68rem; color: var(--ink-3);
+}
+.flash-keys kbd {
+  font-family: var(--f-body); font-size: .66rem;
+  border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
+  padding: .04rem .3rem; margin: 0 .05rem; background: var(--paper); color: var(--ink-2);
+}
+/* a touch device has no space bar to tell anyone about */
+@media (hover: none) { .flash-keys { display: none; } }
 
 .flash-foot { padding: .9rem 1rem calc(.9rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--rule-2); background: var(--sheet); }
 .flash-foot-inner { max-width: 24rem; margin: 0 auto; display: flex; gap: .5rem; }
@@ -1547,11 +1606,15 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .tally-none .tally { opacity: .55; }
 
 .deeper .pr-deep { background: var(--sheet); }
-.deeper-foot {
-  display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
-  font-size: .72rem; color: var(--ink-3); padding-top: .1rem;
-}
-.deeper-life { font-variant-numeric: tabular-nums; }
+/* Today's reps and the lifetime count, stacked in the corner — the second of
+   these used to be the right-hand half of a full-width foot row. */
+.deeper-count { align-items: flex-end; gap: .1rem; flex: none; text-align: right; }
+.deeper-n { font-size: .74rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.deeper-n b { color: var(--ink); font-weight: 600; font-size: .9rem; }
+.deeper-life { font-size: .66rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* what "solid" means, said where the word is used */
+.solid-def { display: block; margin-top: .15rem; color: var(--ink-3); cursor: help; }
+.solid-def b { color: var(--ink-2); font-weight: 600; }
 
 
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
@@ -2479,30 +2542,29 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .dash-today .hero { justify-content: space-between; }
   .dash-today .sheet, .dash-today .hero { box-shadow: none; }
   .dash-side { grid-column: 2; grid-row: 1; }
-  /* Go deeper is a band, not a block: it reads across the foot of the page in
-     one line rather than eating a column. */
-  /* Go deeper reads across in three: a narrow label, the three modes in the
-     middle with the room they need, and the reps on the right in line with the
-     heading rather than stacked under it. */
+  /* Go deeper reads across in three: the label and what it is for on the
+     left, the three modes in the middle with the room they need, and the reps
+     on the right in line with the heading rather than stacked under it.
+
+     The subtitle used to be hidden here (`display: none`), which left a 13rem
+     column holding two words and a lot of nothing while the three tiles were
+     squeezed into what was left. It is set smaller instead, so the column
+     earns its width and the tiles get theirs back. */
   .dash-wide .deeper {
-    padding: .6rem .9rem;
-    display: grid; grid-template-columns: minmax(8rem, 13rem) minmax(0, 1fr) auto;
-    align-items: center; gap: 1rem;
+    padding: .7rem 1rem;
+    display: grid; grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr) auto;
+    align-items: center; gap: 1.1rem;
   }
   /* the head dissolves so its two halves can take their own cells */
   .dash-wide .deeper-head { display: contents; }
-  .dash-wide .deeper-title { grid-column: 1; grid-row: 1; }
-  .dash-wide .deeper .pr-grid-3 { grid-column: 2; grid-row: 1; }
-  .dash-wide .deeper-count { grid-column: 3; grid-row: 1; flex-direction: row; align-items: center; gap: .5rem; }
-  .dash-wide .deeper-foot { grid-column: 1 / -1; grid-row: 2; }
-  /* the explanation is a paragraph, and a band has no room for one */
-  .dash-wide .deeper .deeper-sub { display: none; }
-  .dash-wide .deeper .pr-deep { padding: .4rem .5rem; gap: .5rem; }
-  .dash-wide .deeper .pr-deep-body b { font-size: .84rem; }
-  .dash-wide .deeper .pr-grid-3 { gap: .5rem; }
-  .dash-wide .deeper .pr-ring { width: 30px; height: 30px; }
-  .dash-wide .deeper .pr-deep-body small { font-size: .66rem; }
-  .dash-wide .deeper-foot { font-size: .68rem; padding-top: .2rem; }
+  .dash-wide .deeper-title { display: flex; flex-direction: column; gap: .15rem; }
+  .dash-wide .deeper-sub { font-size: .7rem; line-height: 1.4; margin: 0; max-width: none; }
+  .dash-wide .deeper-count { order: 3; min-width: 0; max-width: 12rem; }
+  .dash-wide .tally-row { flex-wrap: nowrap; }
+  .dash-wide .pr-grid-3 { order: 2; gap: .55rem; }
+  .dash-wide .pr-deep { padding: .55rem .65rem; gap: .55rem; }
+  .dash-wide .deeper .pr-ring { width: 32px; height: 32px; }
+  .dash-wide .deeper .pr-deep-body small { font-size: .68rem; }
   .dash-wide .sq { gap: .3rem 1rem; padding: .5rem .9rem; }
   .dash-wide .sq-icon { font-size: 1.1rem; }
   .dash-wide .sq-name b { font-size: .92rem; }
@@ -2881,6 +2943,41 @@ button.tier-head:hover { border-color: var(--ink-3); }
 }
 /* the greeting is the one stage that is only a picture */
 .intro-card.stage-0 { width: min(24rem, 100%); cursor: pointer; text-align: center; }
+
+/* ---------- the questions have to fit on the screen they are asked on ----------
+
+   Stage 1 is the only one with a form in it, and it was 928px of card in a
+   720px window — a first run that opens on a scrollbar, with the button that
+   dismisses it below the fold. The three fields were stacked in a 38rem
+   column: four levels wrapping to two rows, ten interests in two columns of
+   five, and generous gaps between the lot.
+
+   It gets its own width instead, and the two pickers are laid out across it.
+   Measured on a 1280x720 laptop: 928px down to about 560, so the whole
+   question — including the button — is on screen without moving. */
+.intro-card.stage-1 { width: min(52rem, 100%); gap: .7rem; }
+.intro-card.stage-1 .intro-head { gap: .2rem; }
+.intro-card.stage-1 .intro-head p { font-size: .8rem; line-height: 1.45; }
+.intro-card.stage-1 .intro-field { gap: .3rem; }
+/* four levels, one row each of them */
+@media (min-width: 700px) {
+  .intro-card.stage-1 .intro-levels { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* ten interests read as a block of tiles, not a tall list */
+  .intro-card.stage-1 .int-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+}
+@media (min-width: 1000px) {
+  .intro-card.stage-1 .int-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+.intro-card.stage-1 .int { padding: .45rem .55rem; gap: .45rem; }
+.intro-card.stage-1 .int-body b { font-size: .8rem; }
+.intro-card.stage-1 .intro-level { padding: .5rem .55rem; }
+.intro-card.stage-1 .intro-level small { font-size: .65rem; line-height: 1.3; }
+.intro-card.stage-1 .intro-hint { font-size: .72rem; line-height: 1.4; }
+
+/* The other three carry no form and already fit; this is the floor under all
+   of them — a stage that somehow outgrows the window still scrolls rather
+   than hiding its own Next button. */
+.intro-card { max-height: calc(100dvh - 2rem); }
 
 .intro-head { display: flex; flex-direction: column; gap: .3rem; }
 .intro-head h2 { font-size: 1.25rem; line-height: 1.2; }

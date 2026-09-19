@@ -615,9 +615,18 @@ console.log('\nthe ? belongs to the page it is standing on');
   const unstyled = sels.filter(c => !new RegExp('\\.' + c + '\\b').test(css));
   ok('every target is a class the stylesheet knows', !unstyled.length, unstyled.join(' '));
 
-  /* a step whose target is not on screen is skipped, not pointed at nothing */
+  /* a step whose target is not on screen is skipped, not pointed at nothing —
+     and "not on screen" means no box, not merely no element: a class that
+     exists on another tab resolves to a 0x0 node and used to keep its step */
   ok('steps with no target on screen are dropped',
-     /const coachSteps = v => \(COACH\[v\] \? COACH\[v\]\.steps\.filter\(s => \$\(s\.sel\)\) : \[\]\)/.test(appSrc));
+     /\.filter\(s => \{ const el = coachTarget\(v, s\.sel\); return el && el\.getBoundingClientRect\(\)\.width > 0; \}\)/.test(appSrc));
+  /* .search exists on Write AND Library; an unscoped querySelector found the
+     Write one from every tab, so the Library's step ringed the corner */
+  ok('and a step resolves its target inside its own tab',
+     /function coachTarget\(v, sel\)/.test(appSrc)
+     && /const el = coachTarget\(coach\.view, s\.sel\);/.test(appSrc));
+  const dupes = [...new Set(sels.filter(c => sels.filter(x => x === c).length > 1))];
+  ok('no two guides point at the same class', !dupes.length, dupes.join(' '));
   ok('and an empty guide never opens', /if \(!steps\.length\) return;/.test(appSrc));
 
   /* the ? names the page it is standing on, and hides where there is none */
@@ -774,7 +783,17 @@ console.log('\nmilestones');
 
   /* the four decisions, in the source */
   ok('placement marks silently rather than celebrating the test you just took',
-     /hailSilently\(\);\n    closePlacement\(\);/.test(appSrc));
+     /hailSilently\(\);\n    closePlacement\(true\);/.test(appSrc));
+  /* and then carries straight on into the session it was asked for, rather
+     than returning to the button that opened it */
+  ok('finishing the check starts the day it just placed you in',
+     /if \(andStart && placeThenStart\) setTimeout\(startSession, 260\);/.test(appSrc));
+  ok('but only when the check was opened from the session button',
+     /if \(yes\) \{ placeThenStart = true; openPlacement\(\); return false; \}/.test(appSrc)
+     && /\$\("#placeClose"\).onclick = \(\) => closePlacement\(false\);/.test(appSrc));
+  /* declining it starts the same session immediately */
+  ok('and declining it starts from the beginning there and then',
+     /if \(await maybeAskLevel\(\)\) startSession\(\);/.test(appSrc));
   ok('a finished session is where it fires', /maybeHail\(700\);/.test(appSrc));
   ok('and it celebrates with the same stamp the session grade uses',
      /\.hail-seal \{[^}]*animation: stamp /s.test(read('css/app.css')));
@@ -2120,10 +2139,11 @@ console.log('\nthe menu has a tab of its own');
   ok('and a tab in both navs', (html.match(/data-nav="menu"/g) || []).length === 2);
   ok('the overlay it replaced is gone', !/openQuest/.test(appSrc),
      'two renderings of one page, and the readable one was the one you had to go and find');
-  /* the dashboard points at the tab instead of restating it */
-  ok('the dashboard keeps a way in, not a second copy',
-     /class="sheet sq-peek"/.test(appSrc) && (appSrc.match(/class="sheet sq"/g) || []).length === 1);
-  ok('and it goes to the tab', /data-nav-to="menu"/.test(appSrc) && /go\(b\.dataset\.navTo\)/.test(appSrc));
+  /* The quest is rendered once, on its own tab. It had a block on the Today
+     dashboard, then a one-line pointer where the block had been; both were
+     the menu turning up on a page about the day's five characters. */
+  ok('the dashboard does not render the quest at all',
+     !/sq-peek/.test(appSrc) && (appSrc.match(/class="sheet sq"/g) || []).length === 1);
 
   /* The phrases belong on this page: six characters appear in them and
      nowhere on the card, so this row is the only place they are legible. */
@@ -2157,7 +2177,7 @@ console.log('\nthe menu has a tab of its own');
      'a stale menu flag would suppress a real session\u2019s bookkeeping');
 
   /* the page's own classes are drawn */
-  ['sq-peek', 'ink-read', 'ink-bar', 'menu-say', 'sq-learn', 'menu-intro'].forEach(c =>
+  ['ink-read', 'ink-bar', 'menu-say', 'sq-learn', 'menu-intro'].forEach(c =>
     ok(`.${c} is styled`, new RegExp('\\.' + c + '\\b').test(css)));
 }
 

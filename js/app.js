@@ -1948,11 +1948,16 @@ function glyphs(str, target) {
 
 function renderMenuCard(target, tall) {
   const m = MENU, tier = menuTier().n;
-  const row = it => `<div class="mrow">
+  /* A menu row is a thing to hear, not only a thing to look at — ordering is
+     the point of being able to read it. The pinyin rides along so the sound
+     and the spelling arrive together, which is also what makes the grey
+     characters worth hovering rather than skipping. */
+  const row = it => `<button class="mrow" data-speak="${esc(it[0])}" title="Hear 「${esc(it[0])}」 — ${esc(it[1])}">
       <span class="dish">${glyphs(it[0], target)}</span>
+      <span class="mpin">${esc(it[1])}</span>
       <span class="dots"></span>
       <span class="price">¥${it[3]}</span>
-    </div>${tier >= 2 && it[4] ? `<div class="mdesc">${glyphs(it[4][0], target)}</div>` : ""}`;
+    </button>${tier >= 2 && it[4] ? `<div class="mdesc">${glyphs(it[4][0], target)}</div>` : ""}`;
 
   return `<div class="menu-card ${tall ? "tall" : ""}">
     <div class="menu-top">
@@ -2060,11 +2065,13 @@ function openFlash(deck, title) {
   if (!deck.length) return;
   flash.deck = shuffle([...deck]);
   flash.i = 0; flash.flipped = false; flash.title = title;
+  flashKeysReset();
   $("#flash").classList.add("on");
   document.body.style.overflow = "hidden";
   renderFlash();
 }
 function closeFlash() {
+  flashKeysReset();
   $("#flash").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
@@ -2140,6 +2147,65 @@ function renderFlash() {
   const last = flash.i === flash.deck.length - 1;
   $("#flashNext").innerHTML = last ? "Done" : `Next <span class="fk">→</span>`;
 }
+/* ---------- the space bar, three ways ----------
+
+   One key, because a flashcard is a thing you hold in one hand: tap to hear
+   it, tap twice to move on, hold to peek at the back and let go to put it
+   down again. The arrows stay on prev/next for anyone who wants one key one
+   action.
+
+   Tap and hold cannot be told apart on keydown — you only know it was a tap
+   when the key comes back up — so keydown starts a clock and keyup decides.
+   A held key also autorepeats, which is why e.repeat is ignored rather than
+   counted as a second press. */
+const FLASH_HOLD_MS = 170;    /* past this it is a hold, and the card turns */
+const FLASH_TAP_MS = 260;     /* a second tap inside this means "next card" */
+const fkey = { down: 0, held: false, holdTimer: null, tapTimer: null };
+
+function flashFlip(to) {
+  if (flash.flipped === to) return;
+  flash.flipped = to;
+  $("#card3d")?.classList.toggle("flipped", to);
+}
+
+function flashKeyDown(e) {
+  if (e.repeat || fkey.down) return;         /* autorepeat is still one press */
+  fkey.down = Date.now();
+  fkey.held = false;
+  fkey.holdTimer = setTimeout(() => {
+    fkey.held = true;
+    /* held: the back stays up for as long as it is held, and says itself once */
+    flashFlip(true);
+    sayPhrase(flashFace(flash.deck[flash.i]).speak);
+  }, FLASH_HOLD_MS);
+}
+
+function flashKeyUp() {
+  if (!fkey.down) return;
+  clearTimeout(fkey.holdTimer);
+  fkey.down = 0;
+  if (fkey.held) { fkey.held = false; flashFlip(false); return; }   /* let go, turn it back */
+
+  /* a tap. If one is already waiting, this is the second and they mean next. */
+  if (fkey.tapTimer) {
+    clearTimeout(fkey.tapTimer); fkey.tapTimer = null;
+    stopPhrase();
+    flashStep(1);
+    return;
+  }
+  fkey.tapTimer = setTimeout(() => {
+    fkey.tapTimer = null;
+    sayPhrase(flashFace(flash.deck[flash.i]).speak, true);
+  }, FLASH_TAP_MS);
+}
+
+/* Leaving the deck with the key still down would strand the card face-up and
+   the timers armed. */
+function flashKeysReset() {
+  clearTimeout(fkey.holdTimer); clearTimeout(fkey.tapTimer);
+  fkey.down = 0; fkey.held = false; fkey.holdTimer = fkey.tapTimer = null;
+}
+
 function flashStep(d) {
   if (flash.i + d >= flash.deck.length) return closeFlash();
   flash.i = Math.max(0, flash.i + d);
@@ -2956,7 +3022,7 @@ function learnedToday() {
 const TODAY_TASKS = [
   { id: "recall", k: "认读", name: "Recognise them",       sub: "character to meaning", kind: "r", proves: ["r"] },
   { id: "read",   k: "阅读", name: "Read them in context", sub: "words and sentences",  kind: "d", proves: ["d"] },
-  { id: "say",    k: "发音", name: "Hear them and say them", sub: "sound and tone",     kinds: ["l", "p"], kind: "p", proves: ["p", "l"] },
+  { id: "say",    k: "发音", name: "Hear them",              sub: "sound and tone",     kinds: ["l", "p"], kind: "p", proves: ["p", "l"] },
   { id: "copy",   k: "抄写", name: "Write them out",       sub: "square by square",     copy: true }
 ];
 
@@ -3265,16 +3331,27 @@ function renderToday() {
     const chars = practiceChars(id);
     return chars.length > 0 && skillStanding(cfg.skill, chars).pct >= 1;
   });
+  /* The foot line is gone. It was a full-width straggler at the bottom of the
+     band carrying two unrelated facts — what "solid" means, and the lifetime
+     rep count — both of which belong beside the thing they are about. The
+     definition rides under the subtitle where the word is used; the lifetime
+     count rides in the corner with today's. That is one row fewer, and the
+     band closes up under the tiles instead of trailing off. */
   const deeper = `<section class="deeper">
     <div class="deeper-head">
       <span class="deeper-title">
         <span class="eyebrow">Go deeper ${hanLabel("加练")}</span>
-        <p class="deeper-sub">Reps past today's list. None of it is required and none of it can be finished —
-          that's what makes it the part that compounds.</p>
+        <p class="deeper-sub">Reps past today's list — never required, never finished.
+          <span class="solid-def" title="A character counts as solid in a mode once you have answered it correctly ${PASSES_FOR_SOLID} times in that mode. The three modes are counted separately: solid at reading says nothing about writing.">
+            <b>Solid</b> = ${PASSES_FOR_SOLID} correct in that mode, shakiest first.</span></p>
       </span>
-      <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark">
-        ${tallyRow(exToday, 3)}
-        <span class="deeper-n"><b>${exToday}</b> rep${exToday === 1 ? "" : "s"} today</span>
+      <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark${
+        exAll ? ` · ${exAll.toLocaleString()} all told${exBest > 4 ? `, best day ${exBest}` : ""}` : ""}">
+        ${exToday ? tallyRow(exToday, 3) : ""}
+        <span class="deeper-n">${exToday
+          ? `<b>${exToday}</b> today`
+          : `<b class="dim">—</b> none today`}</span>
+        ${exAll ? `<span class="deeper-life">${exAll.toLocaleString()} all told</span>` : ""}
       </span>
     </div>
     <div class="pr-grid pr-grid-3">
@@ -3308,36 +3385,12 @@ function renderToday() {
         </button>`;
       }).join("")}
     </div>
-    <div class="deeper-foot">
-      <span>${PASSES_FOR_SOLID} clean passes makes a character solid · shakiest first</span>
-      <span class="deeper-life">${exAll
-        ? `${exAll.toLocaleString()} rep${exAll === 1 ? "" : "s"} all told${exBest > 4 ? ` · best day ${exBest}` : ""}`
-        : "Your first rep starts the count"}</span>
-    </div>
   </section>`;
 
-  /* The side quest used to sit here, squeezed into a dashboard block that
-     could say where it had got to and not much else, with the menu itself an
-     overlay behind "See the full menu". It has its own tab now — the card at
-     full size, the phrases, and the day's character all on one page. What the
-     dashboard keeps is a line pointing at it, because the daily pick is worth
-     knowing about from Today; what it loses is a second, worse rendering of
-     the same thing. */
-  const mp = menuProgress();
-  const pick2 = menuToday();
-  const learnedIt = pick2.c ? menuCanRead(pick2.c) : true;
-  const sideQuest = `<button class="sheet sq-peek" data-nav-to="menu">
-    <span class="sq-icon">🍜</span>
-    <span class="sq-peek-say">
-      <b>Read a Menu ${hanLabel("看菜单")}</b>
-      <small>${pick2.c
-        ? learnedIt
-          ? `Today's character <span class="han">${esc(pick2.c)}</span> is learned — ${Math.round(mp.pct * 100)}% of the menu is legible to you.`
-          : `Today's character is <span class="han">${esc(pick2.c)}</span>, printed on the menu as it stands. ${Math.round(mp.pct * 100)}% of it is legible to you.`
-        : `You can read every character on it. ${mp.total} of ${mp.total}.`}</small>
-    </span>
-    <span class="sq-peek-go" aria-hidden="true">→</span>
-  </button>`;
+  /* The side quest is not on this page at all. It had a block here, then a
+     one-line pointer at the tab that replaced it, and the pointer was still
+     the menu turning up on a page that is about the day's five characters.
+     The tab is in the nav; that is the pointer. */
 
   $("#viewToday").innerHTML = `<div class="wrap">
     <div class="dash">
@@ -3356,7 +3409,7 @@ function renderToday() {
         </div>` : ""}
       </div>
       <div class="dash-col dash-side">${wotw}${decks}</div>
-      <div class="dash-wide">${deeper}${sideQuest}</div>
+      <div class="dash-wide">${deeper}</div>
     </div>
   </div>`;
 
@@ -3380,7 +3433,6 @@ function renderToday() {
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
   $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
-  $$("#viewToday [data-nav-to]").forEach(b => b.onclick = () => go(b.dataset.navTo));
   $("#ltMore")?.addEventListener("click", () => { todayOpen = !todayOpen; renderToday(); });
   $$("#viewToday .lt-arrow").forEach(b => b.onclick = () => {
     const rail = $("#ltStrip");
@@ -4208,9 +4260,13 @@ function onKey(e) {
     return;
   }
 
-  /* flashcards */
+  /* Flashcards: the space bar does three things, told apart by how it is
+     pressed — see flashKeyDown/Up, where the decision is made on release
+     because a tap and a hold are the same keydown. Enter and the arrows keep
+     working as they did. */
   if ($("#flash").classList.contains("on")) {
-    if (e.key === " " || e.key === "Enter") { e.preventDefault(); $("#card3d")?.click(); }
+    if (e.key === " ") { e.preventDefault(); flashKeyDown(e); return; }
+    if (e.key === "Enter") { e.preventDefault(); $("#card3d")?.click(); }
     else if (e.key === "ArrowRight") { e.preventDefault(); flashStep(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); flashStep(-1); }
     return;
@@ -4454,6 +4510,10 @@ const place = { idx: 0, asked: 0, misses: 0, done: false, got: new Set(), result
 
 const MIN_BEFORE_STOP = 12;   /* questions before "that's enough" is offered */
 
+/* Set by maybeAskLevel() when the check was opened from "Start today's
+   session", so the end of the check knows to carry on into it. */
+let placeThenStart = false;
+
 function openPlacement() {
   place.idx = 0; place.asked = 0; place.misses = 0; place.done = false;
   place.got = new Set(); place.result = 0; place.locked = false;
@@ -4462,11 +4522,19 @@ function openPlacement() {
   renderPlacement();
 }
 
-function closePlacement() {
+/* `andStart` is set when the placement was reached from the session button,
+   which is the only way into it on a first run. Finishing the check there and
+   being dropped back on the dashboard to press the same button again is a
+   dead end: the whole point of answering it was to find out where today's
+   five characters begin, and the answer is "here they are". Closing it any
+   other way — the ✕, or a re-place from Settings — just closes it. */
+function closePlacement(andStart) {
   $("#place").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
   /* The two questions were asked in the introduction, before any of this. */
+  if (andStart && placeThenStart) setTimeout(startSession, 260);
+  placeThenStart = false;
 }
 
 function placementOptions(c) {
@@ -4583,12 +4651,12 @@ function renderPlacementDone() {
     </div>
     <p class="note dim">You can re-place from Settings at any time. It only ever adds.</p>
   </div>`;
-  $("#placeRedo").onclick = openPlacement;
+  $("#placeRedo").onclick = openPlacement;   /* placeThenStart survives a retake */
   $("#placeGo").onclick = () => {
     if (n) placeKnown(place.got);
     else { state.placed = { on: dayKey(), at: 0, known: 0 }; save(); }
     hailSilently();
-    closePlacement();
+    closePlacement(true);
   };
 }
 
@@ -4908,7 +4976,7 @@ async function maybeAskLevel() {
         + "for years. Under two minutes — or start from the beginning anyway.",
     yes: "Find my level", no: "Start from the beginning"
   });
-  if (yes) { openPlacement(); return false; }
+  if (yes) { placeThenStart = true; openPlacement(); return false; }
   state.placed = { at: 0, on: dayKey() }; save();
   return true;
 }
@@ -5017,9 +5085,7 @@ const COACH = {
     { sel: ".dash-side", k: "生字卡", title: "A word a week, and the decks",
       body: "The word of the week comes from what you said you were interested in. Below it, every character you know as flashcards." },
     { sel: ".deeper", k: "加练", title: "The part that compounds",
-      body: "Reps past today's list, weakest first. None of it is required and none of it can be finished — that is what makes it the part that compounds." },
-    { sel: ".sq-peek", k: "看菜单", title: "A side quest with an ending",
-      body: "One character a day from a real restaurant menu. This is the way in; the menu itself has its own tab." }
+      body: "Reps past today's list, weakest first. None of it is required and none of it can be finished — that is what makes it the part that compounds." }
   ]},
   menu: { label: "the Menu", steps: [
     { sel: ".sq-target", k: "今日一字", title: "One character a day",
@@ -5081,9 +5147,30 @@ const COACH = {
 
 let coach = { view: null, step: 0, steps: [], locked: false };
 
-/* Only the steps whose target is actually on screen. A ring around nothing is
-   worse than one step fewer. */
-const coachSteps = v => (COACH[v] ? COACH[v].steps.filter(s => $(s.sel)) : []);
+/* A guide step is about the page it is standing on, so its selector is
+   resolved INSIDE that page's section rather than against the whole document.
+
+   `.search` is why. The Write tab has a `.search.pick-find` box and the
+   Library has a `.search`; the Write one comes first in index.html, so
+   document.querySelector(".search") returned it on every tab. On a tab where
+   it is not rendered it measures 0x0 at 0,0 — so the Library's first step
+   drew a 12px ring in the top-left corner, and the "is it on screen?" filter
+   below happily kept the step because it had found *an* element.
+
+   Two classes sharing a name across two tabs is not a mistake anyone would
+   see reading either file. Scoping the lookup makes it impossible. */
+function coachTarget(v, sel) {
+  const host = $("#view" + v[0].toUpperCase() + v.slice(1));
+  const el = host ? host.querySelector(sel) : null;
+  /* a target outside the view's own section — none today, but the ? itself
+     lives in the top bar and a future step may point at it */
+  return el || $(sel);
+}
+
+/* Only the steps whose target is actually rendered. A ring around nothing is
+   worse than one step fewer, and an element with no box is nothing. */
+const coachSteps = v => (COACH[v] || { steps: [] }).steps
+  .filter(s => { const el = coachTarget(v, s.sel); return el && el.getBoundingClientRect().width > 0; });
 
 /* The ? names the page it is standing on, and is hidden on a tab with no
    guide rather than opening an empty overlay. */
@@ -5121,20 +5208,44 @@ function closeCoach(force) {
   coach = { view: null, step: 0, steps: [], locked: false };
 }
 
+/* The ring sits on top of the thing it is pointing at, in viewport
+   coordinates, padded so the target is not touching it. An element taller
+   than the window is pinned to the top of the viewport instead of being
+   centred on a midpoint that is off screen in both directions. */
+function placeCoachRing(el, ring) {
+  const r = el.getBoundingClientRect(), pad = 6;
+  const top = Math.max(pad, r.top - pad);
+  const height = Math.min(r.height + pad * 2, innerHeight - top - pad);
+  ring.hidden = false;
+  ring.style.cssText = `top:${top}px;left:${Math.max(pad, r.left - pad)}px;`
+    + `width:${Math.min(r.width + pad * 2, innerWidth - pad * 2)}px;height:${height}px`;
+}
+
 function renderCoach() {
   const s = coach.steps[coach.step];
   if (!s) return closeCoach(true);
   const last = coach.step === coach.steps.length - 1;
-  const el = $(s.sel);
+  const el = coachTarget(coach.view, s.sel);
 
   $$(".coach-lit").forEach(e => e.classList.remove("coach-lit"));
   const ring = $("#coachRing");
   if (el) {
     el.classList.add("coach-lit");
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
-    const r = el.getBoundingClientRect();
-    ring.hidden = false;
-    ring.style.cssText = `top:${r.top - 6}px;left:${r.left - 6}px;width:${r.width + 12}px;height:${r.height + 12}px`;
+    /* The ring is positioned in viewport coordinates, so it has to be measured
+       AFTER the scroll has happened. It used to ask for a smooth scroll and
+       then read getBoundingClientRect() on the very next line — the rect it
+       got was the one from before the page moved, so every step whose target
+       was not already centred drew its ring somewhere else entirely. "Go
+       deeper" sits at the foot of the dashboard and was the worst of them.
+
+       An instant scroll settles synchronously, so the measurement below is
+       taken against where the element actually ended up. */
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    placeCoachRing(el, ring);
+    /* Belt and braces: a late image or a web font can reflow under us between
+       that scroll and the paint. One more measurement on the next frame costs
+       nothing and catches it. */
+    requestAnimationFrame(() => { if (coach.steps[coach.step] === s) placeCoachRing(el, ring); });
   } else ring.hidden = true;
 
   $("#coachCard").innerHTML = `
@@ -5250,6 +5361,15 @@ function boot() {
   /* clicking the dim backdrop is a cancel, like Escape */
   $("#ask").addEventListener("pointerdown", e => { if (e.target === $("#ask")) closeAsk(false); });
   document.addEventListener("keydown", onKey);
+  /* the flashcard space bar is decided on release, so it needs the other half */
+  document.addEventListener("keyup", e => {
+    if (e.key !== " ") return;
+    if (!$("#flash").classList.contains("on")) return flashKeysReset();
+    e.preventDefault();
+    flashKeyUp();
+  });
+  /* a key still down when the window goes away would strand the card face-up */
+  window.addEventListener("blur", flashKeysReset);
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
@@ -5265,7 +5385,7 @@ function boot() {
   initTips();
   initSpeakables();
   $("#flashClose").onclick = closeFlash;
-  $("#placeClose").onclick = closePlacement;
+  $("#placeClose").onclick = () => closePlacement(false);
   $("#nbClose").onclick = closeNotebook;
   /* #nbPad lives inside the notebook stage now, and is bound when it renders */
   $("#flashPrev").onclick = () => flashStep(-1);
