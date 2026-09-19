@@ -165,23 +165,41 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
   background: var(--gold); border: 1.5px solid var(--sheet);
 }
 
-/* ---------- the four-week tracker: one row, under the bar ---------- */
+/* ---------- the four-week tracker, behind the streak chip ----------
 
+   It was a full-width sticky bar that opened with 🔥 N — directly under a chip
+   that also said 🔥 N. Two rows of chrome for one fact, and 34px of height off
+   a dashboard that needs every pixel. */
+.streak-pop { position: relative; display: flex; }
+.streak-pop .chip-streak { cursor: pointer; }
 .tracker {
-  position: sticky; top: 0; z-index: 39;
-  display: flex; align-items: center; gap: .7rem;
-  padding: .45rem .85rem;
-  border-bottom: 1px solid var(--rule-2);
-  background: var(--sunken);
+  position: absolute; top: calc(100% + .5rem); right: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: stretch; gap: .45rem;
+  /* max-width: 24rem cropped a 28-day row that wants 445px, so the popover cut
+     off the thing it exists to show. It sizes to its contents; only the
+     viewport bounds it. */
+  width: max-content; max-width: calc(100vw - 1.6rem);
+  padding: .6rem .7rem;
+  border: 1px solid var(--rule); border-radius: 9px;
+  background: var(--sheet); box-shadow: var(--shadow-lift);
+  opacity: 0; visibility: hidden; transform: translateY(-3px);
+  transition: opacity .13s ease, transform .13s ease, visibility .13s;
 }
+.streak-pop:hover .tracker,
+.streak-pop:focus-within .tracker,
+.streak-pop.on .tracker { opacity: 1; visibility: visible; transform: none; }
+@media (hover: none) { .streak-pop:hover .tracker { opacity: 0; visibility: hidden; } }
+.streak-pop.on .tracker { opacity: 1 !important; visibility: visible !important; }
+/* Explicitly closed by a click, and the pointer has not left yet — see boot(). */
+.streak-pop.shut .tracker { opacity: 0; visibility: hidden; transform: translateY(-3px); }
 .tracker-lbl {
   font-size: .62rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 600; white-space: nowrap;
 }
-.tracker-row { display: flex; gap: 3px; flex: 1; min-width: 0; overflow-x: auto; padding: 2px 0; }
+.tracker-row { display: flex; gap: 3px; min-width: 0; padding: 2px 0; }
 .tracker-row::-webkit-scrollbar { height: 0; }
 .tracker-row .day { flex: none; }
-.tracker-note { font-size: .7rem; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tracker-note { font-size: .7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
 main { flex: 1; width: 100%; }
 .wrap { max-width: 34rem; margin: 0 auto; padding: 1rem .85rem 5.5rem; }
@@ -911,7 +929,40 @@ code {
   display: flex; flex-direction: column; gap: .6rem;
 }
 .learned-head { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; }
-.learned-strip { display: flex; gap: .4rem; flex-wrap: wrap; }
+/* The day's characters: a rail, not a wall. At five a day it is one row; at
+   sixty-five it was 362px of the 629 available, on its own. */
+.learned-rail { display: flex; align-items: center; gap: .3rem; }
+.learned-strip {
+  display: flex; gap: .4rem; flex-wrap: nowrap;
+  overflow-x: auto; scroll-behavior: smooth;
+  flex: 1; min-width: 0; scrollbar-width: none; padding-bottom: 2px;
+}
+.learned-strip::-webkit-scrollbar { height: 0; }
+.learned-strip .lc { flex: none; }
+.lt-arrow {
+  flex: none; width: 1.4rem; height: 2.5rem; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--sheet); color: var(--ink-3);
+  font-size: .9rem; line-height: 1; display: grid; place-items: center;
+}
+.lt-arrow:hover { color: var(--ink); border-color: var(--ink-3); background: var(--sunken); }
+.learned-more {
+  align-self: flex-start; margin-top: .1rem;
+  padding: .15rem .45rem; border-radius: 6px; font-size: .7rem;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink-3);
+}
+.learned-more:hover { color: var(--ink); border-color: var(--ink-3); background: var(--sunken); }
+
+/* the whole day, across the foot of the enclosure — by then it concerns the
+   whole day rather than one card in it */
+.today-all {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .7rem .8rem; border-radius: 9px;
+  border: 1px solid var(--rule-2); background: var(--sheet);
+}
+.today-all-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(3.1rem, 1fr));
+  gap: .35rem; max-height: 11rem; overflow-y: auto;
+}
 .lc {
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
   padding: .45rem .4rem .4rem; min-width: 3.2rem; border-radius: 8px;
@@ -2157,4 +2208,112 @@ button.tier-head:hover { border-color: var(--ink-3); }
 
   /* the card is wider, so the type in it can stop being cramped */
   .cardx .words { gap: .5rem .9rem; }
+}
+
+/* ============================================================
+   Today, as a dashboard
+
+   The page is a set of choices about what to do next, so the choices have to
+   be visible at once. On a 1280x720 laptop that is 629px below the bars; this
+   page wanted 1808, most of it the day's character strip — which grows by
+   five every day and never stopped — and a whole restaurant menu printed
+   inside the side quest.
+   ============================================================ */
+
+.dash { display: flex; flex-direction: column; gap: 1rem; }
+.dash-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.dash-wide { min-width: 0; }
+
+/* The day's characters and the day's practice, in one enclosure. */
+.dash-today { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+@media (min-width: 900px) {
+  .dash { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .dash-today { display: contents; }
+  .dash-side { grid-column: 1 / -1; }
+  .dash-wide { grid-column: 1 / -1; }
+}
+@media (min-width: 1180px) {
+  .dash { grid-template-columns: minmax(0, 2.1fr) minmax(0, .95fr); align-items: stretch; }
+  /* Two leaves side by side: the day's characters on the left, the day's
+     practice on the right. */
+  .dash-today {
+    display: grid; align-items: stretch;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: .9rem;
+  }
+  /* Equal columns. The cards used to size to their contents, so columns of
+     different lengths left a ragged bottom edge with the Go deeper band
+     hanging below the shortest of them. Stretching removes the negative space
+     rather than moving it somewhere else. */
+  .dash-col > :last-child { flex: 1 1 auto; }
+  .dash-today > .dash-col { height: 100%; }
+  /* the expanded day spans both columns, under them */
+  .dash-today .today-all { grid-column: 1 / -1; }
+
+  /* The hero's slack pooled under the day's characters. The three blocks share
+     it instead, which is also what makes the card read as a page with things
+     placed on it rather than a stack that ran out. */
+  .dash-today .hero { justify-content: space-between; }
+  .dash-today .sheet, .dash-today .hero { box-shadow: none; }
+  .dash-side { grid-column: 2; grid-row: 1; }
+  /* Go deeper is a band, not a block: it reads across the foot of the page in
+     one line rather than eating a column. */
+  /* Go deeper reads across in three: a narrow label, the three modes in the
+     middle with the room they need, and the reps on the right in line with the
+     heading rather than stacked under it. */
+  .dash-wide .deeper {
+    padding: .6rem .9rem;
+    display: grid; grid-template-columns: minmax(8rem, 13rem) minmax(0, 1fr) auto;
+    align-items: center; gap: 1rem;
+  }
+  /* the head dissolves so its two halves can take their own cells */
+  .dash-wide .deeper-head { display: contents; }
+  .dash-wide .deeper-title { grid-column: 1; grid-row: 1; }
+  .dash-wide .deeper .pr-grid-3 { grid-column: 2; grid-row: 1; }
+  .dash-wide .deeper-count { grid-column: 3; grid-row: 1; flex-direction: row; align-items: center; gap: .5rem; }
+  .dash-wide .deeper-foot { grid-column: 1 / -1; grid-row: 2; }
+  /* the explanation is a paragraph, and a band has no room for one */
+  .dash-wide .deeper .deeper-sub { display: none; }
+  .dash-wide .deeper .pr-deep { padding: .45rem .55rem; }
+  .dash-wide .deeper .pr-grid-3 { gap: .5rem; }
+  .dash-wide .deeper-foot { font-size: .68rem; }
+
+  /* The last pass of compaction, measured rather than guessed: padding and
+     type scale that only the scrolling layout could afford. */
+  .dash { gap: .75rem; }
+  .dash-col { gap: .75rem; }
+  /* the page's own bottom padding is there to clear the end of a scroll; a
+     dashboard has no end to clear */
+  #viewToday .wrap { padding-bottom: .9rem; }
+  .dash .hero-cta { padding: .55rem .8rem; }
+  .dash .learned { gap: .35rem; padding-top: .75rem; }
+  .dash .todo-block { padding-bottom: .5rem; }
+  .dash .todo { padding-top: .42rem; padding-bottom: .42rem; }
+  .dash .wotw { padding: .8rem .85rem .85rem; gap: .45rem; }
+  .dash .wotw .wotw-word { padding: .55rem .6rem; }
+  .dash .wotw-note { font-size: .74rem; line-height: 1.45; }
+  .dash .wotw .note.dim { display: none; }
+  .dash .decks { padding: .7rem .8rem .75rem; gap: .4rem; }
+  .dash .decks .deck { padding: .45rem .6rem; gap: .6rem; }
+  .dash .decks .deck-cards { width: 30px; height: 38px; }
+  .dash .decks .deck-cards .dc { font-size: 1.05rem; }
+  .dash .decks .deck-text b { font-size: .88rem; }
+  .dash .decks .deck-text small { font-size: .7rem; }
+  /* The side quest is a band too, for the same reason Go deeper is: it is one
+     choice among the day's choices, not a column of its own. The whole menu
+     it used to print is behind "See the full menu", where there is room to
+     read it. */
+  .dash-wide .sq {
+    display: grid; grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr) auto;
+    align-items: center; gap: 1rem; padding: .6rem .9rem;
+  }
+  .dash-wide .sq-top { grid-column: 1; grid-row: 1; }
+  .dash-wide .sq .bar { grid-column: 1; grid-row: 2; align-self: start; }
+  .dash-wide .sq .note { grid-column: 1; grid-row: 3; margin: 0; font-size: .68rem; line-height: 1.35; }
+  .dash-wide .sq-target { grid-column: 2; grid-row: 1 / 4; padding: .45rem .55rem; }
+  .dash-wide .sq-glyph { width: 2.6rem; height: 2.6rem; font-size: 1.7rem; }
+  .dash-wide .sq-actions { grid-column: 3; grid-row: 1 / 4; flex-wrap: nowrap; }
+  .dash-wide .sq-actions .btn { min-width: 8.5rem; flex: none; }
+  .dash .deeper { padding: .7rem .9rem; }
+  .dash-wide .deeper .pr-meter { max-width: 22rem; }
 }

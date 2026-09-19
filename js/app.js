@@ -2511,11 +2511,15 @@ function renderTracker() {
     cells.push(`<span class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></span>`);
   }
   const s = liveStreak(), total = daysStudied();
+  /* No 🔥 N in here any more: this hangs off the chip that already says it, so
+     it can spend its words on what the chip does not — the run, the days, the
+     best. */
   $("#tracker").innerHTML = `
     <span class="tracker-lbl">Last 4 weeks</span>
     <span class="tracker-row">${cells.join("")}</span>
     <span class="tracker-note" title="A missed day leaves an empty box — nothing you've done is ever cleared.">
-      ${s ? `🔥 ${s}` : "🔥 0"}<span class="sep">·</span>${total} day${total === 1 ? "" : "s"} studied</span>`;
+      ${s ? `${s} day${s === 1 ? "" : "s"} in a row` : "No streak going"}<span class="sep">·</span>${
+      total} day${total === 1 ? "" : "s"} studied · best ${state.streak.best}</span>`;
 }
 
 /* ---------- 正 as a counting mark ----------
@@ -2646,6 +2650,22 @@ function startTodayDrill(task) {
   renderStep();
 }
 
+/* ---------- today ---------- */
+
+/* Whether the day's characters are showing in full. Deliberately not in the
+   record: it is a glance-state for this visit to the page, not a preference. */
+let todayOpen = false;
+
+/* How many fit the rail before it needs arrows. The rail scrolls either way,
+   so this only decides when the controls appear. */
+const LT_VISIBLE = 5;
+
+const charTile = c => {
+  const ch = CHAR_INDEX[c];
+  return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
+    <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
+};
+
 function renderToday() {
   const t = today();
   const due = dueCount();
@@ -2706,11 +2726,13 @@ function renderToday() {
         <span class="dim" style="font-size:.76rem">${got.length} character${got.length === 1 ? "" : "s"}</span>
       </div>
       ${got.length
-        ? `<div class="learned-strip">${got.map(c => {
-            const ch = CHAR_INDEX[c];
-            return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
-              <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
-          }).join("")}</div>`
+        ? `<div class="learned-rail">
+             ${got.length > LT_VISIBLE ? `<button class="lt-arrow" data-lt="-1" aria-label="Earlier characters">‹</button>` : ""}
+             <div class="learned-strip" id="ltStrip">${got.map(charTile).join("")}</div>
+             ${got.length > LT_VISIBLE ? `<button class="lt-arrow" data-lt="1" aria-label="Later characters">›</button>` : ""}
+           </div>
+           ${got.length > LT_VISIBLE ? `<button class="learned-more" id="ltMore" aria-expanded="${todayOpen}">${
+             todayOpen ? "Close" : `See all ${got.length}`}</button>` : ""}`
         : `<div class="learned-empty"><span class="z">空</span>
             <span>Nothing yet today. Characters you learn will collect here.</span></div>`}
     </div>
@@ -2957,20 +2979,30 @@ function renderToday() {
       <button class="btn btn-ghost" id="openMenuFull">See the full menu</button>
     </div>
 
-    <div class="menu-wrap">${renderMenuCard(learnedIt ? null : pick2.c)}</div>
-
-    <div class="menu-legend">
-      <span><b style="color:var(--ink)">黑</b> you can read</span>
-      <span><b style="color:var(--ink-3)">灰</b> not yet</span>
-      ${!learnedIt ? `<span><b style="color:var(--seal)">红</b> today's character</span>` : ""}
-      <span class="dim">Hover any character for its meaning</span>
-    </div>
   </div>`;
+  /* The whole menu used to be printed here — 352px of the side quest's 692,
+     and the same card is one click away behind "See the full menu", where it
+     has room to be read. On a dashboard this block's job is to say where the
+     quest has got to and what today's character is. */
 
   $("#viewToday").innerHTML = `<div class="wrap">
-    <div class="cols">
-      <div class="section">${hero}${todoBlock}${deeper}${sideQuest}</div>
-      <div class="col-side">${decks}${wotw}</div>
+    <div class="dash">
+      <!-- The day's characters and the day's practice are the same subject —
+           what you learned and what to do with it — so they share an enclosure
+           rather than sitting as two cards that happen to be adjacent. -->
+      <div class="dash-today">
+        <div class="dash-col">${hero}</div>
+        <div class="dash-col">${todoBlock}</div>
+        ${todayOpen && got.length ? `<div class="today-all">
+          <div class="learned-head">
+            <span class="eyebrow">Everything you learned today ${hanLabel("今日新字")}</span>
+            <span class="dim" style="font-size:.76rem">${got.length} character${got.length === 1 ? "" : "s"}</span>
+          </div>
+          <div class="today-all-grid">${got.map(charTile).join("")}</div>
+        </div>` : ""}
+      </div>
+      <div class="dash-col dash-side">${wotw}${decks}</div>
+      <div class="dash-wide">${deeper}${sideQuest}</div>
     </div>
   </div>`;
 
@@ -3003,6 +3035,11 @@ function renderToday() {
      button already prints the character, its reading, its meaning and a word
      it appears in, so tapping it is the lesson. */
   $("#learnMenu")?.addEventListener("click", () => { menuLearned(); renderToday(); });
+  $("#ltMore")?.addEventListener("click", () => { todayOpen = !todayOpen; renderToday(); });
+  $$("#viewToday .lt-arrow").forEach(b => b.onclick = () => {
+    const rail = $("#ltStrip");
+    if (rail) rail.scrollBy({ left: +b.dataset.lt * rail.clientWidth * 0.8, behavior: "smooth" });
+  });
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
   $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
   $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
@@ -4332,6 +4369,31 @@ function boot() {
   /* #nbPad lives inside the notebook stage now, and is bound when it renders */
   $("#flashPrev").onclick = () => flashStep(-1);
   $("#flashNext").onclick = () => flashStep(1);
+  /* Hover and focus open it in CSS; a tap needs a class, and a tap anywhere
+     else needs to put it away again.
+
+     `shut` is the awkward one. Clicking the chip a second time removed `on`
+     and nothing happened, because the pointer was still on the chip and
+     `.streak-pop:hover` was holding it open on its own — so the control looked
+     broken precisely when you used it the obvious way. `shut` overrides hover
+     until the pointer leaves, at which point hover is welcome to work again. */
+  const closePop = p => {
+    p.classList.remove("on");
+    $(".streak-chip", p)?.setAttribute("aria-expanded", "false");
+  };
+  $$(".streak-chip").forEach(chip => {
+    const pop = chip.closest(".streak-pop");
+    if (!pop) return;
+    chip.addEventListener("click", e => {
+      e.stopPropagation();
+      const opening = !pop.classList.contains("on");
+      pop.classList.toggle("on", opening);
+      pop.classList.toggle("shut", !opening);
+      chip.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+    pop.addEventListener("mouseleave", () => pop.classList.remove("shut"));
+  });
+  document.addEventListener("click", () => $$(".streak-pop.on").forEach(closePop));
   $$(".settings-btn").forEach(b => b.onclick = openSettings);
   $$(".save-btn").forEach(b => b.onclick = openBackup);
   $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };

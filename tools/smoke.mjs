@@ -452,6 +452,52 @@ console.log('\na sentence gets to finish before the card moves');
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
 }
 
+console.log('\nToday is a dashboard, not a scroll');
+{
+  /* Everything on Today is a choice about what to do next, so a page you have
+     to scroll to see the choices hides half of them. Measured on a 1280x720
+     laptop before: 1808px of page against 629px below the bars. Layout cannot
+     be measured here, so this pins the structure; the numbers are in the
+     commit. */
+  const appSrc = read('js/app.js'), css = read('css/app.css'), html = read('index.html');
+  ok('Today is laid out as a dashboard', /<div class="dash">/.test(appSrc));
+  ok('the day\'s characters and the day\'s practice share an enclosure',
+     /<div class="dash-today">[\s\S]*?<div class="dash-col">\$\{hero\}[\s\S]*?<div class="dash-col">\$\{todoBlock\}/.test(appSrc));
+  ok('the side rail puts the word of the week above the flashcards',
+     /<div class="dash-col dash-side">\$\{wotw\}\$\{decks\}<\/div>/.test(appSrc));
+  ok('and Go deeper reads across the foot rather than eating a column',
+     /<div class="dash-wide">\$\{deeper\}/.test(appSrc));
+  ok('the columns are equal-height, so nothing hangs below the shortest',
+     /\.dash \{ grid-template-columns[^}]*align-items: stretch/.test(css)
+     && /\.dash-today > \.dash-col \{ height: 100%/.test(css));
+  ok('and a narrow screen keeps its ordinary stacked cards',
+     /\.dash \{ display: flex; flex-direction: column/.test(css));
+
+  /* the one block that grew without bound */
+  ok('the day\'s characters are a rail, not a wall', /<div class="learned-rail">/.test(appSrc));
+  ok('it scrolls in one row rather than wrapping',
+     /\.learned-strip \{[^}]*flex-wrap: nowrap[^}]*overflow-x: auto/s.test(css));
+  ok('with arrows once there are more than fit', /LT_VISIBLE/.test(appSrc)
+     && /class="lt-arrow"/.test(appSrc));
+  ok('and a See all that spans the whole enclosure',
+     /class="today-all"/.test(appSrc) && /\.dash-today \.today-all \{ grid-column: 1 \/ -1/.test(css));
+  ok('which is glance-state, not a saved preference',
+     /^let todayOpen = false;/m.test(appSrc) && !/state\.todayOpen/.test(appSrc));
+
+  /* the template it writes, not the comment above it explaining the change */
+  const tracker = appSrc.slice(appSrc.indexOf('$("#tracker").innerHTML'), appSrc.indexOf('function tallyMark'));
+  /* the tracker */
+  ok('the four-week tracker hangs off the streak chip',
+     /<div class="streak-pop">[\s\S]*?class="chip chip-streak[\s\S]*?id="tracker"/.test(html));
+  ok('and is no longer a bar of its own', !/<div class="tracker" id="tracker"><\/div>/.test(html));
+  ok('it sizes to its contents rather than cropping the row it exists to show',
+     /\.tracker \{[^}]*width: max-content/s.test(css));
+  ok('a second click closes it even with the pointer still on the chip',
+     /\.streak-pop\.shut \.tracker \{ opacity: 0/.test(css) && /classList\.toggle\("shut", !opening\)/.test(appSrc));
+  ok('and it spends its words on what the chip does not say',
+     /in a row/.test(tracker) && /best \$\{state\.streak\.best\}/.test(tracker) && !/🔥/.test(tracker));
+}
+
 console.log('\nno block borrows a class name that already means something');
 {
   /* Day one looked padded out: three empty flashcard decks at 178px each
