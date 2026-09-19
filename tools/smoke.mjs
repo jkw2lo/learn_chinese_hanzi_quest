@@ -475,6 +475,64 @@ console.log('\na sentence gets to finish before the card moves');
      /item\.said = spoken \|\| ch\.c;/.test(appSrc));
 }
 
+console.log('\nthe ? belongs to the page it is standing on');
+{
+  const appSrc = read('js/app.js'), sprintSrc = read('js/sprint.js'),
+        html = read('index.html'), css = read('css/app.css');
+  const all = appSrc + sprintSrc + html;
+
+  ok('there is a guide overlay', /<div class="coach" id="coach"/.test(html) && /const COACH = \{/.test(appSrc));
+  /* one per tab, keyed by view, so openCoach() reads the page you are on */
+  const block = appSrc.slice(appSrc.indexOf('const COACH = {'), appSrc.indexOf('let coach = {'));
+  const guides = [...block.matchAll(/^  (\w+): \{ label:/gm)].map(m => m[1]);
+  const views = [...(appSrc.match(/const RENDER = \{([\s\S]*?)\};/) || [])[1].matchAll(/(\w+): render/g)].map(m => m[1]);
+  ok(`there is a guide for every tab (${guides.length})`,
+     views.every(v => guides.includes(v)), views.filter(v => !guides.includes(v)).join(' '));
+  ok('and no guide for a tab that does not exist',
+     guides.every(g => views.includes(g)), guides.filter(g => !views.includes(g)).join(' '));
+
+  /* POINT AT SELECTORS THAT ACTUALLY EXIST. Two different failures look
+     identical from inside the overlay — a ring around nothing. This catches
+     the first: a class invented outright, in no file. The second — a real
+     class that is not rendered on the tab the step points at — is what
+     coachSteps() skips at runtime, and what the browser loop proved. */
+  const sels = [...block.matchAll(/sel: "\.([\w-]+)"/g)].map(m => m[1]);
+  ok(`every step points somewhere (${sels.length} steps)`, sels.length >= 15);
+  const invented = sels.filter(c => !all.includes('"' + c + '"') && !new RegExp('class="[^"]*\\b' + c + '\\b').test(all)
+                                    && !new RegExp('\\b' + c + '\\b').test(all.replace(/sel: "\.[\w-]+"/g, '')));
+  ok('and no step points at a class that is in no file', !invented.length, invented.join(' '));
+  /* every one of them is styled, too — a class nothing draws is the same
+     ring around nothing by a different route */
+  const unstyled = sels.filter(c => !new RegExp('\\.' + c + '\\b').test(css));
+  ok('every target is a class the stylesheet knows', !unstyled.length, unstyled.join(' '));
+
+  /* a step whose target is not on screen is skipped, not pointed at nothing */
+  ok('steps with no target on screen are dropped',
+     /const coachSteps = v => \(COACH\[v\] \? COACH\[v\]\.steps\.filter\(s => \$\(s\.sel\)\) : \[\]\)/.test(appSrc));
+  ok('and an empty guide never opens', /if \(!steps\.length\) return;/.test(appSrc));
+
+  /* the ? names the page it is standing on, and hides where there is none */
+  ok('the help button is synced on every tab change', /  syncHelp\(\);/.test(appSrc)
+     && /function syncHelp\(\)/.test(appSrc));
+  ok('it hides rather than opening an empty overlay', /b\.hidden = !has;/.test(appSrc));
+  ok('and names the page', /How \$\{COACH\[view\]\.label\} works/.test(appSrc));
+
+  /* the first run's is locked; the one from the ? is not */
+  ok('the locked one has no ✕', /coach\.locked \? "" :/.test(appSrc));
+  ok('and refuses to close', /if \(coach\.locked && !force\) return;/.test(appSrc));
+  ok('the introduction ends by opening it, locked', /openCoach\("today", true\)/.test(appSrc));
+  ok('and the ? opens it unlocked', /\$\("#helpBtn"\)\?\.addEventListener\("click", \(\) => openCoach\(\)\)/.test(appSrc));
+
+  /* the gear: ⚙ is thin monochrome text; ⚙️ is a colour glyph between two
+     line icons; an SVG inherits currentColor and matches them */
+  ok('the settings icon is not a bare text glyph', !/aria-label="Settings">⚙<\/button>/.test(html));
+  /* the markup, not the comment above it explaining what NOT to use */
+  const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
+  ok('nor the emoji presentation of one', !/⚙\uFE0F/.test(htmlNoComments));
+  ok('it is an inline icon that inherits its colour',
+     /settings-btn"[\s\S]{0,220}?<svg class="ic"[\s\S]{0,140}?stroke="currentColor"/.test(html));
+}
+
 console.log('\nthe first run is four stages, and none of them a form');
 {
   const appSrc = read('js/app.js'), html = read('index.html'), css = read('css/app.css');

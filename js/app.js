@@ -4528,10 +4528,14 @@ function replayIntro() {
 function closeIntro() {
   clearTimeout(introTimer); introTimer = null;
   introWriters = [];
+  const first = !state.intro;
   state.intro = true; save();
   $("#intro").hidden = true;
   document.body.style.overflow = "";
   renderAll();
+  /* The fourth stage is the page itself, with its parts named. It is locked,
+     because it is still the introduction; the one from the ? is not. */
+  if (first) setTimeout(() => openCoach("today", true), 300);
 }
 
 const introNext = () => { clearTimeout(introTimer); introTimer = null; introStep++; renderIntro(); };
@@ -4816,6 +4820,171 @@ function renderTour() {
    ============================================================ */
 
 let view = "today";
+
+/* ============================================================
+   The ? belongs to the page it is standing on
+
+   One overlay explaining the Today page is a tutorial. Six overlays, one per
+   tab, each explaining the page you are actually looking at, is a manual you
+   never have to go and find.
+
+   Two rules held the whole time this was written:
+
+   A step whose target is not on screen is SKIPPED rather than pointed at
+   nothing. The side rail stacks away on a narrow layout, and the mistake
+   notebook does not exist until you have made mistakes.
+
+   And point at selectors that actually exist. Two different failures look
+   identical from inside the overlay — a ring around nothing. One is a class
+   invented outright that is in no file; the other is a real class that simply
+   is not rendered on the tab the step points at. Smoke catches the first by
+   reading the source; coachSteps() catches the second by asking the DOM, and
+   the browser loop over every tab is what proved it.
+   ============================================================ */
+
+const COACH = {
+  today: { label: "Today", steps: [
+    { sel: ".dash-today", k: "今天", title: "The day's work, in one place",
+      body: "What you learned today on the left, what to do with it on the right. The list is scoped to today, so it is always finishable." },
+    { sel: ".hero-cta", k: "开始", title: "One button starts everything",
+      body: "New characters and any reviews that have come round, in one sitting. When there is nothing due it offers to teach you more instead." },
+    { sel: ".dash-side", k: "生字卡", title: "A word a week, and the decks",
+      body: "The word of the week comes from what you said you were interested in. Below it, every character you know as flashcards." },
+    { sel: ".deeper", k: "加练", title: "The part that compounds",
+      body: "Reps past today's list, weakest first. None of it is required and none of it can be finished — that is what makes it the part that compounds." },
+    { sel: ".sq", k: "看菜单", title: "A side quest with an ending",
+      body: "One character a day from a real restaurant menu. Learn them all and you can read the whole thing." }
+  ]},
+  sprint: { label: "Sprint", steps: [
+    { sel: ".sp-panels", k: "速练", title: "A sheet against the clock",
+      body: "So many questions, so many minutes. Reading, writing and listening each keep their own board." },
+    { sel: ".sp-panel-best", k: "记录", title: "Your best, per sheet",
+      body: "Nothing is marked until you hand the sheet in, so the clock is the only pressure." },
+    { sel: ".sp-book", k: "错字本", title: "The mistake notebook",
+      body: "Whatever you keep missing collects here to be worked on properly, rather than waiting to come round again." }
+  ]},
+  library: { label: "the Library", steps: [
+    { sel: ".search", k: "查找", title: "Find any character",
+      body: "Search by the character, its pinyin or its meaning. Tone marks are optional — type shui for 水." },
+    { sel: ".filters", k: "筛选", title: "Narrow it down",
+      body: "By how well you know it, or by the stage it is taught in. The stages are one picker because there are thirteen of them." },
+    { sel: ".tier", k: "三关", title: "Three doors, not one wall",
+      body: "The library opens a tier at a time. A tier you have not reached collapses to a single card, so the road ahead stays visible without being in the way." },
+    { sel: ".grid-chars", k: "字", title: "Every character is a card",
+      body: "Colour says how solid it is. Tap any of them for the full card — where it comes from, what it is built from, the words it turns up in." }
+  ]},
+  write: { label: "Write", steps: [
+    { sel: ".wp-page", k: "练字", title: "A blank page",
+      body: "Nothing is checked here. Fill it, scrawl on it, clear it and go again — it is an exercise book, not a test." },
+    { sel: ".wp-tools", k: "笔", title: "Nib, trackpad, save",
+      body: "Press T for the trackpad, where the browser allows it. Save a page and it is kept by date." },
+    { sel: ".pick-stage", k: "笔顺", title: "Stroke order, while you write",
+      body: "Pick a character below and its strokes play here — again, one at a time, or all at once. It stays while you copy it." },
+    { sel: ".wp-picker", k: "描红", title: "Something to trace",
+      body: "Choosing a character prints it faintly across the page to write over, the way a 字帖 copybook works." }
+  ]},
+  radicals: { label: "Radicals", steps: [
+    { sel: ".rx", k: "部件", title: "Start here",
+      body: "Nearly every character is two parts: one for the meaning, one for the sound. This is that idea in one line." },
+    { sel: ".rad-map", k: "部首表", title: "The whole set, and where you are",
+      body: "Every radical worth knowing, with how far through each one you are. Click any of them to jump to its card." },
+    { sel: ".rad-theme", k: "分类", title: "Grouped by what they mean",
+      body: "The body, people, the natural world, things made and done — rather than by stroke count, which is for paper dictionaries." }
+  ]},
+  record: { label: "Record", steps: [
+    { sel: ".stats", k: "总计", title: "Everything, counted",
+      body: "Characters, days, reps. The numbers that only go up." },
+    { sel: ".cal-wrap", k: "日历", title: "Every day since you started",
+      body: "One square a day, darker for a bigger day. A missed day leaves an empty box — nothing you have done is ever cleared." },
+    { sel: ".skills", k: "能力", title: "Which skills are ahead",
+      body: "Recognising, reading, saying and writing are counted separately, because they come on at different speeds." },
+    { sel: ".ladder", k: "阶段", title: "The stages, end to end",
+      body: "Where you are in the curriculum, and what each stage was for." }
+  ]}
+};
+
+let coach = { view: null, step: 0, steps: [], locked: false };
+
+/* Only the steps whose target is actually on screen. A ring around nothing is
+   worse than one step fewer. */
+const coachSteps = v => (COACH[v] ? COACH[v].steps.filter(s => $(s.sel)) : []);
+
+/* The ? names the page it is standing on, and is hidden on a tab with no
+   guide rather than opening an empty overlay. */
+function syncHelp() {
+  const b = $("#helpBtn");
+  if (!b) return;
+  const has = coachSteps(view).length > 0;
+  b.hidden = !has;
+  if (has) {
+    const label = `How ${COACH[view].label} works`;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+  }
+}
+
+function openCoach(v = view, locked = false) {
+  const steps = coachSteps(v);
+  if (!steps.length) return;
+  coach = { view: v, step: 0, steps, locked };
+  $("#coach").hidden = false;
+  document.body.style.overflow = "hidden";
+  renderCoach();
+}
+
+/* The first run's coach is locked — no ✕, and the veil does not dismiss —
+   because it is the last stage of the introduction. The one opened from the ?
+   closes normally: somebody checking one thing should not have to walk the
+   set. */
+function closeCoach(force) {
+  if (coach.locked && !force) return;
+  $("#coach").hidden = true;
+  $("#coachRing").hidden = true;
+  document.body.style.overflow = "";
+  $$(".coach-lit").forEach(e => e.classList.remove("coach-lit"));
+  coach = { view: null, step: 0, steps: [], locked: false };
+}
+
+function renderCoach() {
+  const s = coach.steps[coach.step];
+  if (!s) return closeCoach(true);
+  const last = coach.step === coach.steps.length - 1;
+  const el = $(s.sel);
+
+  $$(".coach-lit").forEach(e => e.classList.remove("coach-lit"));
+  const ring = $("#coachRing");
+  if (el) {
+    el.classList.add("coach-lit");
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const r = el.getBoundingClientRect();
+    ring.hidden = false;
+    ring.style.cssText = `top:${r.top - 6}px;left:${r.left - 6}px;width:${r.width + 12}px;height:${r.height + 12}px`;
+  } else ring.hidden = true;
+
+  $("#coachCard").innerHTML = `
+    <div class="coach-top">
+      <span class="coach-k han">${esc(s.k)}</span>
+      <b>${esc(s.title)}</b>
+      ${coach.locked ? "" : `<button class="coach-x" id="coachX" aria-label="Close">✕</button>`}
+    </div>
+    <p>${esc(s.body)}</p>
+    <div class="coach-foot">
+      <div class="coach-dots">${coach.steps.map((_, i) =>
+        `<span class="${i === coach.step ? "on" : ""}"></span>`).join("")}</div>
+      <div class="coach-nav">
+        ${coach.step ? `<button class="btn btn-ghost btn-sm" id="coachBack">Back</button>` : ""}
+        <button class="btn btn-seal btn-sm" id="coachNext">${last ? "Got it" : "Next"}</button>
+      </div>
+    </div>`;
+  $("#coachX")?.addEventListener("click", () => closeCoach());
+  $("#coachBack")?.addEventListener("click", () => { coach.step--; renderCoach(); });
+  $("#coachNext").onclick = () => {
+    if (last) return closeCoach(true);
+    coach.step++; renderCoach();
+  };
+  $("#coachNext").focus();
+}
+
 const RENDER = { today: renderToday, sprint: renderSprint, library: renderLibrary,
                  write: renderWrite, radicals: renderRadicals, record: renderRecord };
 
@@ -4825,6 +4994,7 @@ function go(v) {
   $$(".view").forEach(el => el.classList.toggle("on", el.id === id));
   $$("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === v));
   RENDER[v]();
+  syncHelp();
   window.scrollTo(0, 0);
 }
 function renderAll() {
@@ -4908,6 +5078,7 @@ function boot() {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
     if ($("#sprintRun").classList.contains("on")) { e.preventDefault(); $("#spClose").click(); return; }
+    if (!$("#coach").hidden) { closeCoach(); return; }
     if (!$("#hail").hidden) { closeHail(); return; }
     if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
@@ -4949,6 +5120,9 @@ function boot() {
   });
   document.addEventListener("click", () => $$(".streak-pop.on").forEach(closePop));
   $("#brandBtn")?.addEventListener("click", replayIntro);
+  $("#helpBtn")?.addEventListener("click", () => openCoach());
+  /* the veil dismisses the ? version and not the locked one */
+  $("#coachVeil")?.addEventListener("click", () => closeCoach());
   $$(".settings-btn").forEach(b => b.onclick = openSettings);
   $$(".save-btn").forEach(b => b.onclick = openBackup);
   $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };
@@ -4961,6 +5135,7 @@ function boot() {
      the first render triggered by something else. */
   renderStreakChip();
   renderTracker();
+  syncHelp();
   startIntro();
   connectRemote().then(changed => { if (changed) renderAll(); });
 }

@@ -2853,3 +2853,51 @@ button.tier-head:hover { border-color: var(--ink-3); }
 @media (prefers-reduced-motion: reduce) {
   .intro-card, .intro-seal { animation: none; }
 }
+
+/* ============================================================
+   The ? belongs to the page it is standing on
+
+   One card, a ring round the thing it is talking about, and a veil over the
+   rest. Six of these, one per tab — a manual you never have to go and find.
+   ============================================================ */
+
+/* the gear, as an inline icon rather than a text glyph or an emoji */
+.icon-btn .ic { width: 17px; height: 17px; display: block; }
+.help-btn { font-weight: 600; }
+.help-btn[hidden] { display: none; }
+
+.coach { position: fixed; inset: 0; z-index: 76; }
+.coach[hidden] { display: none; }
+.coach-veil { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 55%, transparent); }
+/* the ring is drawn round the live element, not over it, so what is being
+   explained stays legible */
+.coach-ring {
+  position: fixed; z-index: 1; pointer-events: none;
+  border: 2px solid var(--seal); border-radius: 12px;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--ink) 55%, transparent);
+  transition: top .2s, left .2s, width .2s, height .2s;
+}
+.coach-ring[hidden] { display: none; }
+.coach-lit { position: relative; z-index: 2; }
+.coach-card {
+  position: fixed; z-index: 3; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+  width: min(26rem, calc(100vw - 2rem));
+  padding: .9rem 1rem 1rem; border-radius: 12px;
+  background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.coach-top { display: flex; align-items: center; gap: .5rem; }
+.coach-top b { font-size: .95rem; flex: 1; min-width: 0; }
+.coach-k { font-family: var(--f-han-ui); font-size: 1rem; color: var(--seal); flex: none; }
+.coach-x {
+  flex: none; width: 1.6rem; height: 1.6rem; border-radius: 6px; line-height: 1;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink-3);
+}
+.coach-x:hover { color: var(--ink); border-color: var(--ink-3); }
+.coach-card p { margin: 0; font-size: .82rem; line-height: 1.6; color: var(--ink-2); }
+.coach-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.coach-dots { display: flex; gap: .3rem; }
+.coach-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--rule); }
+.coach-dots span.on { background: var(--seal); }
+.coach-nav { display: flex; gap: .4rem; }
+@media (prefers-reduced-motion: reduce) { .coach-ring { transition: none; } }

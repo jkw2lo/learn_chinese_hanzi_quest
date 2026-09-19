@@ -3,11 +3,11 @@
      A browser that has cached js/app.js will keep serving it until something
      about the URL changes, which is why a push can be live and invisible at
      the same time. Bump with: node tools/version.mjs <next>  -->
-<script>const APP_VERSION = "1.7.28", APP_DATE = "2026-09-19";</script>
+<script>const APP_VERSION = "1.7.29", APP_DATE = "2026-09-19";</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/app.css?v=1.7.28">
+<link rel="stylesheet" href="css/app.css?v=1.7.29">
 
 <div class="app">
 
@@ -34,8 +34,22 @@
       <div class="tracker" id="tracker" role="note"></div>
     </div>
     <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">💾</button>
-    <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">⚙</button>
+    <!-- Not ⚙ (U+2699), which renders as thin monochrome text and all but
+         vanished beside its neighbours — and not ⚙️ either, whose emoji
+         presentation is a colour glyph sitting oddly on a pale bar between two
+         line icons. An inline SVG inherits currentColor and matches them. -->
+    <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.1"/>
+        <path d="M19.4 14a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 18.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.54 14a1.7 1.7 0 0 0-1.56-1.03H2.9a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.56-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.5h.08A1.7 1.7 0 0 0 10 2.94V2.9a2 2 0 1 1 4 0V3a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08A1.7 1.7 0 0 0 21.06 10h.04a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.56 1.03z"/>
+      </svg>
+    </button>
     <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">◐</button>
+    <!-- Deliberately last in the row and the quietest thing in it: a guide you
+         have to notice is worse than no guide, and one you cannot escape is
+         worse again. -->
+    <button class="icon-btn help-btn" id="helpBtn" title="How this page works" aria-label="How this page works" hidden>?</button>
   </header>
 
   <main>
@@ -112,6 +126,13 @@
 </div>
 
 <!-- celebration -->
+<!-- one guide per tab, explaining the page you are actually looking at -->
+<div class="coach" id="coach" role="dialog" aria-label="Guide" hidden>
+  <div class="coach-veil" id="coachVeil"></div>
+  <div class="coach-ring" id="coachRing" hidden></div>
+  <div class="coach-card" id="coachCard"></div>
+</div>
+
 <!-- the first run: four stages, and none of them a form -->
 <div class="intro" id="intro" role="dialog" aria-label="Introduction" hidden>
   <div class="intro-veil"></div>
@@ -182,12 +203,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
-<script src="js/data.js?v=1.7.28"></script>
-<script src="js/strokes.js?v=1.7.28"></script>
+<script src="js/data.js?v=1.7.29"></script>
+<script src="js/strokes.js?v=1.7.29"></script>
 <!-- js/audio.js is deliberately not here. It is 859 KB gzipped of base64 speech
      that nothing needs in the first second, and as a blocking script it held up
      every view behind it. app.js fetches it after the first render. -->
-<script src="js/srs.js?v=1.7.28"></script>
+<script src="js/srs.js?v=1.7.29"></script>
 <!-- before app.js: app.js builds its RENDER map at load and names renderSprint in it -->
-<script src="js/sprint.js?v=1.7.28"></script>
-<script src="js/app.js?v=1.7.28"></script>
+<script src="js/sprint.js?v=1.7.29"></script>
+<script src="js/app.js?v=1.7.29"></script>
