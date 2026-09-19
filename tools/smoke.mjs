@@ -615,6 +615,27 @@ console.log('\ntiers gate the library');
      fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
 }
 
+console.log('\nspace moves you on; it does not answer for you');
+{
+  /* app.js needs a browser, so this reads the source. #skipW was in the
+     space-bar target list, which on a writing drill — the one that comes
+     straight after meeting a character — meant two taps of space gave up on
+     the quiz without a stroke being written: the first dismissed the card, the
+     second hit "Show me the strokes". */
+  const appjs = read('js/app.js');
+  const adv = appjs.match(/const go2 = [^;]+;/g) || [];
+  ok('the session has one space-bar target list', adv.length === 1, adv.length + ' found');
+  ok('and the writing skip is not on it', !/#skipW/.test(adv[0] || '#skipW'), adv[0]);
+  ok('it still advances the cards that are meant to advance',
+     ['#cont', '#gotIt', '#fin', '#again'].every(id => (adv[0] || '').includes(id)), adv[0]);
+  /* a held key must not run ahead into whatever renders next */
+  ok('and space is swallowed while a drill is still open',
+     /else if \(session\.queue\[session\.idx\]\?\.t === "drill"\) e\.preventDefault\(\);/.test(appjs));
+  /* skipping is still available — on its own key, where it is a decision */
+  ok('S is still how you ask for the strokes',
+     (appjs.match(/=== "s"\) \{ e\.preventDefault\(\); \(\$\("#skipW"\) \|\| \$\("#againW"\)\)\?\.click\(\); \}/g) || []).length === 2);
+}
+
 console.log('\nstudying ahead: today only');
 {
   const a = new Function(

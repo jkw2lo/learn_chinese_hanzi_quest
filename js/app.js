@@ -3543,8 +3543,19 @@ function onKey(e) {
   }
 
   if (e.key === " " || e.key === "Enter") {
-    const go2 = $("#cont") || $("#gotIt") || $("#fin") || $("#again") || $("#skipW");
+    /* Space moves you on. It does not answer for you.
+
+       #skipW was in this list, which meant that on a writing drill — the one
+       that comes straight after meeting a character — two taps of space gave
+       up on the quiz without a stroke being written: the first tap dismissed
+       the card, the second hit "Show me the strokes". That reads as the space
+       bar skipping the quiz, because it is. The skip button keeps its own key
+       (S), where pressing it is a decision rather than a reflex. */
+    const go2 = $("#cont") || $("#gotIt") || $("#fin") || $("#again");
     if (go2) { e.preventDefault(); go2.click(); }
+    /* nothing to advance to means the question is still open: swallow it, so
+       a held key cannot run ahead into whatever renders next */
+    else if (session.queue[session.idx]?.t === "drill") e.preventDefault();
     return;
   }
   if (/^[1-9]$/.test(e.key)) {
