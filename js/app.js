@@ -1006,6 +1006,18 @@ function startRepair(chars) {
   cs.forEach(c => { items.push({ t: "intro", c }); items.push({ t: "drill", c, kind: "r" }); });
   shuffle([...cs]).forEach(c => items.push({ t: "drill", c, kind: state.audio ? "l" : "p" }));
   shuffle([...cs]).forEach(c => items.push({ t: "drill", c, kind: "c" }));
+  /* And actually write it.
+     The round said it approached a character from every side and then stopped
+     one short: 认读 read it, 听力 heard it, 默写 picked its shape out of four.
+     Choosing 喝 from a row of four is not writing 喝. With one character in
+     the book the whole repair was three taps and a shrug, which is not what
+     somebody who keeps missing that character needs.
+
+     Last, because it is the slowest and the one you want to arrive at having
+     just been reminded of the strokes — and only where there are strokes to
+     draw and the learner has handwriting turned on. */
+  if (state.writeDrills)
+    shuffle(cs.filter(c => window.STROKE_DATA[c])).forEach(c => items.push({ t: "drill", c, kind: "w" }));
   session.queue = items;
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
@@ -1494,7 +1506,11 @@ function renderDrill(item, ch, body, foot) {
   } else if (kind === "d") {
     const mat = readingMaterial(ch);
     if (!mat) return renderDrill(Object.assign({}, item, { kind: "r" }), ch, body, foot);
-    prompt = `<div class="drill-sen">${renderZh(mat.zh)}</div>`;
+    /* A word is not a sentence. "Read them in context" serves both — 火山 one
+       card and 我可以问你一个问题吗？ the next — and setting them at one size
+       means either the sentence overflows or the word is a caption. Marked
+       here because CSS cannot count characters; the phone sizes it. */
+    prompt = `<div class="drill-sen ${cjkOf(mat.zh).length <= 2 ? "short" : ""}">${renderZh(mat.zh)}</div>`;
     spoken = mat.zh;
     correct = mat.en;
     /* distractors of the same shape — a sentence against sentences */
@@ -1508,7 +1524,7 @@ function renderDrill(item, ch, body, foot) {
     const readable = ch.words.filter(x => canRead(x[0]));
     if (!readable.length) return renderDrill(Object.assign({}, item, { kind: "r" }), ch, body, foot);
     const w = one(readable);
-    prompt = `<div class="drill-sen">${[...w[0]].map(x => x === ch.c ? `<span class="gap">?</span>` : esc(x)).join("")}</div>
+    prompt = `<div class="drill-sen ${cjkOf(w[0]).length <= 3 ? "short" : ""}">${[...w[0]].map(x => x === ch.c ? `<span class="gap">?</span>` : esc(x)).join("")}</div>
               <div class="drill-hint"><span class="pin">${esc(w[1])}</span> · ${esc(w[2])}</div>`;
     correct = ch.c;
     options = [ch.c, ...optionSet(ch.c, pool, x => x.c)]
