@@ -53,6 +53,11 @@ const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;",
 const pick = (arr, n) => shuffle([...arr]).slice(0, n);
 const one = arr => arr[(Math.random() * arr.length) | 0];
 
+/* One line in the black box — see js/diag.js. Guarded because the app has to
+   survive its own recorder going missing: a diagnostic is never the reason
+   somebody cannot study. */
+const hqNote = (kind, text) => { try { window.HQDIAG && HQDIAG.note(kind, text); } catch { /* never */ } };
+
 /* ---------- Chinese in a section heading ----------
 
    Section headings carry Chinese as well as English, and there is no reason
@@ -931,6 +936,7 @@ function startPractice(mode) {
   session.todo = null;
   session.repair = null;
   session.active = true;
+  hqNote("session", `practice ${mode} · ${session.queue.length} cards`);
   $("#session").classList.add("on");
   document.body.style.overflow = "hidden";
   renderStep();
@@ -963,6 +969,7 @@ function teachOne(c, opts = {}) {
   session.todo = null;
   session.repair = null;
   session.active = true;
+  hqNote("session", `one character${menu ? " from the menu" : ""} · ${session.queue.length} cards`);
   $("#session").classList.add("on");
   document.body.style.overflow = "hidden";
   renderStep();
@@ -1011,6 +1018,7 @@ function startRepair(chars) {
   session.todo = null;
   session.repair = cs;
   session.active = true;
+  hqNote("session", `repair ${cs.length} characters · ${session.queue.length} cards`);
   $("#session").classList.add("on");
   document.body.style.overflow = "hidden";
   renderStep();
@@ -1076,11 +1084,13 @@ function drillKind(c) {
 function startSession() {
   if (!buildSession().length) return;
   session.active = true;
+  hqNote("session", `daily · ${session.queue.length} cards · ${newLeftToday()} new, ${dueCount()} due`);
   $("#session").classList.add("on");
   document.body.style.overflow = "hidden";
   renderStep();
 }
 function endSession() {
+  hqNote("session", `closed at ${session.idx}/${session.queue.length}`);
   padStop();
   clearAdvance();
   $("#qtimer") && ($("#qtimer").hidden = true);
@@ -1109,7 +1119,55 @@ function renderCombo() {
   el.title = `${n} correct in a row · best this session ${session.bestCombo}`;
 }
 
+/* A card that throws while it is being built is the worst failure this app
+   has: the session is a full-screen overlay, so a half-drawn card with no
+   buttons on it is a locked door — the page underneath is still there and
+   entirely unclickable. Nothing below is allowed to do that. Whatever broke
+   is recorded, and the overlay is left holding a way out instead of nothing.
+
+   The guard is here rather than around every caller because this is the one
+   function every card goes through. */
 function renderStep() {
+  try { drawStep(); }
+  catch (e) {
+    if (window.HQDIAG) HQDIAG.fail("error", "card " + session.idx + "/" + session.queue.length
+      + " " + JSON.stringify(session.queue[session.idx] || null) + "\n" + (e && e.stack || e));
+    stepCrashed(e);
+  }
+}
+
+/* The door out of a broken card. Deliberately built from a string and bound
+   by hand: it must not depend on anything that might be the thing that broke. */
+function stepCrashed(e) {
+  try { clearAdvance(); stopPhrase(); startQuestionTimer(false); } catch { /* best effort */ }
+  const body = $("#sesInner"), foot = $("#sesFoot");
+  body.innerHTML = `<div class="done-wrap">
+      <div class="grade-seal">故障</div>
+      <span class="grade-note">This card would not draw</span>
+      <div class="stack" style="gap:.3rem">
+        <h1>Something went wrong here.</h1>
+        <p class="muted" style="font-size:.9rem">Everything you have already answered is saved — this session is the
+          only thing lost. What happened has been written down, and Report it hands the whole trail over.</p>
+      </div>
+      <p class="note dim" style="font-size:.75rem">${esc(String(e && e.message || e))}</p>
+    </div>`;
+  foot.innerHTML = `<div class="split">
+      <button class="btn btn-ghost" id="crashSkip">Try the next card</button>
+      <button class="btn btn-ghost" id="crashOut">Close</button>
+      <button class="btn" id="crashTell">Report it</button>
+    </div>`;
+  $("#crashOut").onclick = endSession;
+  /* The session has to come down first: the report is a sheet, and a sheet
+     over a broken overlay is two things to get out of instead of one. */
+  $("#crashTell").onclick = () => { endSession(); setTimeout(openReport, 200); };
+  $("#crashSkip").onclick = () => {
+    if (session.idx >= session.queue.length) return endSession();
+    session.idx++;
+    renderStep();
+  };
+}
+
+function drawStep() {
   clearAdvance();
   stopPhrase();                    /* the last card's audio does not belong to this one */
   const total = session.queue.length, done = session.idx;
@@ -1121,6 +1179,7 @@ function renderStep() {
 
   const item = session.queue[session.idx];
   const ch = CHAR_INDEX[item.c];
+  hqNote("card", `${done + 1}/${total} ${item.t}${item.kind ? ":" + item.kind : ""}${item.again ? " again" : ""}`);
   const body = $("#sesInner"), foot = $("#sesFoot");
 
   /* handwriting is excluded: the input is slow by nature, and reaching for
@@ -1487,8 +1546,28 @@ function renderDrill(item, ch, body, foot) {
   });
 }
 
-/* Grade, show the verdict, offer the way forward. */
+/* Grade, show the verdict, offer the way forward.
+
+   Guarded for the same reason renderStep is: the options are already
+   disabled by the time this runs, so a throw in here leaves a question with
+   no answer showing and no button to move on with — the other way this
+   screen can become a locked door. A card that cannot be graded still has to
+   be a card you can leave. */
 function settle(item, ch, ok, foot, extra, slips) {
+  try { grades(item, ch, ok, foot, extra, slips); }
+  catch (e) {
+    if (window.HQDIAG) HQDIAG.fail("error", "grading " + (item && item.kind) + "\n" + (e && e.stack || e));
+    foot.innerHTML = `<div class="verdict ${ok ? "ok" : "no"}">
+        <span class="han">${ok ? "答对" : "再来"}</span>
+        <span>The answer was <b>${esc(ch.c)}</b> · ${esc(ch.p)} · ${esc(ch.m)} — something went wrong marking it,
+          so this one may not have reached your record.</span>
+      </div>
+      <button class="btn btn-block" id="cont">Next</button>`;
+    $("#cont").onclick = next;
+  }
+}
+
+function grades(item, ch, ok, foot, extra, slips) {
   const writing = item.kind === "w";
   const elapsed = session.qStart ? Date.now() - session.qStart : 0;
   const quick = ok && !writing && elapsed > 0 && elapsed <= QUICK_MS;
@@ -1595,6 +1674,8 @@ function renderDone() {
     if (pool.every(c => task.proves.some(k => session.got[k] && session.got[k].has(c)))) markDone(task.id);
   });
   const task = session.todo ? TODAY_TASKS.find(x => x.id === session.todo) : null;
+  hqNote("finish", `${answered} answered, ${session.right} right · learned today ${learnedToday().length}`
+    + ` · ${TODAY_TASKS.map(t => `${t.id}${didToday(t.id) ? "✓" : ""}:${taskRound(t).length}`).join(" ")}`);
 
   $("#sesInner").innerHTML = `
     <div class="done-wrap">
@@ -1681,7 +1762,11 @@ function openHail(m) {
   const h = HAIL[m];
   if (!h) return;
   const rads = new Set();
-  knownChars().forEach(c => (CHAR_INDEX[c].comp || []).forEach(k => { if (RADICALS[k]) rads.add(k); }));
+  /* Guarded on CHAR_INDEX because the record is not the library: a character
+     that left the curriculum, or arrived from a backup written by a newer
+     version, is a key here with nothing behind it — and this is a
+     congratulations screen, which is no place to throw. */
+  knownChars().forEach(c => ((CHAR_INDEX[c] || {}).comp || []).forEach(k => { if (RADICALS[k]) rads.add(k); }));
   const tier = TIERS.filter(t => m >= t.to).pop();
   $("#hailCard").innerHTML = `
     <div class="hail-seal"><span class="han">${esc(h.zh)}</span></div>
@@ -1695,9 +1780,15 @@ function openHail(m) {
     ${tier ? `<div class="hail-tier">${tier.icon} <b>${esc(tier.name)}</b>
       <span class="han">${esc(tier.zh)}</span> — ${esc(tier.blurb)}</div>` : ""}
     <button class="btn btn-block" id="hailOk">${m === HQ.length ? "Close" : "Keep going"}</button>`;
+  /* Bound before it is shown, and in that order deliberately. Revealing a
+     full-screen overlay and locking the page's scroll are two irreversible
+     acts; anything that throws between them and the button being wired leaves
+     a modal with a dead button over a page that cannot be scrolled or
+     clicked — which is indistinguishable, from the chair, from the whole app
+     having frozen. Nothing below this line is allowed to fail. */
+  $("#hailOk").onclick = closeHail;
   $("#hail").hidden = false;
   document.body.style.overflow = "hidden";
-  $("#hailOk").onclick = closeHail;
   $("#hailOk").focus();
 }
 
@@ -1721,7 +1812,18 @@ function maybeHail(delay = 0) {
   const m = milestoneDue();
   if (m === null) return;
   markMilestone(m);
-  setTimeout(() => openHail(m), delay);
+  /* On a timer, so outside every guard around the screen that asked for it: a
+     throw in here would be an unhandled error landing on top of a finished
+     session. Caught, written down, and the milestone stays marked — missing
+     the fanfare for four hundred characters is a disappointment, and being
+     unable to leave the page is not. */
+  setTimeout(() => {
+    try { openHail(m); }
+    catch (e) {
+      if (window.HQDIAG) HQDIAG.fail("error", "milestone " + m + "\n" + (e && e.stack || e));
+      closeHail();
+    }
+  }, delay);
 }
 
 /* ============================================================
@@ -3167,7 +3269,13 @@ function startTodayDrill(task) {
   session.menu = false;
   session.practice = "read";              /* graded gently, like any practice */
   session.todo = task.id;
+  /* Cleared like every other starter clears it. Left set, a repair round from
+     earlier in the visit made this round grade as one — marking the 错字本
+     and counting as extra reps — and the finish screen said "Repair round
+     done" over a row of today's list. */
+  session.repair = null;
   session.active = true;
+  hqNote("session", `today: ${task.id} · ${session.queue.length} cards`);
   $("#session").classList.add("on");
   document.body.style.overflow = "hidden";
   renderStep();
@@ -4124,6 +4232,15 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
         </div>
         <div class="settings-row">
+          <label>Report a problem<small>${(() => {
+            const n = window.HQDIAG ? HQDIAG.runs().reduce((t, r) => t + r.log.filter(e => e[1] === "error").length, 0) : 0;
+            return n
+              ? `${n} error${n === 1 ? " has" : "s have"} been recorded since this page opened. `
+              : "Nothing has gone wrong since this page opened. ";
+          })()}Copies out what the app currently thinks is true, so somebody can read it back.</small></label>
+          <button class="btn btn-ghost btn-sm" id="reportBtn">Report</button>
+        </div>
+        <div class="settings-row">
           <label>Reset everything<small>Clears your streak and all progress.</small></label>
           <button class="btn btn-ghost btn-sm" id="resetBtn">Reset</button>
         </div>
@@ -4150,6 +4267,7 @@ function openSettings() {
   $("#syncIn")?.addEventListener("click", syncSignIn);
   $("#syncOut")?.addEventListener("click", syncSignOut);
   $("#backupBtn").onclick = openBackup;
+  $("#reportBtn").onclick = openReport;
   $("#profileBtn").onclick = () => openProfile(false);
   $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
   $("#tourBtn").onclick = () => { closeSheet(); setTimeout(() => startTour(true), 250); };
@@ -4343,6 +4461,205 @@ function openBackup() {
   $("#bkImport").onclick = () => {
     const v = $("#bkPaste").value.trim();
     if (v) restore(v); else $("#bkMsg").textContent = "Choose a file or paste a backup first.";
+  };
+}
+
+/* ============================================================
+   Report a problem
+
+   "It got stuck" is a true and completely unactionable sentence, and by the
+   time anyone is asked about it the page has been reloaded and the evidence
+   is gone. This builds the thing that would have answered the question:
+   what the app thought was true at the moment it stopped behaving.
+
+   Three parts, and the middle one is the point.
+
+   The black box — the breadcrumbs and errors js/diag.js has been keeping
+   since the page loaded, and from the run before it, because a freeze is
+   usually reported from the reload that followed it.
+
+   A reading of the app's own arithmetic. Not the raw record: the numbers the
+   screens are actually drawn from. "The row is locked" and "learnedToday()
+   came back empty" are the same sentence, and only one of them can be
+   checked by somebody who isn't sitting at the machine.
+
+   And the shape of the window, because a decent number of these turn out to
+   be a phone.
+
+   What is deliberately left out: the answers, the diary, and the characters
+   themselves beyond the handful today turns on. A bug report is not a backup,
+   and Save your progress upstairs is the thing for that.
+   ============================================================ */
+
+const REPORT_OVERLAYS = ["session", "charView", "flash", "notebook", "place", "ask", "tour", "hail", "coach", "drawer"];
+
+function problemReport(said) {
+  const k = dayKey();
+  /* Reported as raw class and hidden flags rather than as a verdict on which
+     are open: a stuck screen is very often an overlay that is half-dismissed,
+     and the half is the interesting part. */
+  const overlays = {};
+  REPORT_OVERLAYS.forEach(id => {
+    const el = $("#" + id);
+    overlays[id] = el ? (el.className || "—") + (el.hidden ? " [hidden]" : "") : "not in the page";
+  });
+
+  /* The day's characters in full — a dozen small records at most, and the
+     ones every row on today's list is computed from. */
+  const todays = {};
+  Object.keys(state.chars).forEach(c => { if (state.chars[c].first === k) todays[c] = state.chars[c]; });
+
+  /* A week of days, with the list of characters revised on each reduced to how
+     many there were: today's is printed in full below and the other six are
+     only ever read as "was anything done that day". Left whole they were half
+     the file. */
+  const recent = {};
+  Object.keys(state.days).sort().slice(-7).forEach(d => {
+    const { revC, ...rest } = state.days[d];
+    recent[d] = revC ? { ...rest, revised: Object.keys(revC).length } : rest;
+  });
+
+  const safe = fn => { try { return fn(); } catch (e) { return "threw: " + (e && e.message || e); } };
+
+  return {
+    app: "hanzi-quest",
+    kind: "problem-report",
+    wrote: new Date().toISOString(),
+    said: said || "",
+    env: {
+      version: appVersion(), built: appDate(),
+      url: location.origin + location.pathname,
+      ua: navigator.userAgent,
+      language: navigator.language,
+      window: `${innerWidth}x${innerHeight} @${devicePixelRatio}`,
+      theme: document.documentElement.dataset.theme || "system",
+      optCols: safe(optColsEffective),
+      online: navigator.onLine,
+      /* Three things that load late and can fail silently, each of which
+         looks like a different bug when it does. */
+      writerLoaded: typeof HanziWriter !== "undefined",
+      audioClips: safe(clipCount),
+      voices: safe(() => (speechSynthesis.getVoices() || []).length),
+      recordBytes: safe(() => (localStorage.getItem("hanzi-quest-v1") || "").length)
+    },
+    view: typeof view === "string" ? view : "?",
+    overlays,
+    bodyOverflow: document.body.style.overflow || "(none)",
+    session: {
+      active: session.active,
+      at: `${session.idx} of ${session.queue.length}`,
+      card: session.queue[session.idx] || null,
+      todo: session.todo, practice: session.practice, menu: session.menu,
+      repair: session.repair ? session.repair.length : null,
+      right: session.right, wrong: session.wrong, learned: session.learned, reviewed: session.reviewed
+    },
+    today: {
+      dayKey: k,
+      learnedToday: safe(learnedToday),
+      reviewedToday: safe(() => reviewedToday().length),
+      newLeftToday: safe(newLeftToday),
+      dueCount: safe(dueCount),
+      remainingNew: safe(remainingNew),
+      dayGoal: safe(dayGoal),
+      day: state.days[k] || null,
+      tasks: safe(() => TODAY_TASKS.map(t => ({
+        id: t.id, round: taskRound(t).length, pool: taskPool(t).length, done: didToday(t.id)
+      })))
+    },
+    record: {
+      characters: Object.keys(state.chars).length,
+      days: Object.keys(state.days).length,
+      streak: state.streak,
+      goalNew: state.goalNew,
+      level: state.level, placed: state.placed || null,
+      settings: { audio: state.audio, timer: state.timer, writeDrills: state.writeDrills,
+                  optCols: state.optCols, padAuto: state.padAuto, quest: state.quest },
+      sync: typeof sync === "undefined" ? "not loaded" : sync.status,
+      lastBackup: state.lastBackup || null,
+      todaysCharacters: todays,
+      recentDays: recent
+    },
+    blackBox: window.HQDIAG ? HQDIAG.runs() : "the recorder did not load"
+  };
+}
+
+/* Readable rather than minified: the whole point is that somebody reads it,
+   and a report that has to be reformatted before it can be looked at is a
+   report nobody looks at. */
+const reportText = said => JSON.stringify(problemReport(said), null, 1);
+
+function openReport() {
+  const errs = window.HQDIAG
+    ? HQDIAG.runs().reduce((n, r) => n + r.log.filter(e => e[1] === "error").length, 0)
+    : 0;
+  openSheet(`<span class="han">报告</span> Report a problem`, `<div class="wrap"><div class="section">
+    <div class="today-head">
+      <h1>Something went wrong?</h1>
+      <p class="note">This makes one block of text describing what the app currently thinks is true —
+        which cards are loaded, what today's list computes to, and every error the page has recorded
+        since it opened, including the run before this one if you have reloaded since.
+        ${errs ? `<b>${errs} error${errs === 1 ? " has" : "s have"} been recorded.</b>` : "No errors have been recorded so far."}
+        Copy it and send it on.</p>
+      <p class="note dim">It carries your settings, your streak, the day's counts and the characters you learned
+        today. It does not carry your answers, your diary, or the rest of your record — that's what
+        <b>Save your progress to a file</b> is for.</p>
+    </div>
+    <div class="sheet block">
+      <div class="block-head"><span class="k">经过</span><span class="t">What happened?</span></div>
+      <p class="note">In your own words — what you clicked, and what it did instead. This goes in at the top.</p>
+      <textarea id="rpSaid" class="search" rows="3"
+        placeholder="e.g. clicked Next on the last card of Learn today's characters and the screen stopped"></textarea>
+    </div>
+    <div class="sheet block">
+      <div class="block-head"><span class="k">副本</span><span class="t">The report</span></div>
+      <div class="split">
+        <button class="btn" id="rpCopy">Copy the report</button>
+        <button class="btn btn-ghost" id="rpSave">Save it as a file</button>
+      </div>
+      <div id="rpMsg" class="note"></div>
+      <textarea id="rpText" class="search" rows="8" readonly spellcheck="false"></textarea>
+    </div>
+    <div class="sheet block">
+      <div class="block-head"><span class="k">清除</span><span class="t">Start a fresh trail</span></div>
+      <p class="note">Clears the recorded errors and breadcrumbs — not your progress. Worth doing before
+        deliberately reproducing a problem, so the report is only about that.</p>
+      <button class="btn btn-ghost btn-block" id="rpClear">Clear the recorded trail</button>
+    </div>
+  </div></div>`);
+
+  /* Built once on open and again on each copy, because the trail keeps
+     running while the sheet is open and the second copy should be the newer
+     one — and because the sentence typed above it belongs in the file. */
+  const build = () => { const t = reportText($("#rpSaid").value.trim()); $("#rpText").value = t; return t; };
+  build();
+
+  $("#rpCopy").onclick = async () => {
+    const text = build();
+    const msg = $("#rpMsg");
+    try {
+      await navigator.clipboard.writeText(text);
+      msg.textContent = `Copied — ${(text.length / 1024).toFixed(1)} KB. Paste it wherever you're reporting this.`;
+    } catch {
+      /* Clipboard access is refused often enough — insecure origin, a browser
+         that wants a deeper gesture — that the fallback has to be a real one. */
+      const ta = $("#rpText");
+      ta.removeAttribute("readonly"); ta.focus(); ta.select();
+      msg.textContent = "Your browser wouldn't let the page use the clipboard — the report is selected below, copy it by hand.";
+    }
+  };
+
+  $("#rpSave").onclick = () => {
+    const text = build();
+    const name = `hanzi-quest-report-${dayKey()}.json`;
+    $("#rpMsg").textContent = blobDownload(name, text)
+      ? `Saved as ${name} — check your Downloads folder.`
+      : "Your browser wouldn't let the page save a file — copy the text below instead.";
+  };
+
+  $("#rpClear").onclick = () => {
+    if (window.HQDIAG) HQDIAG.clear();
+    build();
+    $("#rpMsg").textContent = "Cleared. Anything from here on is a fresh trail.";
   };
 }
 
@@ -5412,6 +5729,7 @@ const RENDER = { today: renderToday, menu: renderQuest, sprint: renderSprint, li
                  write: renderWrite, radicals: renderRadicals, record: renderRecord };
 
 function go(v) {
+  hqNote("view", v);
   view = v;
   const id = "view" + v[0].toUpperCase() + v.slice(1);
   $$(".view").forEach(el => el.classList.toggle("on", el.id === id));

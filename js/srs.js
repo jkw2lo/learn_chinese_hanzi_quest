@@ -499,6 +499,9 @@ function touchStreak() {
 function markDone(id) {
   const t = today();
   (t.did = t.did || {})[id] = true;
+  /* HQDIAG rather than hqNote: this file loads before app.js, and the row
+     that ticks itself is one of the things worth being able to look back at. */
+  if (window.HQDIAG) HQDIAG.note("did", id);
   save();
 }
 const didToday = id => !!(state.days[dayKey()] && state.days[dayKey()].did && state.days[dayKey()].did[id]);
