@@ -58,10 +58,12 @@
 /* Paste the config object from step 4 here. Empty apiKey = the feature is off
    and no part of this file runs. */
 const SYNC_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  appId: ""
+  apiKey: "AIzaSyCyLXH9h5N617ESj87NeK98HOj1RRN19cE",
+  authDomain: "hanzi-quest-3cf9c.firebaseapp.com",
+  projectId: "hanzi-quest-3cf9c",
+  storageBucket: "hanzi-quest-3cf9c.firebasestorage.app",
+  messagingSenderId: "1074304614247",
+  appId: "1:1074304614247:web:587cfda254ef1a31f9f9c2"
 };
 
 /* Pinned, and from the same CDN as hanzi-writer. ~510KB across the three, so

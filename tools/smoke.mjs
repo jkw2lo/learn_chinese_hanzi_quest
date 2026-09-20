@@ -2450,8 +2450,12 @@ console.log('\nsigning in is optional, and off until it is configured');
   const html = read('index.html');
   ok('js/sync.js is loaded, stamped, and after srs.js',
      html.indexOf('js/sync.js') > html.indexOf('js/srs.js') && /js\/sync\.js\?v=/.test(html));
-  ok('with no project configured the feature does not exist',
-     /apiKey: ""/.test(syn) && /const syncConfigured = \(\) => !!SYNC_CONFIG\.apiKey/.test(syn)
+  /* Tests the gate, not the value. This used to assert apiKey: "" — true of a
+     repo nobody had configured yet, and false the moment somebody did, which
+     made configuring the feature fail the check that guards it. What has to
+     stay true is that everything hangs off syncConfigured(). */
+  ok('the whole feature hangs off one configured flag',
+     /const syncConfigured = \(\) => !!SYNC_CONFIG\.apiKey/.test(syn)
      && /syncConfigured\(\) \? `<div class="settings-row" id="syncRow"/.test(read('js/app.js')));
   ok('  and nothing is fetched until it is', /if \(!syncConfigured\(\)\) return;/.test(syn));
   ok('the SDK is pinned to an exact version', /firebase@\d+\.\d+\.\d+\//.test(syn));
