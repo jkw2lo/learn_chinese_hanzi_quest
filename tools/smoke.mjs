@@ -707,8 +707,10 @@ console.log('\nplacement waits for the moment it is relevant');
   ok('and it is asked once, for good', /state\.levelAsked = true; save\(\);/.test(appSrc));
   /* the level is kept and not otherwise acted on — we do not yet know what
      else to do with it, and collecting it costs nothing */
+  /* Six, not five, since Report a problem prints it: reading the level into a
+     bug report is not the app acting on it, which is what this counts. */
   ok('the level itself is only recorded',
-     (appSrc.match(/state\.level\b/g) || []).length <= 5,
+     (appSrc.match(/state\.level\b/g) || []).length <= 6,
      String((appSrc.match(/state\.level\b/g) || []).length));
   /* Nothing chosen means everything: the word of the week is purely a reward,
      and nobody should meet the card explaining why it is empty. */
@@ -2469,6 +2471,76 @@ console.log('\nsigning in is optional, and off until it is configured');
   ok('signing out lets go of the remote document',
      /async function syncSignOut[\s\S]{0,320}dropRemote\(\)/.test(syn));
   ok('the security rule is written down where it is needed', /allow read, write: if request\.auth/.test(syn));
+}
+
+console.log('\nthe black box, and the report built from it');
+{
+  const html = read('index.html');
+  const dg = read('js/diag.js');
+  const app = read('js/app.js');
+
+  /* The whole value of the recorder is that it is older than the thing that
+     breaks. Loaded after data.js, a data.js that fails to parse is invisible
+     to it — which is exactly the failure nothing else can explain. */
+  const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(m => m[1]);
+  ok('js/diag.js loads before every other script, and is stamped',
+     srcs.length > 4 && /^js\/diag\.js\?v=/.test(srcs[0]));
+  /* A top-level const is a global lexical binding, not a property of window,
+     so `window.HQDIAG && ...` — the guard every caller uses — was false and
+     the whole recorder no-opped without a word. It has to be on window. */
+  ok('the recorder is reachable the way its callers reach for it',
+     /window\.HQDIAG = /.test(dg) && /window\.HQDIAG/.test(app));
+  ok('  and it depends on nothing the app defines',
+     !/\b(state|HQ|CHAR_INDEX|dayKey|save)\s*[(.[]/.test(dg.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('errors survive a reload', dg.includes('localStorage.setItem(KEY') && /addEventListener\("pagehide", flush\)/.test(dg));
+  ok('  and the run before this one is kept beside it', /RUNS\s*=\s*2/.test(dg) && /slice\(-\(RUNS - 1\)\)/.test(dg));
+  ok('a failed script or stylesheet is caught too — it does not bubble',
+     /addEventListener\("error"[\s\S]{0,600}\}, true\)/.test(dg) && /failed to load/.test(dg));
+  ok('rejections and the app’s own console complaints are recorded',
+     dg.includes('unhandledrejection') && /\["error", "warn"\]\.forEach/.test(dg));
+  ok('  and console.error still reaches the console', /orig\(\.\.\.a\)/.test(dg));
+  ok('the trail is capped, so it cannot grow without limit',
+     /PER_RUN\s*=\s*\d+/.test(dg) && /log\.splice\(0, log\.length - PER_RUN\)/.test(dg));
+
+  /* A session is a full-screen overlay: a card that throws halfway through
+     drawing leaves no buttons and no way back to the page underneath. */
+  ok('a card that throws still has a way out of it',
+     /function renderStep\(\) \{\s*\n\s*try \{ drawStep\(\); \}/.test(app)
+     && /function stepCrashed/.test(app) && /id="crashOut"/.test(app));
+  ok('  and so does an answer that will not grade',
+     /function settle\([^)]*\) \{\s*\n\s*try \{ grades\(/.test(app));
+  ok('  and both of them write down why', (app.match(/HQDIAG\.fail\(/g) || []).length >= 2);
+
+  /* The milestone overlay fires on a timer after the last card of a session,
+     which is exactly when "it got stuck" gets reported. It shows itself and
+     locks the page's scroll; if the close button is not already wired by
+     then, anything that throws in between leaves a modal nobody can leave. */
+  ok('the milestone overlay is wired before it is shown',
+     /\$\("#hailOk"\)\.onclick = closeHail;\s*\n\s*\$\("#hail"\)\.hidden = false;/.test(app));
+  ok('  and a milestone that throws does not take the page with it',
+     /setTimeout\(\(\) => \{\s*\n\s*try \{ openHail\(m\); \}[\s\S]{0,240}closeHail\(\);/.test(app));
+
+  ok('Report a problem is in Settings and wired up',
+     app.includes('id="reportBtn"') && /\$\("#reportBtn"\)\.onclick = openReport/.test(app));
+  ok('the report carries the black box and the arithmetic behind today’s list',
+     /blackBox: window\.HQDIAG/.test(app)
+     && ['learnedToday', 'newLeftToday', 'dueCount', 'tasks:'].every(n => app.slice(app.indexOf('function problemReport')).includes(n)));
+  ok('  and the overlays, which is where a stuck screen shows',
+     /REPORT_OVERLAYS = \[/.test(app) && /bodyOverflow:/.test(app));
+  ok('  and it is a report, not a backup — no answers, no diary',
+     !/diaryAll\(\)/.test(app.slice(app.indexOf('function problemReport'), app.indexOf('function openReport'))));
+  ok('copying falls back to selecting the text when the clipboard is refused',
+     /navigator\.clipboard\.writeText/.test(app) && /removeAttribute\("readonly"\)/.test(app));
+
+  /* startTodayDrill used to leave session.repair set from earlier in the
+     visit, so a row on today's list graded and reported itself as a repair
+     round. Every starter clears every flag, or none of them mean anything. */
+  const starters = ['function startPractice', 'function teachOne', 'function startRepair', 'function startTodayDrill'];
+  ok('every way into a session clears the flags of the last one',
+     starters.every(fn => {
+       const body = app.slice(app.indexOf(fn), app.indexOf(fn) + 1600);
+       return ['session.menu', 'session.practice', 'session.todo', 'session.repair'].every(f => body.includes(f + ' ='));
+     }));
 }
 
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');
