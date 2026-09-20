@@ -1103,6 +1103,7 @@ function startSession() {
 }
 function endSession() {
   hqNote("session", `closed at ${session.idx}/${session.queue.length}`);
+  clearWash();
   padStop();
   clearAdvance();
   $("#qtimer") && ($("#qtimer").hidden = true);
@@ -1181,6 +1182,7 @@ function stepCrashed(e) {
 
 function drawStep() {
   clearAdvance();
+  clearWash();                     /* the held wash belongs to the answer behind us */
   stopPhrase();                    /* the last card's audio does not belong to this one */
   const total = session.queue.length, done = session.idx;
   $("#sesProg").style.width = total ? `${(done / total) * 100}%` : "0%";
@@ -1586,22 +1588,48 @@ const PHONE_MQ = matchMedia("(max-width: 859.98px)");
 const FLASH_MS = 520;
 
 let flashEl = null, flashTimer = null;
-function flashVerdict(ok) {
-  if (!PHONE_MQ.matches) return;
+
+function washEl() {
   if (!flashEl) {
     flashEl = document.createElement("div");
-    flashEl.className = "vflash";
     flashEl.setAttribute("aria-hidden", "true");   /* decoration; the option already says it */
     document.body.appendChild(flashEl);
   }
-  flashEl.className = "vflash";
-  /* Reading offsetWidth between removing the class and adding it restarts the
-     animation. Without it a sprint answered faster than the wash lasts gets
-     no wash at all — which is precisely the run where you want one. */
-  void flashEl.offsetWidth;
-  flashEl.className = "vflash on" + (ok ? "" : " no");
+  return flashEl;
+}
+
+function clearWash() {
   clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => { flashEl.className = "vflash"; }, FLASH_MS);
+  if (flashEl) flashEl.className = "vflash";
+}
+
+/* A sheet: a pulse, because the next question is already on screen. */
+function flashVerdict(ok) {
+  if (!PHONE_MQ.matches) return;
+  const el = washEl();
+  el.className = "vflash";
+  /* Reading offsetWidth between removing the class and adding it restarts the
+     animation. Without it a sheet answered faster than the wash lasts gets no
+     wash at all — which is precisely the run where you want one. */
+  void el.offsetWidth;
+  el.className = "vflash on" + (ok ? "" : " no");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { el.className = "vflash"; }, FLASH_MS);
+}
+
+/* A drill: held, for exactly as long as the wait lasts.
+
+   A pulse was wrong here. A sheet moves on the instant you tap, so a pulse is
+   the whole event; a drill waits — a second and a bit, or the length of a
+   sentence being read back — and a wash that has already faded leaves you
+   looking at a screen that is not telling you anything while nothing happens.
+   So it comes up and stays up, and what takes it away is the next card
+   arriving. The wait is the thing being shown. */
+function holdWash(ok) {
+  if (!PHONE_MQ.matches) return;
+  const el = washEl();
+  clearTimeout(flashTimer);
+  el.className = "vflash hold" + (ok ? "" : " no");
 }
 
 /* Grade, show the verdict, offer the way forward.
@@ -1670,19 +1698,20 @@ function grades(item, ch, ok, foot, extra, slips) {
                   : " — you'll see it again shortly."}`;
   }
   const audible = ["p", "l", "r", "d"].includes(item.kind);
-  flashVerdict(ok);
 
-  /* Right, on a phone, with nothing on the footer worth reading: say so with
-     the wash and leave the layout alone. Two kinds keep their bar even when
-     right, because on those the bar carries something you might want —
-     handwriting, which reports how clean the strokes were, and reading in
-     context, where the replay button is answering a whole sentence rather
-     than one syllable and five seconds is a long time to have no control. */
-  if (ok && PHONE_MQ.matches && !writing && item.kind !== "d") {
+  /* One rule on a phone, and it has no exceptions: right is a wash, wrong is
+     the bar. Carving out the kinds whose footer had something on it worth
+     keeping — the replay button, the handwriting note — meant Reading
+     practice alternates r and d, so the bar came back every second or third
+     card. Which is the same jumping layout, arriving less often and less
+     predictably, and harder to explain than simply never doing it. */
+  if (ok && PHONE_MQ.matches) {
+    holdWash(true);
     foot.innerHTML = "";
     armAdvance(next);
     return;
   }
+  flashVerdict(ok);
 
   foot.innerHTML = `
     <div class="verdict ${ok ? "ok" : "no"}">

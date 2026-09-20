@@ -2566,8 +2566,21 @@ console.log('\nthe black box, and the report built from it');
     ok('the phone breakpoint is the same number in the stylesheet and in the script',
        !!cssBp && cssBp === jsBp, `css ${cssBp} / js ${jsBp}`);
   }
-  ok('a right answer on a phone writes nothing into the footer',
-     /if \(ok && PHONE_MQ\.matches && !writing && item\.kind !== "d"\) \{\s*\n\s*foot\.innerHTML = "";/.test(app));
+  /* No exceptions, deliberately. Carving out the kinds whose footer had
+     something worth keeping meant Reading practice — which alternates r and
+     d — brought the bar back every second or third card: the same jumping
+     layout, arriving less often and less predictably. */
+  ok('a right answer on a phone writes nothing into the footer, whatever kind it is',
+     /if \(ok && PHONE_MQ\.matches\) \{\s*\n\s*holdWash\(true\);\s*\n\s*foot\.innerHTML = "";/.test(app));
+  ok('  and the wash it holds lasts until the next card clears it',
+     /\.vflash\.hold \{ opacity: \.\d+; \}/.test(read('css/app.css'))
+     && /clearWash\(\);\s+\/\* the held wash/.test(app));
+  ok('a sheet asks before it marks itself, and defaults to marking',
+     /if \(sprintTells\(\)\) flashVerdict\(q\.ok\)/.test(read('js/sprint.js'))
+     && /state\.spTell !== false/.test(read('js/sprint.js'))
+     && /spTell: true/.test(read('js/srs.js')));
+  ok('  and the switch is only offered where the wash can happen',
+     /PHONE_MQ\.matches \? `<div class="sp-row">/.test(read('js/sprint.js')));
   {
     const g = app.slice(app.indexOf('function grades('));
     ok('  and a wrong one still gets the bar, because it has something to say',

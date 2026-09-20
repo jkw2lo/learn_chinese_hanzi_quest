@@ -383,6 +383,11 @@ function sprintTypeKey(e) {
 
 /* ---------- answering ---------- */
 
+/* Default on for a record written before the setting existed: the wash is the
+   thing somebody would have to go looking for, and !== false is what makes an
+   absent field mean yes. */
+const sprintTells = () => state.spTell !== false;
+
 function sprintAnswer(value) {
   const q = sp.queue[sp.idx];
   if (!q || q.got !== undefined || !sp.active) return;
@@ -396,7 +401,7 @@ function sprintAnswer(value) {
      end of the screen to be reading at this speed. The wash says it where you
      are already looking, and costs nothing: it does not pause the sheet, it
      does not move anything, and on a laptop it does not happen. */
-  flashVerdict(q.ok);
+  if (sprintTells()) flashVerdict(q.ok);
   sp.idx++;
   if (sp.idx >= sp.queue.length) return sprintFinish(true);
   sprintRenderQ();
@@ -535,6 +540,13 @@ function renderSprint() {
     sprintPanel = sprintPanel === b.dataset.spOpen ? null : b.dataset.spOpen;
     renderSprint();
   });
+  /* A preference about sheets in general, not about this one mode, so it is
+     kept beside the other settings rather than inside sprint.pick[mode]. */
+  $$("#viewSprint [data-sp-tell]").forEach(b => b.onclick = () => {
+    state.spTell = b.dataset.spTell === "1";
+    save();
+    renderSprint();
+  });
   $$("#viewSprint [data-sp-set]").forEach(b => b.onclick = () => {
     const [mode, field, value] = b.dataset.spSet.split(":");
     const cur = sprintPick(mode);
@@ -613,6 +625,21 @@ function sprintPanelHtml(mode, short) {
         ${stepper(mode, "secs", p.secs / 60, SPRINT_STEP_MIN, SPRINT_MINUTES[0],
                   SPRINT_MINUTES[SPRINT_MINUTES.length - 1], 60)}
       </div>
+      ${/* Only where the wash can happen at all. On a laptop a sheet is
+            unmarked until you hand it in, as it always was, and a switch that
+            did nothing would be worse than no switch. */
+        PHONE_MQ.matches ? `<div class="sp-row">
+        <span class="sp-row-lbl">Marking</span>
+        <div class="sp-chips">
+          <button class="sp-chip wide ${sprintTells() ? "on" : ""}" data-sp-tell="1">
+            <span class="han">即时</span> As you go</button>
+          <button class="sp-chip wide ${sprintTells() ? "" : "on"}" data-sp-tell="0">
+            <span class="han">交卷</span> On handing in</button>
+        </div>
+      </div>
+      <p class="note sp-style-note">${sprintTells()
+        ? "The screen washes green or red as you answer."
+        : "No marking until the sheet is handed in — you find out at the end, which is what makes it a test."}</p>` : ""}
       <div class="sp-verdict">
         <span class="sp-verdict-k han">${esc(g.zh)}</span>
         <span class="sp-verdict-body"><b>${esc(g.name)}</b>

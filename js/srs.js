@@ -60,6 +60,11 @@ const blank = () => ({
      and "grid" overrule it — see optColsEffective in app.js */
   optCols: "auto",
   padAuto: false,
+  /* Whether a sheet marks itself as you go — see flashVerdict. A sheet was
+     built to withhold that: you hand it in and find out, which is what makes
+     it a test rather than a drill. The wash made telling you possible, and
+     some people would rather know, so it is a choice and not a decision. */
+  spTell: true,
   hailed: [],           /* milestones already celebrated — see MILESTONES */
   menuTaught: [],       /* the side quest's own book — see menuCanRead() */
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
