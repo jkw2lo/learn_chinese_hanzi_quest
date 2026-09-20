@@ -2555,6 +2555,28 @@ console.log('\nthe black box, and the report built from it');
   ok('  and a milestone that throws does not take the page with it',
      /setTimeout\(\(\) => \{\s*\n\s*try \{ openHail\(m\); \}[\s\S]{0,240}closeHail\(\);/.test(app));
 
+  /* The wash replaces the verdict bar on a phone and nowhere else, which means
+     one breakpoint written down twice — once in the stylesheet's mobile block
+     and once in the matchMedia that decides whether to flash. Disagree and a
+     laptop gets the wash and keeps the bar as well. */
+  {
+    const css = read('css/app.css');
+    const cssBp = (css.match(/@media \(max-width: ([\d.]+)px\) \{\s*\n\s*\/\* -+ the sections sheet/) || [])[1];
+    const jsBp = (app.match(/PHONE_MQ = matchMedia\("\(max-width: ([\d.]+)px\)"\)/) || [])[1];
+    ok('the phone breakpoint is the same number in the stylesheet and in the script',
+       !!cssBp && cssBp === jsBp, `css ${cssBp} / js ${jsBp}`);
+  }
+  ok('a right answer on a phone writes nothing into the footer',
+     /if \(ok && PHONE_MQ\.matches && !writing && item\.kind !== "d"\) \{\s*\n\s*foot\.innerHTML = "";/.test(app));
+  {
+    const g = app.slice(app.indexOf('function grades('));
+    ok('  and a wrong one still gets the bar, because it has something to say',
+       g.indexOf('flashVerdict(ok);') < g.indexOf('<div class="verdict')
+       && g.indexOf('<div class="verdict') > 0);
+  }
+  ok('  and a sheet washes too, where it never said anything at all',
+     /flashVerdict\(q\.ok\);/.test(read('js/sprint.js')));
+
   ok('Report a problem is in Settings and wired up',
      app.includes('id="reportBtn"') && /\$\("#reportBtn"\)\.onclick = openReport/.test(app));
   ok('the report carries the black box and the arithmetic behind today’s list',
