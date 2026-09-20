@@ -42,12 +42,16 @@ const SPRINT = {
 /* Both are production — you are handed a meaning and have to come back with
    a character — and neither asks you to draw a stroke. */
 const WRITE_STYLES = {
+  /* `blurb` is the sentence, `tip` is the same thing at the width of a line
+     that has two buttons in front of it. The row reads left to right — what
+     the choice is, the choice, what you just chose — so the tip has to finish
+     inside the space that is left, not explain itself into a second line. */
   type: { zh: "打字", name: "Type it", key: "type",
           blurb: "Type the pinyin, pick the character — how Chinese is actually written on a phone.",
-          par: 4.6 },
+          tip: "Pinyin, then pick it", par: 4.6 },
   spot: { zh: "辨形", name: "Spot it", key: "spot",
           blurb: "Pick it out of six look-alikes that share its parts.",
-          par: 3.0 }
+          tip: "One of six look-alikes", par: 3.0 }
 };
 
 const SPRINT_MINUTES = [1, 2, 3, 5];
@@ -604,12 +608,12 @@ function sprintPanelHtml(mode, short) {
     ${open ? `<div class="sp-picker">
       <p class="note">${esc(cfg.long)}</p>
       ${silent ? `<p class="note sp-warn">Sound is off — turn it back on in Settings, or this mode has nothing to play.</p>` : ""}
-      ${mode === "w" ? `<div class="sp-row sp-row-style">
+      ${mode === "w" ? `<div class="sp-row sp-row-wide">
         <span class="sp-row-lbl">How</span>
         <div class="sp-chips">${Object.values(WRITE_STYLES).map(s => `<button class="sp-chip wide ${p.style === s.key ? "on" : ""}" data-sp-set="w:style:${s.key}">
           <span class="han">${esc(s.zh)}</span> ${esc(s.name)}</button>`).join("")}</div>
-      </div>
-      <p class="note sp-style-note">${esc(WRITE_STYLES[p.style].blurb)}</p>` : ""}
+        <span class="sp-row-tip">${esc(WRITE_STYLES[p.style].tip)}</span>
+      </div>` : ""}
       <div class="sp-row">
         <span class="sp-row-lbl">Questions</span>
         <div class="sp-chips">${SPRINT_COUNTS.map(n => `<button class="sp-chip ${p.n === n ? "on" : ""}"
@@ -628,18 +632,16 @@ function sprintPanelHtml(mode, short) {
       ${/* Only where the wash can happen at all. On a laptop a sheet is
             unmarked until you hand it in, as it always was, and a switch that
             did nothing would be worse than no switch. */
-        PHONE_MQ.matches ? `<div class="sp-row">
+        PHONE_MQ.matches ? `<div class="sp-row sp-row-wide">
         <span class="sp-row-lbl">Marking</span>
         <div class="sp-chips">
           <button class="sp-chip wide ${sprintTells() ? "on" : ""}" data-sp-tell="1">
             <span class="han">即时</span> As you go</button>
           <button class="sp-chip wide ${sprintTells() ? "" : "on"}" data-sp-tell="0">
-            <span class="han">交卷</span> On handing in</button>
+            <span class="han">交卷</span> Handed in</button>
         </div>
-      </div>
-      <p class="note sp-style-note">${sprintTells()
-        ? "The screen washes green or red as you answer."
-        : "No marking until the sheet is handed in — you find out at the end, which is what makes it a test."}</p>` : ""}
+        <span class="sp-row-tip">${sprintTells() ? "Washes as you answer" : "You find out at the end"}</span>
+      </div>` : ""}
       <div class="sp-verdict">
         <span class="sp-verdict-k han">${esc(g.zh)}</span>
         <span class="sp-verdict-body"><b>${esc(g.name)}</b>

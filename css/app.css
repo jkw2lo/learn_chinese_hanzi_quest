@@ -2413,8 +2413,19 @@ button.tier-head:hover { border-color: var(--ink-3); }
 }
 .sp-picker > .note:first-child { padding-top: .8rem; }
 .sp-warn { color: var(--seal); }
-.sp-style-note { margin-top: -.4rem; }
 .sp-row { display: flex; align-items: center; gap: .7rem; }
+/* A row whose chips are the whole choice — how to write, how it marks itself —
+   rather than a shortcut to a number a stepper also reaches. The buttons take
+   what they need and the line beside them says what the one you picked does,
+   so the row reads across instead of explaining itself underneath. */
+.sp-row-wide .sp-chips { flex: none; }
+.sp-row-tip {
+  flex: 1; min-width: 0; font-size: .74rem; color: var(--ink-3);
+  /* one line, always: it is a reminder of the choice sitting next to it, not
+     a paragraph, and a second line would put this row out of step with every
+     other row in the picker */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .sp-row-lbl {
   font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
   font-weight: 600; width: 4.6rem; flex: none;
@@ -3283,13 +3294,28 @@ button.tier-head:hover { border-color: var(--ink-3); }
      that stayed vertically centred beside them, so the label sat in the middle
      of its own control. A stepper is one row, and the chips stand down. */
   .sp-row { align-items: center; }
-  .sp-row .sp-chips { display: none; }
+  /* The chips are a shortcut to numbers a stepper can also reach, so on a
+     phone the stepper stands in for them — but only in the rows that have
+     one. A row whose chips ARE the choice, with no stepper behind them, was
+     left as a label and a note with no control between: the Marking switch
+     rendered as a heading explaining a button that was display: none. */
+  .sp-row:has(.sp-step) .sp-chips { display: none; }
   .sp-row .sp-step { display: flex; }
   /* the write-style row is three named choices, not a number — it keeps chips,
      and gets the room by stacking under its label */
-  .sp-row.sp-row-style { flex-direction: column; align-items: stretch; gap: .35rem; }
-  .sp-row.sp-row-style .sp-chips { display: flex; }
-  .sp-row.sp-row-style .sp-row-lbl { width: auto; }
+  /* 4.6rem of label is alignment on a laptop and a third of the row on a
+     phone, and these two rows need the room for their buttons. */
+  .sp-row.sp-row-wide .sp-row-lbl { width: auto; }
+
+  /* ---------- the categories, flat ----------
+
+     Every panel is a .sheet, and a .sheet carries a border and a drop shadow.
+     Stacked down a narrow screen with nothing either side of them, the two
+     together read as a hard dark rim drawn around each category — an outline
+     on a page where nothing else is outlined. The fill already separates a
+     card from the page, so the rim is doing no work and is the only thing
+     anyone sees. */
+  .sp-panel, .sp-panel.open { box-shadow: none; border-color: transparent; }
 
   /* ---------- answers, where a thumb is ----------
 
@@ -3404,6 +3430,10 @@ button.tier-head:hover { border-color: var(--ink-3); }
    carries the identity on its own — which is what it already does between
    860 and the width where the tab row stops being tight, for the same reason. */
 @media (max-width: 479.98px) {
+  /* Below this the buttons have taken the row and the line beside them has
+     nothing left to say in: "Pinyin, then …" and "W" are worse than silence,
+     and the chip you have picked is lit up anyway. */
+  .sp-row-tip { display: none; }
   .brand-name { display: none; }
   .topbar { gap: .45rem; padding-left: .6rem; padding-right: .6rem; }
 }
