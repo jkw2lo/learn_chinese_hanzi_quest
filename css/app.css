@@ -548,14 +548,35 @@ code {
 /* The wash that stands in for the verdict bar on a phone — see flashVerdict
    in js/app.js, which is also the only thing that ever turns it on, and only
    below the mobile breakpoint. Inert everywhere else: no class, no paint. */
-.vflash { position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: 0; background: var(--jade); }
+.vflash { position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: 0; background: var(--jade);
+          transition: opacity .16s ease; }
 .vflash.no { background: var(--seal); }
 .vflash.on { animation: vflash .52s ease both; }
+/* Held for a drill, where the wait is the thing being shown: up quickly, then
+   steady until the next card clears it.
+
+   A declaration and a transition rather than an animation with a held end
+   frame. Both describe the same thing, but only one of them is true the
+   instant the class lands: an animation has to be started and can be
+   throttled or dropped, and a wash that does not paint is the entire feedback
+   gone. opacity: .17 is simply what this element's opacity is while the class
+   is on it, and the transition is decoration on top of that.
+
+   Lighter than the pulse, because it sits there for a second and a half
+   rather than a fifth of one, and four options have to stay readable
+   through it. */
+.vflash.hold { opacity: .17; }
 /* Peaks at a fifth of the way in and fades over the rest: a wash you notice
    without having to look at it, rather than a light being switched on. .22
    at the peak because this covers the whole screen, text included. */
 @keyframes vflash { 0% { opacity: 0 } 18% { opacity: .22 } 100% { opacity: 0 } }
-@media (prefers-reduced-motion: reduce) { .vflash.on { animation: none; } }
+/* Reduced motion takes the fade, not the colour: the wash is the only thing
+   saying you were right, so it still has to be there — it simply arrives
+   rather than animating in. */
+@media (prefers-reduced-motion: reduce) {
+  .vflash { transition: none; }
+  .vflash.on { animation: none; opacity: .17; }
+}
 
 .verdict { display: flex; align-items: center; gap: .6rem; padding: .7rem .9rem; border-radius: 8px; font-size: .88rem; }
 .verdict.ok { background: var(--jade-wash); color: var(--jade); }
