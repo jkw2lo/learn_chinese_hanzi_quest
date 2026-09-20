@@ -100,7 +100,14 @@ body {
    is invisible under light text in dark mode — that is what hid the
    unhighlighted half of every word in "Words you'll meet it in". Every button
    in the app that wants a background sets one. */
-button { font: inherit; color: inherit; cursor: pointer; background: none; }
+/* border: 0 closes the hole the other four left. A <button> with no border of
+   its own keeps the browser's — 2px outset, which paints black — and this
+   reset took away the background that was hiding it. Every button in the app
+   but one declares its own border and so never showed it; .sp-panel-head does
+   not, and a square black rectangle sat inside the rounded card with its
+   corners clipped off by the rounding. An element selector loses to every
+   class, so this changes nothing that had already decided for itself. */
+button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
 :focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3303,10 +3310,6 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .sp-row .sp-step { display: flex; }
   /* the write-style row is three named choices, not a number — it keeps chips,
      and gets the room by stacking under its label */
-  /* 4.6rem of label is alignment on a laptop and a third of the row on a
-     phone, and these two rows need the room for their buttons. */
-  .sp-row.sp-row-wide .sp-row-lbl { width: auto; }
-
   /* ---------- the categories, flat ----------
 
      Every panel is a .sheet, and a .sheet carries a border and a drop shadow.
