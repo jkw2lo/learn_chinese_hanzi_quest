@@ -1088,7 +1088,7 @@ const RADICALS = {
     does:"On the left edge it squeezes to 亻. It marks people, roles and things people do to each other."},
   "水": {form:"氵", variants:"水 氵", name:"water", pin:"shuǐ", strokes:3,
     does:"Three drops on the left. Every liquid, every river, and every action involving washing or pouring."},
-  "心": {form:"忄", variants:"心 忄", name:"heart", pin:"xīn", strokes:4,
+  "心": {form:"忄", variants:"心 忄", name:"heart", pin:"xīn", strokes:3,
     does:"Chinese put thought and feeling in the heart, not the head — so this radical marks emotions and mental states alike."},
   "手": {form:"扌", variants:"手 扌", name:"hand", pin:"shǒu", strokes:3,
     does:"Flattened to 扌 on the left. It marks verbs done with the hands: pushing, pulling, carrying, striking."},
@@ -1210,24 +1210,92 @@ const MENU = {
   ]
 };
 
-/* Every distinct character the quest covers, derived from the menu above so
-   editing it keeps the quest honest. Characters actually PRINTED on the menu
-   come first: learning one should visibly light up a dish, not a phrase you
-   can't see. Ordering-phrase characters follow, each tier in teaching order. */
-const MENU_CHARS = (() => {
-  const printed = new Set(), spoken = new Set();
-  const add = (str, set) => [...str].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) set.add(c); });
-  add(MENU.title, printed); add(MENU.name, printed);
-  MENU.sections.forEach(s => { add(s.head, printed); s.items.forEach(i => add(i[0], printed)); });
-  MENU.phrases.forEach(p => add(p[0], spoken));
-  return HQ.filter(ch => printed.has(ch.c) || spoken.has(ch.c))
-           .map((ch, n) => ({ c: ch.c, tier: printed.has(ch.c) ? 0 : 1, n }))
-           .sort((a, b) => a.tier - b.tier || a.n - b.n)
-           .map(x => x.c);
+/* ---------- what the card shows, and when ----------
+
+   "On the menu" is not one set of characters. `renderMenuCard` prints the
+   masthead, the section heads and the dish names from the start, a dish's
+   small print from level 2, and the specials board from level 3. The model
+   used to know none of that. It derived one flat list from the dish names and
+   the ordering phrases, which got it wrong in both directions: the six
+   characters that live only in the spoken phrases were in the list and could
+   be offered under the words "find it on the menu below", where there is
+   nothing to find; and the seventeen that live in the small print and on the
+   board were not in it at all, so the quest neither taught them nor counted
+   them and called the card finished with seventeen glyphs still grey.
+
+   So the levels are derived from MENU itself. MENU_READ[n] is every character
+   legible at level n — cumulative, and in the order the eye meets it going
+   down the card, which puts the board first because the board is printed above
+   the sections. MENU_LEVELS[n] is the same list as a Set. Both are 1-indexed
+   by menu level; index 0 is empty so `MENU_READ[tier.n]` needs no arithmetic.
+
+   Only characters the library teaches go in. Everything printed here happens
+   to be taught, so the filter removes nothing today — it is what keeps the
+   quest honest the day somebody adds a dish. */
+const MENU_READ = [[]], MENU_LEVELS = [new Set()];
+
+/* Every character printed on the card at full size, WITH repeats — 面 in five
+   dishes is five characters of wall that light up when you learn it. This is
+   the denominator for "how much of this can I read", which is the question the
+   quest is named after; a set would answer a question about vocabulary. */
+const MENU_INK = [];
+
+const MENU_SPOKEN_ONLY = [];
+
+(() => {
+  const han = s => [...String(s)].filter(c => /[\u4e00-\u9fff]/.test(c));
+
+  /* The card, read top to bottom, as it stands at level `lvl`. */
+  const walk = lvl => {
+    const out = [...han(MENU.title), ...han(MENU.name)];
+    if (lvl >= 3) {
+      out.push(...han(MENU.specials.head));
+      MENU.specials.items.forEach(i => out.push(...han(i[0])));
+      out.push(...han(MENU.specials.note[0]));
+    }
+    MENU.sections.forEach(s => {
+      out.push(...han(s.head));
+      s.items.forEach(i => {
+        out.push(...han(i[0]));
+        if (lvl >= 2 && i[4]) out.push(...han(i[4][0]));
+      });
+    });
+    return out;
+  };
+
+  for (let n = 1; n <= 3; n++) {
+    const seen = new Set(), list = [];
+    for (const c of walk(n)) if (CHAR_INDEX[c] && !seen.has(c)) { seen.add(c); list.push(c); }
+    MENU_READ[n] = list; MENU_LEVELS[n] = seen;
+  }
+  MENU_INK.push(...walk(3));
+
+  /* The ordering phrases are spoken, not printed. Six characters appear only
+     there — 这 少 给 服 务 员 — and the quest may not point at them, because
+     there is nowhere on the card to point. They still get the hover gloss and
+     the say-it-out-loud row; they are simply not what the bar is counting. */
+  const printed = MENU_LEVELS[3];
+  const seen = new Set();
+  MENU.phrases.forEach(p => han(p[0]).forEach(c => {
+    if (!printed.has(c) && CHAR_INDEX[c] && !seen.has(c)) { seen.add(c); MENU_SPOKEN_ONLY.push(c); }
+  }));
 })();
 
-/* The menu grows up as you do: names first, then descriptions, then a
-   specials board with longer dish names and a line from the kitchen. */
+/* The whole card — the quest's books, and the bar's countable denominator. */
+const MENU_PRINTED = MENU_READ[3];
+
+/* The ceiling on legibility: the printed characters this library teaches,
+   counted with repeats like MENU_INK. Here that is all of them, so the ceiling
+   is 100% and the bar's tick has nothing to mark — see `menuProgress`, which
+   only draws it when the two differ. A menu with a dish name no curriculum
+   this size would teach would land short, and the bar would have to say so
+   rather than quietly stopping. */
+const MENU_INK_CEILING = MENU_INK.filter(c => CHAR_INDEX[c]).length;
+
+/* Everything the quest page shows you, printed first. The chip on a teaching
+   card reads from this. */
+const MENU_CHARS = [...MENU_PRINTED, ...MENU_SPOKEN_ONLY];
+
 /* ============================================================
    Interests — what the word of the week is drawn from
 
@@ -1440,10 +1508,23 @@ const FESTIVALS = [
   ]}
 ];
 
+/* How grown-up a menu you get. A tier is a number and a label and nothing
+   else: there is no threshold here, because the gate is not a count.
+
+   Three gates were tried. A count of menu characters (level 2 at 15, level 3
+   at 30) looked reasonable and was not: menu characters bunch — most of this
+   card is taught in the Kitchen stage — so the board could arrive in a week
+   while three quarters of the dish names were still grey. Adding an overall
+   character total on top fixed the pacing and broke something worse: the card
+   would then grow because of work done on the Today tab, which is a promise
+   that the menu gets harder for reasons having nothing to do with the menu.
+
+   The gate that survives is the obvious one: you get the next menu when you
+   can read this one. See `menuTier` in srs.js. */
 const MENU_TIERS = [
-  { n: 1, at: 0,  label: "Dish names only" },
-  { n: 2, at: 15, label: "With descriptions" },
-  { n: 3, at: 30, label: "Full menu, specials board and all" }
+  { n: 1, label: "Dish names only" },
+  { n: 2, label: "With descriptions" },
+  { n: 3, label: "Full menu, specials board and all" }
 ];
 
 const QUESTS = [
@@ -1459,3 +1540,11 @@ const QUESTS = [
   { id:"chat",   icon:"💬", name:"Small Talk",    zh:"聊天",   locked:true,
     promise:"Hold a short conversation about yourself.",          needs:"Buy Something" }
 ];
+
+/* ---------- reference glosses ----------
+   Generated by tools/fetch-glosses.mjs from Unihan's kMandarin and
+   kDefinition. Do not hand-edit. These characters appear on screen — in the
+   menu, example words, sentences, the word of the week, and the section
+   headings — without being taught, and this is what their hover tooltip says.
+   They are never drilled, counted or scheduled. 273 of them. */
+const EXTRA_GLOSS = {"丁":["dīng","male adult; robust"],"丈":["zhàng","unit of length equal 3 meters; gentleman"],"丙":["bǐng","third; 3rd heavenly stem"],"丰":["fēng","abundant; lush"],"乎":["hū","interrogative or exclamatory final particle"],"乒":["pīng","“ping” of “ping pong”"],"乓":["pāng","“pong” of “ping pong”"],"乙":["yǐ","second; 2nd heavenly stem"],"乞":["qǐ","beg; request"],"乱":["luàn","confusion; state of chaos"],"产":["chǎn","give birth; bring forth"],"亮":["liàng","bright; brilliant"],"介":["jiè","forerunner; herald"],"仔":["zǐ","small thing; child"],"付":["fù","give; deliver"],"份":["fèn","portion; part"],"伤":["shāng","wound; injury"],"侠":["xiá","chivalrous person; knight-errant"],"假":["jiǎ","falsehood; deception"],"允":["yǔn","to grant; to allow"],"兄":["xiōng","elder brother"],"兑":["duì","cash; exchange"],"典":["diǎn","law; canon"],"冫":["bīng","ice"],"冬":["dōng","winter; 11th lunar month"],"净":["jìng","clean; pure"],"刀":["dāo","knife; old coin"],"刚":["gāng","hard; tough"],"刻":["kè","carve; engrave"],"剧":["jù","theatrical plays; opera"],"助":["zhù","help; aid"],"努":["nǔ","to exert; strive"],"匀":["yún","equal"],"化":["huà","change; convert"],"博":["bó","gamble; play games"],"卡":["kǎ","card; punch card"],"印":["yìn","print; seal"],"卷":["juǎn","scroll; curl"],"厕":["cè","mingle with; toilet"],"厨":["chú","kitchen; closet"],"句":["jù","sentence"],"吓":["xià","scare; frighten"],"呼":["hū","breathe sigh; exhale"],"唱":["chàng","sing; chant"],"啤":["pí","beer"],"善":["shàn","good; virtuous"],"嘴":["zuǐ","mouth; lips"],"囗":["wéi","erect; proud"],"圈":["quān","to circle; a circle"],"圣":["shèng","holy; sacred"],"坦":["tǎn","flat; smooth"],"城":["chéng","castle; city"],"培":["péi","bank up with dirt; cultivate"],"境":["jìng","boundary; frontier"],"墓":["mù","grave; tomb"],"夕":["xī","evening; night"],"夜":["yè","night; dark"],"奋":["fèn","strive; exert effort"],"奏":["zòu","memorialize emperor; report"],"奶":["nǎi","milk; woman's breasts"],"姓":["xìng","one's family name; clan"],"娥":["é","be beautiful; good"],"婚":["hūn","get married; marriage"],"嫦":["cháng","name of a moon goddess"],"孙":["sūn","grandchild; descendent"],"宀":["mián","roof"],"守":["shǒu","defend; protect"],"宵":["xiāo","night; evening"],"寸":["cùn","inch; small"],"尤":["yóu","especially; particularly"],"屈":["qū","bend; flex"],"巾":["jīn","kerchief; towel"],"希":["xī","rare; hope"],"帖":["tiē","invitation card; notice"],"帽":["mào","hat; cap"],"幕":["mù","curtain; screen"],"乡":["xiāng","country; rural"],"庆":["qìng","congratulate; celebrate"],"库":["kù","armory; treasury"],"废":["fèi","abrogate; terminate"],"座":["zuò","seat; stand"],"弓":["gōng","bow; curved"],"弯":["wān","bend; curve"],"录":["lù","copy; write down"],"彩":["cǎi","hue; color"],"忆":["yì","remember; reflect upon"],"怕":["pà","to fear; be afraid of"],"急":["jí","quick; quickly"],"怪":["guài","strange; unusual"],"恢":["huī","restore; big"],"恭":["gōng","respectful; polite"],"惯":["guàn","habit; custom"],"愿":["yuàn","sincere; honest"],"戈":["gē","halberd; spear"],"托":["tuō","to hold up with palm; to support"],"扫":["sǎo","sweep; clear away"],"抄":["chāo","copy; confiscate"],"抵":["dǐ","resist; oppose"],"担":["dān","carry; bear"],"拒":["jù","ward off with hand; defend"],"择":["zé","select; choose"],"括":["kuò","include; embrace"],"拾":["shí","pick up; collect"],"挑":["tiāo","a load carried on the shoulders; to carry"],"措":["cuò","place; collect"],"描":["miáo","copy; trace"],"搜":["sōu","search; seek"],"摇":["yáo","wag; swing"],"摔":["shuāi","fall to the ground; stumble"],"攻":["gōng","attack; assault"],"救":["jiù","save; rescue"],"散":["sàn","scatter; disperse"],"斤":["jīn","a catty; an axe"],"旁":["páng","side; by side"],"旅":["lǚ","trip; journey"],"旦":["dàn","dawn; morning"],"普":["pǔ","universal; general"],"景":["jǐng","scenery; view"],"智":["zhì","wisdom; knowledge"],"暖":["nuǎn","warm; genial"],"末":["mò","final; last"],"束":["shù","bind; control"],"森":["sēn","forest; luxuriant vegetation"],"棵":["kē","numerary adjunct for trees"],"椒":["jiāo","pepper; spices"],"楚":["chǔ","name of feudal state; clear"],"模":["mó","model; standard"],"樱":["yīng","cherry; cherry blossom"],"欠":["qiàn","owe; lack"],"歌":["gē","song; lyrics"],"止":["zhǐ","stop; halt"],"死":["sǐ","die; dead"],"母":["mǔ","mother; female elders"],"毕":["bì","end; finish"],"毫":["háo","fine hair; measure of length"],"民":["mín","people; subjects"],"永":["yǒng","long; perpetual"],"汗":["hàn","perspiration; sweat"],"汽":["qì","steam; vapor"],"洁":["jié","clean; purify"],"浪":["làng","wave; wasteful"],"游":["yóu","to swim; float"],"滚":["gǔn","turn"],"演":["yǎn","perform; put on"],"灯":["dēng","lantern; lamp"],"灰":["huī","ashes; dust"],"炸":["zhà","to fry in oil; to scald"],"烟":["yān","smoke; soot"],"熟":["shú","well-cooked; ripe"],"爬":["pá","crawl; creep"],"父":["fù","father"],"犬":["quǎn","dog; radical number 94"],"犭":["quǎn","dog; radical number 94"],"狂":["kuáng","insane; mad"],"猜":["cāi","guess; conjecture"],"猫":["māo","cat"],"玉":["yù","jade; precious stone"],"理":["lǐ","reason; logic"],"瓜":["guā","melon; gourd"],"甘":["gān","sweetness; sweet"],"甚":["shèn","great extent; considerably"],"田":["tián","field; arable land"],"甲":["jiǎ","armor; shell"],"男":["nán","male; man"],"疼":["téng","aches; pains"],"疾":["jí","illness; disease"],"皮":["pí","skin; hide"],"睛":["jīng","eyeball; pupil of eye"],"矢":["shǐ","arrow; dart"],"码":["mǎ","number; numerals"],"础":["chǔ","foundation stone; plinth"],"礼":["lǐ","social custom; manners"],"祖":["zǔ","ancestor; forefather"],"秀":["xiù","ear of grain; flowering"],"秋":["qiū","autumn; fall"],"秘":["mì","secret; mysterious"],"稍":["shāo","little; slightly"],"稳":["wěn","stable; firm"],"突":["tū","suddenly; abruptly"],"竹":["zhú","bamboo; flute"],"笼":["lóng","cage; cage-like basket"],"答":["dá","answer; reply"],"筝":["zhēng","stringed musical instrument; kite"],"筷":["kuài","chopsticks"],"簿":["bù","register; account book"],"粽":["zòng","dumpling made of glutinous rice"],"糖":["táng","sugar; candy"],"糸":["mì","silk"],"纟":["sī","silk"],"索":["suǒ","large rope; cable"],"纺":["fǎng","spin; reel"],"终":["zhōng","end; finally"],"翻":["fān","flip over; upset"],"聪":["cōng","intelligent; clever"],"肃":["sù","pay respects; reverently"],"肥":["féi","fat; plump"],"舌":["shé","tongue; clapper of bell"],"舟":["zhōu","boat; ship"],"艸":["cǎo","grass"],"艹":["cǎo","grass"],"苏":["sū","revive; resurrect"],"苹":["píng","artemisia; duckweed"],"虫":["chóng","insects; worms"],"血":["xuè","blood"],"衣":["yī","clothes; clothing"],"补":["bǔ","mend; patch"],"触":["chù","butt; ram"],"讨":["tǎo","to discuss; ask for"],"训":["xùn","teach; instruct"],"评":["píng","appraise; criticize"],"词":["cí","words; phrase"],"译":["yì","translate; decode"],"诗":["shī","poetry; poem"],"诞":["dàn","bear children; give birth"],"详":["xiáng","detailed; complete"],"课":["kè","lesson; course"],"谜":["mí","riddle; conundrum"],"谣":["yáo","sing; folksong"],"豆":["dòu","beans; peas"],"豕":["shǐ","a pig; boar"],"豪":["háo","brave; heroic"],"贝":["bèi","sea shell; money"],"败":["bài","be defeated; decline"],"贸":["mào","trade; barter"],"赏":["shǎng","reward; grant"],"赛":["sài","compete; contend"],"赞":["zàn","help; support"],"赶":["gǎn","pursue; follow"],"趣":["qù","what attracts one's attention"],"足":["zú","foot; attain"],"距":["jù","distance; bird's spur"],"踏":["tà","step on; trample"],"软":["ruǎn","soft; flexible"],"辛":["xīn","bitter; toilsome"],"辞":["cí","words; speech"],"辨":["biàn","distinguish; discriminate"],"辶":["chuò","walk; walking"],"迎":["yíng","receive; welcome"],"近":["jìn","near; close"],"迷":["mí","bewitch; charm"],"遥":["yáo","far away; distant"],"酉":["yǒu","a wine vessel; tenth earthly branch"],"酱":["jiàng","any jam-like or paste-like food"],"释":["shì","interpret; elucidate"],"钅":["jīn","gold; money"],"钢":["gāng","steel; hard"],"铅":["qiān","lead (element 82; Pb)"],"锅":["guō","cooking-pot; saucepan"],"错":["cuò","error; blunder"],"镇":["zhèn","town; market place"],"闻":["wén","hear; smell"],"阅":["yuè","examine; inspect"],"阳":["yáng","'male' principle; light"],"隹":["zhuī","short-tailed bird"],"静":["jìng","quiet; still"],"靠":["kào","lean on; trust"],"竟":["jìng","finally; after all"],"页":["yè","page; sheet"],"顺":["shùn","obey; submit to"],"顾":["gù","look back; look at"],"预":["yù","prepare; arrange"],"颜":["yán","face; facial appearance"],"飠":["shí","eat; food"],"饮":["yǐn","drink; swallow"],"饺":["jiǎo","stuffed dumplings"],"饼":["bǐng","rice-cakes; biscuits"],"驾":["jià","to drive; sail"],"鲜":["xiān","fresh; delicious"],"鸟":["niǎo","bird"],"麻":["má","hemp; jute"],"墨":["mò","ink; writing"],"默":["mò","silent; quiet"],"龙":["lóng","dragon; symbolic of emperor"]};

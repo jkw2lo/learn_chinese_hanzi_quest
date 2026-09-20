@@ -23,7 +23,15 @@
   --shadow:   0 1px 2px rgba(23, 33, 30, .06), 0 6px 18px rgba(23, 33, 30, .05);
   --shadow-lift: 0 2px 4px rgba(23, 33, 30, .08), 0 14px 34px rgba(23, 33, 30, .10);
 
-  --f-display: "Fraunces", Georgia, "Times New Roman", serif;
+  /* Newsreader, not Fraunces. Fraunces draws a J that drops below the
+     baseline and curls left, and the one heading that addresses the learner
+     by name — "Ready when you are, Jen." — is exactly where it shows. No axis,
+     feature or stylistic set reaches it: WONK 0 and WONK 1 are identical here
+     because Google Fonts serves an instanced face per weight and the axis is
+     not in the file at all, and ss01–ss04, salt, cv01 and cv02 leave the J
+     alone. Newsreader has the same editorial warmth and an optical-size axis,
+     pairs with IBM Plex Sans, and draws an ordinary J. */
+  --f-display: "Newsreader", Georgia, "Times New Roman", serif;
   --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-pin: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-han: "Songti SC", "STSong", "Noto Serif SC", "SimSun", "Source Han Serif SC", serif;
@@ -111,7 +119,12 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--rule-2);
 }
-.brand { display: flex; align-items: center; gap: .5rem; margin-right: auto; min-width: 0; }
+.brand {
+  display: flex; align-items: center; gap: .5rem; margin-right: auto; min-width: 0;
+  background: none; border: 0; padding: 0; color: inherit; cursor: pointer;
+  border-radius: 8px;
+}
+.brand:hover .brand-name { color: var(--seal); }
 .brand-seal {
   width: 27px; height: 27px; flex: none; display: grid; place-items: center;
   background: var(--seal); color: #fff;
@@ -121,6 +134,11 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
 
 /* desktop tabs, hidden on phones */
 .top-nav { display: none; gap: .1rem; }
+/* and its opposite number: the phone's way into the same tabs, hidden until a
+   window is too narrow for the row. Laid out in the phone layer at the foot of
+   this file. Both classes are named because .icon-btn sets display: grid and
+   is declared below this — one class each and the later rule wins. */
+.icon-btn.burger { display: none; }
 .top-nav button {
   display: flex; align-items: baseline; gap: .4rem; white-space: nowrap;
   padding: .4rem .7rem; border: 0; border-radius: 7px;
@@ -130,6 +148,15 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
 .top-nav button:hover { background: var(--sunken); color: var(--ink); }
 .top-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
 .top-nav button.on .nz { color: var(--seal); }
+/* ---------- four groups, not seven equal things ----------
+   The daily loop, the two ways of practising, the two references, and the
+   record. A hairline after each group but the last; absolutely positioned so
+   it does not become a flex child of the button it hangs off. */
+.top-nav .grp-end { margin-right: .55rem; position: relative; }
+.top-nav .grp-end::after {
+  content: ""; position: absolute; right: -.33rem; top: 50%; transform: translateY(-50%);
+  width: 1px; height: 1.15em; background: var(--rule); opacity: .8;
+}
 
 .chip {
   display: inline-flex; align-items: center; gap: .3rem;
@@ -145,6 +172,9 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
   color: var(--ink-2); font-size: .9rem;
 }
 .icon-btn:hover { background: var(--sunken); color: var(--ink); }
+/* every top-bar icon is drawn rather than typed, so they all centre the same
+   way and share one stroke weight */
+.icon-btn svg { display: block; }
 /* an emoji glyph rides higher and larger than the text icons beside it */
 .save-btn { font-size: .78rem; line-height: 1; }
 
@@ -157,23 +187,41 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; }
   background: var(--gold); border: 1.5px solid var(--sheet);
 }
 
-/* ---------- the four-week tracker: one row, under the bar ---------- */
+/* ---------- the four-week tracker, behind the streak chip ----------
 
+   It was a full-width sticky bar that opened with 🔥 N — directly under a chip
+   that also said 🔥 N. Two rows of chrome for one fact, and 34px of height off
+   a dashboard that needs every pixel. */
+.streak-pop { position: relative; display: flex; }
+.streak-pop .chip-streak { cursor: pointer; }
 .tracker {
-  position: sticky; top: 0; z-index: 39;
-  display: flex; align-items: center; gap: .7rem;
-  padding: .45rem .85rem;
-  border-bottom: 1px solid var(--rule-2);
-  background: var(--sunken);
+  position: absolute; top: calc(100% + .5rem); right: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: stretch; gap: .45rem;
+  /* max-width: 24rem cropped a 28-day row that wants 445px, so the popover cut
+     off the thing it exists to show. It sizes to its contents; only the
+     viewport bounds it. */
+  width: max-content; max-width: calc(100vw - 1.6rem);
+  padding: .6rem .7rem;
+  border: 1px solid var(--rule); border-radius: 9px;
+  background: var(--sheet); box-shadow: var(--shadow-lift);
+  opacity: 0; visibility: hidden; transform: translateY(-3px);
+  transition: opacity .13s ease, transform .13s ease, visibility .13s;
 }
+.streak-pop:hover .tracker,
+.streak-pop:focus-within .tracker,
+.streak-pop.on .tracker { opacity: 1; visibility: visible; transform: none; }
+@media (hover: none) { .streak-pop:hover .tracker { opacity: 0; visibility: hidden; } }
+.streak-pop.on .tracker { opacity: 1 !important; visibility: visible !important; }
+/* Explicitly closed by a click, and the pointer has not left yet — see boot(). */
+.streak-pop.shut .tracker { opacity: 0; visibility: hidden; transform: translateY(-3px); }
 .tracker-lbl {
   font-size: .62rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 600; white-space: nowrap;
 }
-.tracker-row { display: flex; gap: 3px; flex: 1; min-width: 0; overflow-x: auto; padding: 2px 0; }
+.tracker-row { display: flex; gap: 3px; min-width: 0; padding: 2px 0; }
 .tracker-row::-webkit-scrollbar { height: 0; }
 .tracker-row .day { flex: none; }
-.tracker-note { font-size: .7rem; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tracker-note { font-size: .7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
 main { flex: 1; width: 100%; }
 .wrap { max-width: 34rem; margin: 0 auto; padding: 1rem .85rem 5.5rem; }
@@ -182,32 +230,8 @@ main { flex: 1; width: 100%; }
 .view.on { display: block; animation: rise .3s ease both; }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
-/* mobile bottom bar */
-.nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  display: grid; grid-template-columns: repeat(6, 1fr);
-  background: color-mix(in srgb, var(--paper) 93%, transparent);
-  backdrop-filter: blur(14px);
-  border-top: 1px solid var(--rule-2);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-.nav button {
-  background: none; border: 0; padding: .5rem .2rem .55rem;
-  display: flex; flex-direction: column; align-items: center; gap: .15rem;
-  color: var(--ink-3); position: relative;
-}
-.nav button .nz { font-family: var(--f-han-ui); font-size: 1.05rem; line-height: 1.1; }
-.nav button .nl { font-size: .58rem; letter-spacing: .03em; text-transform: uppercase; }
-@media (max-width: 360px) { .nav button .nl { font-size: .52rem; letter-spacing: 0; } }
-.nav button.on { color: var(--ink); }
-.nav button.on::before {
-  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 20px; height: 2px; background: var(--seal); border-radius: 0 0 2px 2px;
-}
-
 @media (min-width: 860px) {
   .top-nav { display: flex; }
-  .nav { display: none; }
   .brand { margin-right: 1.2rem; }
   .top-nav { margin-right: auto; }
   .topbar { padding: .6rem 1.5rem; }
@@ -242,6 +266,15 @@ main { flex: 1; width: 100%; }
   font-size: .68rem; letter-spacing: .13em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 600;
 }
+/* In a section heading the English is the label and the Chinese follows as a
+   gloss on it, so it is set quieter and without the uppercase tracking the
+   English carries. The nav tabs and drill labels stay Chinese-first for the
+   opposite reason — there the Chinese *is* the label. */
+.eyebrow .han-label {
+  margin-left: .35rem; letter-spacing: 0; text-transform: none;
+  font-family: var(--f-han-ui); font-size: .92em; color: var(--seal); opacity: .85;
+}
+.eyebrow .han-label [data-ch] { cursor: help; }
 h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: -.015em; text-wrap: balance; margin: 0; }
 h1 { font-size: 1.6rem; line-height: 1.18; }
 h2 { font-size: 1.15rem; line-height: 1.25; }
@@ -340,9 +373,16 @@ code {
   padding: .05em .3em; border-radius: 4px; white-space: nowrap;
 }
 
-.bar { height: 6px; border-radius: 3px; background: var(--rule-2); overflow: hidden; }
+.bar { position: relative; height: 6px; border-radius: 3px; background: var(--rule-2); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--jade); border-radius: 3px; transition: width .7s cubic-bezier(.2,.8,.3,1); }
 .bar.gold > i { background: var(--gold); }
+/* Where a fill has to stop short — the menu's legibility ceiling. Drawn only
+   when there is something to mark, so a bar that can reach the end has no
+   tick sitting uselessly on its last pixel. */
+.bar > u.cap {
+  position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+  background: var(--ink-3); opacity: .55;
+}
 
 .ladder { display: flex; flex-direction: column; gap: 0; }
 .rung {
@@ -384,7 +424,15 @@ code {
 .ses-foot-inner { max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: .5rem; }
 
 .card-hero { display: flex; flex-direction: column; align-items: center; gap: .75rem; }
-.writer-box { width: 190px; }
+/* The square you write in was 190px inside a column that is 544px on a phone
+   and 864px on a desktop — a thumbnail of a thing you are meant to draw in.
+
+   Fixed pixels rather than a vw, and this is not fussiness: makeWriter builds
+   the hanzi-writer SVG to whatever this measures at the moment it runs, and
+   that SVG cannot scale afterwards. A viewport unit would be correct when the
+   square was built and wrong the first time the phone was turned sideways.
+   268 clears the narrowest phone still in use — 320px less 32 of padding. */
+.writer-box { width: 268px; }
 .writer-box .tian-slot > div { width: 100%; height: 100%; }
 .hero-char {
   font-family: var(--f-han); font-size: 7.5rem; line-height: 1;
@@ -478,16 +526,20 @@ code {
 
 .opts { display: grid; gap: .5rem; }
 .opts.grid2 { grid-template-columns: 1fr 1fr; }
+/* Bigger than the page needs, on purpose. An answer button is read at a
+   glance and hit without looking, and neither the study column nor the phone
+   was ever short of room — .92rem and 3rem of height were the defaults of a
+   layout that had not been looked at since. */
 .opt {
-  padding: .8rem .9rem; border-radius: 8px; text-align: left;
+  padding: .85rem 1rem; border-radius: 8px; text-align: left;
   border: 1px solid var(--rule); background: var(--sheet); color: var(--ink);
-  font-size: .92rem; transition: border-color .15s, background .15s, transform .12s;
-  display: flex; align-items: center; gap: .6rem; min-height: 3rem;
+  font-size: 1.05rem; transition: border-color .15s, background .15s, transform .12s;
+  display: flex; align-items: center; gap: .6rem; min-height: 3.5rem;
 }
 .opt:hover:not(:disabled) { border-color: var(--ink-3); transform: translateY(-1px); }
 .opt:disabled { cursor: default; }
-.opt .big { font-family: var(--f-han); font-size: 2.6rem; line-height: 1; margin: 0 auto; }
-.opt .pin { font-size: 1.05rem; }
+.opt .big { font-family: var(--f-han); font-size: 3rem; line-height: 1; margin: 0 auto; }
+.opt .pin { font-size: 1.2rem; }
 .opt.right { border-color: var(--jade); background: var(--jade-wash); color: var(--jade); }
 .opt.wrong { border-color: var(--seal); background: var(--seal-wash); color: var(--seal); }
 .opt.right .big, .opt.wrong .big { color: inherit; }
@@ -502,12 +554,31 @@ code {
 /* ---------- library ---------- */
 
 .filters { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .3rem; margin-bottom: .2rem; }
+/* A scrolling row is fine for five things and a trap for eighteen — that is
+   why the stages became one picker. But at phone width even six controls
+   overflow, and the thing that ends up off the right-hand edge is the picker
+   itself: the whole stage filter, hidden, with nothing saying so. Measured at
+   390px: 541px of controls in a 363px row. Two lines is better than a
+   scroller nobody can see the end of. */
+@media (max-width: 640px) {
+  .filters { flex-wrap: wrap; overflow-x: visible; }
+}
 .filters::-webkit-scrollbar { height: 0; }
 .filt {
   flex: none; padding: .35rem .7rem; border-radius: 999px; font-size: .78rem;
   border: 1px solid var(--rule); background: transparent; color: var(--ink-2); white-space: nowrap;
 }
 .filt.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* a handful of chips as one control — a setting with three answers, where a
+   pair of them would have been a toggle */
+.pick-row { display: flex; gap: .3rem; flex: none; }
+/* the stage picker wears the chip's clothes so the row reads as one control */
+.filt-sel { font: inherit; font-size: .78rem; padding-right: 1.5rem; cursor: pointer;
+  appearance: none; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right .72rem center, right .55rem center;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
+.filt-sel.on { background-color: var(--ink); }
 
 .search {
   width: 100%; padding: .6rem .85rem; border-radius: 8px;
@@ -712,6 +783,27 @@ code {
 .menu-item .en .pin { font-family: var(--f-pin); }
 
 .phrase-list { display: flex; flex-direction: column; gap: .1rem; }
+/* Five phrases in one narrow column left most of the menu tab empty beside
+   them. They are short, independent lines — which is what columns are for.
+   The count comes from the data as --phrase-n, set where the list is
+   rendered: hard-coding repeat(5, ...) here would mean a sixth phrase
+   silently squeezed into five columns, and the fix belongs next to the thing
+   that can change. Every track is minmax(0, 1fr) so a track is never wider
+   than its share, and the pinyin — the longest line in a card, with no break
+   opportunities of its own — wraps rather than pushing the track open. */
+@media (min-width: 1040px) {
+  .menu-say .phrase-list {
+    display: grid; grid-template-columns: repeat(var(--phrase-n, 2), minmax(0, 1fr));
+    gap: .1rem 1.1rem; align-items: start;
+  }
+  .menu-say .phrase { border-bottom: 0; padding-top: 0; }
+}
+@media (min-width: 720px) and (max-width: 1039.98px) {
+  .menu-say .phrase-list {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .1rem .9rem; align-items: start;
+  }
+}
 .phrase {
   display: flex; flex-direction: column; gap: .1rem; padding: .55rem 0;
   border-bottom: 1px solid var(--rule-2); background: none; border-left: 0; border-right: 0; border-top: 0;
@@ -719,7 +811,10 @@ code {
 }
 .phrase:last-child { border-bottom: 0; }
 .phrase .z { font-family: var(--f-han-ui); font-size: 1.15rem; }
-.phrase .p { font-family: var(--f-pin); font-size: .74rem; color: var(--ink-3); }
+/* min-width:0 so a long unbroken reading cannot widen its grid track, and
+   overflow-wrap so it breaks inside a syllable rather than spilling out */
+.phrase .p { font-family: var(--f-pin); font-size: .74rem; color: var(--ink-3);
+  min-width: 0; overflow-wrap: anywhere; }
 .phrase .e { font-size: .8rem; color: var(--ink-2); }
 
 /* ============================================================
@@ -894,7 +989,40 @@ code {
   display: flex; flex-direction: column; gap: .6rem;
 }
 .learned-head { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; }
-.learned-strip { display: flex; gap: .4rem; flex-wrap: wrap; }
+/* The day's characters: a rail, not a wall. At five a day it is one row; at
+   sixty-five it was 362px of the 629 available, on its own. */
+.learned-rail { display: flex; align-items: center; gap: .3rem; }
+.learned-strip {
+  display: flex; gap: .4rem; flex-wrap: nowrap;
+  overflow-x: auto; scroll-behavior: smooth;
+  flex: 1; min-width: 0; scrollbar-width: none; padding-bottom: 2px;
+}
+.learned-strip::-webkit-scrollbar { height: 0; }
+.learned-strip .lc { flex: none; }
+.lt-arrow {
+  flex: none; width: 1.4rem; height: 2.5rem; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--sheet); color: var(--ink-3);
+  font-size: .9rem; line-height: 1; display: grid; place-items: center;
+}
+.lt-arrow:hover { color: var(--ink); border-color: var(--ink-3); background: var(--sunken); }
+.learned-more {
+  align-self: flex-start; margin-top: .1rem;
+  padding: .15rem .45rem; border-radius: 6px; font-size: .7rem;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink-3);
+}
+.learned-more:hover { color: var(--ink); border-color: var(--ink-3); background: var(--sunken); }
+
+/* the whole day, across the foot of the enclosure — by then it concerns the
+   whole day rather than one card in it */
+.today-all {
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .7rem .8rem; border-radius: 9px;
+  border: 1px solid var(--rule-2); background: var(--sheet);
+}
+.today-all-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(3.1rem, 1fr));
+  gap: .35rem; max-height: 11rem; overflow-y: auto;
+}
 .lc {
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
   padding: .45rem .4rem .4rem; min-width: 3.2rem; border-radius: 8px;
@@ -947,6 +1075,58 @@ code {
 
 .sq-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .sq-actions .btn { flex: 1; min-width: 9rem; }
+/* the button belongs to the character it names, not to a row of its own at
+   the far end of the card */
+.sq-learn { flex: none; align-self: center; white-space: nowrap; }
+/* the level sentence sits under the headline one, quieter */
+.sq-lvl { color: var(--ink-3); }
+
+/* ---------- how much of the wall you can read ----------
+   A percentage, a bar, and the ceiling drawn on it. See menuProgress(). */
+.ink-read {
+  background: var(--sheet); border: 1px solid var(--rule-2); border-radius: var(--r);
+  padding: .85rem 1rem .8rem;
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.ink-top { display: flex; align-items: baseline; gap: .7rem; }
+.ink-pct {
+  font-family: var(--f-display); font-size: 2.1rem; line-height: 1;
+  font-weight: 600; color: var(--seal); font-variant-numeric: tabular-nums; flex: none;
+}
+.ink-pct small { font-size: .45em; margin-left: .05em; }
+.ink-say { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.ink-say b { font-size: .92rem; font-weight: 600; }
+.ink-say small { font-size: .74rem; color: var(--ink-3); line-height: 1.5; }
+.ink-say .han { font-family: var(--f-han-ui); color: var(--seal); }
+/* the ceiling is a tick standing on the track, not a second fill: it marks a
+   place on the scale rather than progress of its own */
+.ink-bar {
+  position: relative; height: 7px; border-radius: 999px;
+  background: var(--sunken); overflow: visible;
+}
+.ink-bar i {
+  display: block; height: 100%; border-radius: 999px;
+  /* One colour. The gradient ran jade to seal, and seal is the colour this
+     app uses for "wrong" and "due" everywhere else — so a bar that filled up
+     as you learned more got redder the better you did. It measures one thing
+     and reads in one direction. */
+  background: var(--jade);
+  transition: width .5s cubic-bezier(.2,.9,.3,1);
+}
+.ink-bar b {
+  position: absolute; top: -3px; width: 2px; height: 13px; border-radius: 1px;
+  background: var(--ink-3); transform: translateX(-1px);
+}
+.ink-foot { margin: 0; font-size: .72rem; color: var(--ink-3); line-height: 1.55; }
+@media (prefers-reduced-motion: reduce) { .ink-bar i { transition: none; } }
+
+/* the menu tab is a page you glance at, so its own preamble stays short */
+.menu-intro { margin-bottom: .6rem; }
+.menu-wrap { position: relative; }
+
+/* the phrases, on the tab where the characters they teach live */
+.menu-say { margin-top: .2rem; }
+.menu-say-head { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; margin-bottom: .4rem; }
 
 /* the menu itself — printed, not a UI */
 .menu-card {
@@ -967,10 +1147,59 @@ code {
 .msec-head .e { font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
 .msec-head::after { content: ""; flex: 1; border-bottom: 1px dotted var(--rule); }
 
-.mrow { display: flex; align-items: baseline; gap: .4rem; padding: .22rem 0; }
-.mrow .dish { font-family: var(--f-han-ui); font-size: 1.05rem; letter-spacing: .02em; }
-.mrow .dots { flex: 1; border-bottom: 1px dotted var(--rule); transform: translateY(-.2em); min-width: 1.5rem; }
-.mrow .price { font-family: var(--f-pin); font-size: .82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* A row is a button now: the whole dish is one target, so the reading and the
+   price come with it when you tap to hear it. */
+.mrow {
+  display: flex; align-items: baseline; gap: .4rem; padding: .22rem .25rem;
+  width: 100%; text-align: left; background: none; border: 0;
+  border-radius: 5px; cursor: pointer; color: inherit; font: inherit;
+}
+.mrow:hover { background: var(--sunken); }
+.mrow.said { background: var(--seal-wash); }
+.mrow .dish { flex: none; font-family: var(--f-han-ui); font-size: 1.05rem; letter-spacing: .02em; }
+/* The sound, beside the spelling. It is allowed to disappear before the dish
+   name does when a column gets tight — the characters are what the page is
+   for, and the price still has to land on the right. */
+.mpin {
+  font-family: var(--f-pin); font-size: .72rem; color: var(--ink-3);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mrow .dots { flex: 1 1 auto; border-bottom: 1px dotted var(--rule); transform: translateY(-.2em); min-width: .75rem; }
+.mrow .price { flex: none; font-family: var(--f-pin); font-size: .82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   A menu is set in columns
+
+   Printed down a single list, this card was about 1600px tall on the tab —
+   most of it below the fold, on a page whose entire point is that you can
+   look at the thing and read it. A real menu solves this the same way: the
+   sections run in columns and the masthead spans them. It takes roughly a
+   third of the height and you can see the lot.
+
+   `break-inside: avoid` on a section keeps a heading with its dishes; without
+   it 面 lands at the foot of one column and its noodles at the head of the
+   next. The specials board spans, because it is a board.
+   ============================================================ */
+@media (min-width: 620px) {
+  .menu-card { columns: 2; column-gap: 1.7rem; }
+  .msec { break-inside: avoid; }
+  .menu-top { column-span: all; }
+  .msec.special { column-span: all; }
+}
+@media (min-width: 1040px) {
+  .menu-card { columns: 3; column-gap: 1.5rem; padding: 1.2rem 1.3rem; }
+}
+
+/* Set tight: it has to fit on one card a waiter could hand you. */
+.menu-card .menu-top { padding-bottom: .5rem; margin-bottom: .7rem; }
+.menu-card .menu-top .t { font-size: 1.35rem; letter-spacing: .18em; }
+.menu-card .menu-top .n { font-size: .82rem; margin-top: .1rem; }
+.menu-card .menu-top .e { font-size: .58rem; margin-top: .15rem; }
+.menu-card .msec { margin-bottom: .7rem; }
+.menu-card .msec-head { margin-bottom: .15rem; }
+.menu-card .msec-head .z { font-size: .95rem; }
+.menu-card .mrow .dish { font-size: .98rem; }
+.menu-card .mdesc { font-size: .7rem; margin: 0 0 .15rem .25rem; padding: 0 0 .15rem .55rem; }
 
 /* every glyph on the menu is hoverable */
 .g {
@@ -986,8 +1215,12 @@ code {
 .g:hover { background: var(--sunken); color: var(--ink); }
 @keyframes breathe { 0%,100% { background: var(--seal-wash); } 50% { background: transparent; } }
 
-.menu-legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .7rem; color: var(--ink-3); }
-.menu-legend b { font-family: var(--f-han-ui); font-weight: 400; }
+.menu-legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .7rem; color: var(--ink-3); margin: .2rem 0 .8rem; }
+.menu-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+.menu-legend b { font-family: var(--f-han-ui); font-weight: 400; font-size: .95rem; cursor: default; }
+/* the line under the bar: the number you can check by looking at the card */
+.menu-read { margin: .45rem 0 0; line-height: 1.6; }
+.menu-read b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* hover card */
 .tip {
@@ -1027,7 +1260,9 @@ code {
   padding: 1.2rem;
 }
 .card-face .big { font-family: var(--f-han); font-size: 7rem; line-height: 1; color: var(--ink); text-align: center; }
-.card-face .hint { font-size: .72rem; color: var(--ink-3); position: absolute; bottom: 1rem; }
+/* .card-face .hint used to live here. First it repeated the footer, then it
+   said "Tap to flip" on a face whose other gesture is hear-it — wrong as often
+   as right. The face is a card; it needs no caption. */
 .card-back { transform: rotateY(180deg); }
 .card-back .pin { font-family: var(--f-pin); font-size: 1.7rem; font-weight: 500; }
 .card-back .mean { font-size: 1rem; color: var(--ink-2); text-align: center; }
@@ -1037,9 +1272,30 @@ code {
 }
 .card-back .sm { font-family: var(--f-han); font-size: 2.6rem; color: var(--ink-3); line-height: 1; }
 
+/* the three things the space bar does, and the three a thumb does, in the same
+   place and the same type */
+.flash-keys, .flash-taps {
+  margin: .5rem 0 0; text-align: center;
+  font-size: .68rem; color: var(--ink-3);
+}
+.flash-keys kbd {
+  font-family: var(--f-body); font-size: .66rem;
+  border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
+  padding: .04rem .3rem; margin: 0 .05rem; background: var(--paper); color: var(--ink-2);
+}
+/* a touch device has no space bar to tell anyone about */
+/* One line or the other, never both and never neither. These used to ask
+   different questions — the keys hid on `hover: none`, the taps showed on
+   `pointer: coarse` — and a device can answer those two differently, which is
+   how both ended up on screen at once. One question now. */
+@media (pointer: coarse) { .flash-keys { display: none; } }
+/* its opposite number, laid out in the phone layer at the foot of this file */
+.flash-taps { display: none; }
+
 .flash-foot { padding: .9rem 1rem calc(.9rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--rule-2); background: var(--sheet); }
 .flash-foot-inner { max-width: 24rem; margin: 0 auto; display: flex; gap: .5rem; }
 .flash-foot-inner .btn { flex: 1; }
+.flash-foot .fk { opacity: .55; font-size: .95em; }
 
 /* the menu scrolls inside its own frame — fade the cut so it reads as "more below" */
 .menu-wrap { position: relative; }
@@ -1128,15 +1384,68 @@ code {
 
 /* ---------- 练字本 notebook ---------- */
 
+/* Centred while it fits, and top-aligned the moment it doesn't.
+
+   Plain `justify-content: center` in a scrolling flex column is a trap: when
+   the content is taller than the box, centring puts the first item *above* the
+   scroll origin, and no amount of scrolling will reach it. The first square —
+   the one you are being asked to write in — ends up cut off under the header,
+   which reads as the header covering it rather than as an alignment bug.
+
+   `safe` is the keyword for exactly this: it falls back to start alignment on
+   overflow. Declared twice so a browser that doesn't know it keeps the plain
+   centring rather than dropping the whole rule. */
 .nb-stage {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center;
+  justify-content: safe center;
   gap: 1.1rem; padding: 1.5rem 1rem; overflow-y: auto;
 }
-@media (min-width: 720px) { .nb-sq { width: 172px; } }
-.nb-modes { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: center; }
+/* ---------- writing practice: choosing what to write ----------
+
+   The two sources are two exercises, not two settings of one control, so they
+   are two cards rather than a segmented pair. Each carries its Chinese label,
+   its name, and a count that says what it counts — "136 to trace", not a bare
+   136. */
+.nb-head { width: min(54rem, 94vw); display: flex; flex-direction: column; gap: .75rem; }
+.nb-seg { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+/* side by side they are a choice; at phone width they are two cramped boxes */
+@media (max-width: 520px) { .nb-seg { grid-template-columns: 1fr; } }
+.nb-mode {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; gap: 0 .65rem; text-align: left;
+  padding: .65rem .8rem; border-radius: 10px;
+  border: 1px solid var(--rule); background: var(--sheet); color: var(--ink);
+  transition: border-color .15s, background .15s;
+}
+.nb-mode-k {
+  grid-row: 1 / 3; font-family: var(--f-han-ui); font-size: 1.4rem;
+  line-height: 1; color: var(--seal);
+}
+.nb-mode-t { font-weight: 600; font-size: .92rem; line-height: 1.25; }
+.nb-mode-n { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.nb-mode:hover:not(.on):not([disabled]) { border-color: var(--ink-3); background: var(--sunken); }
+/* selected reads as chosen, not as inverted: the seal wash is the same "this
+   one is live" the tracing squares already use, and a solid slab of ink would
+   be the heaviest thing on the page */
+.nb-mode.on { border-color: var(--seal); background: var(--seal-wash); }
+.nb-mode.on .nb-mode-n { color: var(--ink-2); }
+.nb-mode[disabled] { opacity: .45; pointer-events: none; }
+
+/* what is being written right now, and the way to swap it */
+.nb-now { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; }
+.nb-now-what { display: flex; align-items: baseline; gap: .45rem; min-width: 0; }
+.nb-now-what .han { font-family: var(--f-han); font-size: 1.25rem; color: var(--ink); }
+.nb-now-what .p { font-family: var(--f-pin); font-size: .82rem; color: var(--jade); }
+.nb-now-what .m { font-size: .8rem; color: var(--ink-2); }
+.nb-next { flex: none; }
 
 .nb-line { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center; }
-.nb-sq { position: relative; width: 150px; flex: none; cursor: pointer; }
+.nb-sq { position: relative; width: 196px; flex: none; cursor: pointer; }
+/* After the rule it widens, not before it. A media query buys no specificity,
+   so while this sat above .nb-sq the later, equally specific base rule won at
+   every width and the wide square never once appeared. */
+@media (min-width: 720px) { .nb-sq { width: 214px; } }
 .nb-sq .tian { background: var(--sheet); border-radius: 4px; overflow: hidden; }
 .nb-sq .tian-grid .edge { stroke: var(--rule); }
 .nb-sq.on .tian-grid .edge { stroke: var(--seal); stroke-width: 3; }
@@ -1158,7 +1467,11 @@ code {
 /* ---------- 练字 exercise book ---------- */
 
 /* the page shares the row with the trace panel now, so give it more room */
-.wp-wrap { max-width: 78rem; }
+/* .wp-wrap { max-width: 78rem } used to live here, and pinned this one page
+   at 78rem at every width — overriding the 34 / 62 / 74rem that .wrap steps
+   through. 64px wider than every other tab on a desktop, and ignoring the
+   narrow step entirely on a tablet. When a page looks wrong beside its
+   siblings, look at what it OVERRIDES before adjusting what it renders. */
 .wp-bar {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap; margin-bottom: .9rem;
@@ -1214,7 +1527,7 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .todo-tick {
   width: 1.4rem; height: 1.4rem; border-radius: 50%;
   border: 1.5px solid var(--rule); display: grid; place-items: center;
-  font-size: .78rem; color: transparent;
+  font-size: .78rem; line-height: 1; color: transparent;
 }
 .todo.done .todo-tick { background: var(--jade); border-color: var(--jade); color: #fff; }
 .todo.now .todo-tick { border-color: var(--gold); border-style: dashed; }
@@ -1240,6 +1553,17 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 }
 .deck:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
 .deck:disabled { opacity: .5; cursor: default; }
+/* An empty deck, dimmed — and NOT called .empty.
+
+   .empty is a general-purpose empty-state panel elsewhere in this stylesheet
+   (text-align: center; flex-direction: column; padding: 2.5rem 1rem), so
+   borrowing the name turned each of the three decks from 60px into 178, the
+   side column into 842px of natural height, and — because the dashboard
+   columns are deliberately equal-height — made every other block stretch to
+   match. It read as a layout problem and was not one. Grep before naming a
+   class. */
+.deck-bare { opacity: .55; }
+.deck-bare .deck-go { visibility: hidden; }
 
 .deck-cards { position: relative; width: 46px; height: 58px; flex: none; }
 .deck-cards .dc {
@@ -1254,7 +1578,10 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .deck-cards .dc2 { transform: rotate(5deg) translate(2px, 1px); opacity: .8; }
 .deck-cards .dc1 { border-color: color-mix(in srgb, var(--gold) 55%, transparent); box-shadow: var(--shadow); }
 /* a two-character word has to shrink to sit on the same card face */
-.deck-cards .dc1.dc-word { font-size: .82rem; letter-spacing: -.02em; }
+/* two characters on a face drawn for one: the dashboard's card front is 34px
+   wide, and .82rem put them edge to edge with no card showing round them */
+.deck-cards .dc1.dc-word { font-size: .66rem; letter-spacing: -.04em; line-height: 1.05; }
+.decks .deck-cards .dc1.dc-word { font-size: .6rem; }
 .deck:hover:not(:disabled) .dc3 { transform: rotate(-15deg) translate(-7px, 1px); }
 .deck:hover:not(:disabled) .dc2 { transform: rotate(9deg) translate(5px, 0); }
 .deck:hover:not(:disabled) .dc1 { transform: translateY(-3px); }
@@ -1284,11 +1611,14 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .deeper-title { display: flex; flex-direction: column; gap: .25rem; min-width: 12rem; flex: 1; }
 .deeper-title .han { color: var(--seal); font-family: var(--f-han-ui); letter-spacing: .04em; }
 .deeper-sub { font-size: .76rem; line-height: 1.5; color: var(--ink-3); max-width: 30rem; }
-.deeper-count { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+/* the corner the tally has to stay in: bounded, and never wrapping a mark
+   onto a second line — the row is capped at three marks in app.js, and this
+   is what keeps that true if the cap is ever raised */
+.deeper-count { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; max-width: 12rem; }
 .deeper-n { font-size: .74rem; color: var(--ink-3); }
 .deeper-n b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.tally-row { display: flex; align-items: flex-end; gap: .28rem; }
+.tally-row { display: flex; align-items: flex-end; gap: .28rem; flex-wrap: nowrap; }
 .tally { width: 26px; height: 26px; flex: none; overflow: visible; }
 .tally path { stroke-width: 7; stroke-linecap: round; fill: none; }
 .tally path.on { stroke: var(--ink); }
@@ -1298,11 +1628,15 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .tally-none .tally { opacity: .55; }
 
 .deeper .pr-deep { background: var(--sheet); }
-.deeper-foot {
-  display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
-  font-size: .72rem; color: var(--ink-3); padding-top: .1rem;
-}
-.deeper-life { font-variant-numeric: tabular-nums; }
+/* Today's reps and the lifetime count, stacked in the corner — the second of
+   these used to be the right-hand half of a full-width foot row. */
+.deeper-count { align-items: flex-end; gap: .1rem; flex: none; text-align: right; }
+.deeper-n { font-size: .74rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.deeper-n b { color: var(--ink); font-weight: 600; font-size: .9rem; }
+.deeper-life { font-size: .66rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* what "solid" means, said where the word is used */
+.solid-def { display: block; margin-top: .15rem; color: var(--ink-3); cursor: help; }
+.solid-def b { color: var(--ink-2); font-weight: 600; }
 
 
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
@@ -1321,7 +1655,7 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .pr-ring .val { fill: none; stroke: var(--jade); stroke-width: 4; stroke-linecap: round; }
 .pr-ring-k {
   position: absolute; inset: 0; display: grid; place-items: center;
-  font-family: var(--f-han); font-size: 1rem; color: var(--ink-2);
+  font-family: var(--f-han); font-size: 1rem; line-height: 1; color: var(--ink-2);
 }
 .pr-ring-flat .pr-ring-k { font-family: var(--f-body); font-size: 1.3rem; color: var(--gold); }
 .pr-deep-body { display: flex; flex-direction: column; gap: .22rem; min-width: 0; text-align: left; }
@@ -1377,18 +1711,39 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .decks .deck { padding: .8rem .85rem; gap: .8rem; }
 .decks .deck-cards { width: 40px; height: 52px; }
 .decks .deck-cards .dc { font-size: 1.4rem; }
-.deck-all {
-  border-color: color-mix(in srgb, var(--jade) 32%, transparent);
-  background: linear-gradient(120deg, var(--jade-wash), transparent 70%), var(--sheet);
+
+/* The three decks used to be three hues — gold, jade, vermilion — which read
+   as three unrelated things. They are not unrelated: today's characters are a
+   handful, everything you know is more, and the words those characters make
+   is more again. So they are one hue at three depths, and the ramp is the
+   information: the deck gets darker as it gets bigger. */
+.decks .deck {
+  border-color: color-mix(in srgb, var(--jade) 22%, transparent);
+  background: color-mix(in srgb, var(--jade) 6%, var(--sheet));
 }
-.deck-all .dc1 { border-color: color-mix(in srgb, var(--jade) 50%, transparent); }
-.deck-all .deck-go { color: var(--jade); }
-.deck-words {
-  border-color: color-mix(in srgb, var(--seal) 30%, transparent);
-  background: linear-gradient(120deg, var(--seal-wash), transparent 70%), var(--sheet);
+.decks .deck .dc1 { border-color: color-mix(in srgb, var(--jade) 34%, transparent); }
+.decks .deck .deck-go { color: var(--jade); }
+/* The ramp costs the caption its contrast — --ink-3 on the deepest card is
+   2.5:1 in light and 2.2:1 in dark. One step up puts it back over 4.5:1 on
+   every rung, which is the price of the ramp and worth paying. */
+.decks .deck-text small { color: var(--ink-2); }
+
+.decks .deck-all {
+  border-color: color-mix(in srgb, var(--jade) 34%, transparent);
+  background: color-mix(in srgb, var(--jade) 15%, var(--sheet));
 }
-.deck-words .dc1 { border-color: color-mix(in srgb, var(--seal) 48%, transparent); }
-.deck-words .deck-go { color: var(--seal); }
+.decks .deck-all .dc1 { border-color: color-mix(in srgb, var(--jade) 48%, transparent); }
+
+.decks .deck-words {
+  border-color: color-mix(in srgb, var(--jade) 48%, transparent);
+  background: color-mix(in srgb, var(--jade) 24%, var(--sheet));
+}
+.decks .deck-words .dc1 { border-color: color-mix(in srgb, var(--jade) 62%, transparent); }
+/* the deepest card sits on the deepest ground, so its face needs lifting off it */
+.decks .deck-words .dc { background: var(--sheet); }
+/* The old three-hue versions of these lived here — gold, jade, vermilion. The
+   ramp above replaces them; leaving them would only mean two sets of rules
+   fighting on specificity for the same three cards. */
 
 /* a word on a flashcard face: two or three characters where one used to sit */
 .card-face .big.big-wide { font-size: 4.2rem; }
@@ -1403,7 +1758,10 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .opt-n {
   font-family: var(--f-pin); font-size: .64rem; font-weight: 600;
   min-width: 1.15rem; height: 1.15rem; padding: 0 .2rem;
-  display: inline-grid; place-items: center; flex: none;
+  /* line-height: 1 so the line box hugs the digit. Without it the box is as
+     tall as the font's ascent plus a descender that "1" never uses, and the
+     grid dutifully centres that — leaving the number sitting high. */
+  display: inline-grid; place-items: center; flex: none; line-height: 1;
   border: 1px solid var(--rule); border-radius: 4px;
   color: var(--ink-3); background: var(--paper);
 }
@@ -1413,7 +1771,11 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .opts.grid2 .opt-n { position: absolute; top: .4rem; left: .4rem; }
 .opts.grid2 .opt .mk { position: absolute; top: .4rem; right: .5rem; margin-left: 0; }
 .key-hint { font-size: .68rem; color: var(--ink-3); white-space: nowrap; }
-@media (hover: none) { .opt-n, .key-hint { display: none; } }
+/* No keyboard, no numbering. Scoped to the options themselves: .opt-n is also
+   the inline keycap used in prose — the version row offers ⇧ and ⌘⇧R, and a
+   bare .opt-n rule hid those too, leaving "reload with  held, or ." on every
+   phone. The numbers on the answers are the thing a finger has no use for. */
+@media (hover: none) { .opts .opt-n, .sp-opts .opt-n, .key-hint { display: none; } }
 
 /* sticking points */
 .leech-list { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -1472,13 +1834,18 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 /* Four short options sit in one row on a wide screen, so 1-2-3-4 on the
    keyboard runs left to right the way the numbers read. Below that width
    they fall back to two-up, where the numbering still reads in order. */
-@media (min-width: 820px) {
-  /* minmax(0,…) so a column may shrink below its content rather than
-     pushing the row wider than the prompt card above it */
-  .opts.grid2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .opts.grid2 .opt { padding-left: 1.4rem; padding-right: 1.4rem; min-height: 4.6rem; }
-  .opts.grid2 .opt .big { font-size: 2.4rem; }
-}
+/* Four short options in one row, so 1-2-3-4 on the keyboard runs left to
+   right the way the numbers read — against two-up, which is what a thumb
+   wants. This used to be a plain width query. It is an attribute now because
+   the choice belongs to the reader: applyOptCols in js/app.js weighs the
+   setting against the window and writes the answer here, and the base rule
+   above holds two-up until it has. See optColsEffective.
+
+   minmax(0,…) so a column may shrink below its content rather than pushing
+   the row wider than the prompt card above it. */
+:root[data-opt-cols="row"] .opts.grid2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+:root[data-opt-cols="row"] .opts.grid2 .opt { padding-left: 1.4rem; padding-right: 1.4rem; min-height: 5.2rem; }
+:root[data-opt-cols="row"] .opts.grid2 .opt .big { font-size: 2.8rem; }
 
 /* ---------- question timer ---------- */
 
@@ -1504,8 +1871,10 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 .nb-tools { display: flex; gap: .5rem; justify-content: center; }
 .phrase { cursor: pointer; }
 .phrase:hover { background: var(--sunken); }
+.phrase.said { background: var(--seal-wash); }
 
-.nb-progress { display: flex; align-items: center; gap: .6rem; width: min(26rem, 90vw); }
+/* the bar spans the same width as the cards above it, not a min() of its own */
+.nb-progress { display: flex; align-items: center; gap: .6rem; width: 100%; }
 .nb-count { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nb-progress .bar { flex: 1; }
 #nbPad kbd.opt-n { margin-left: .2rem; }
@@ -1516,6 +1885,37 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 .pick-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
 .pick-head .han { font-family: var(--f-han-ui); }
 .pick-find { margin: 0; }
+
+/* ============================================================
+   The stroke player belongs under the picker, not over the page
+
+   A modal is the wrong shape for it: you watch the animation *in order to*
+   write the character, and a dialog makes you dismiss the thing you are
+   copying before you can copy it. One fixed place under "Trace a character",
+   filled by whatever is selected, still there while you write.
+   ============================================================ */
+
+.pick-stage {
+  border: 1px solid var(--rule-2); border-radius: 10px;
+  background: var(--sunken); padding: .6rem .65rem .65rem;
+  display: flex; flex-direction: column; gap: .5rem;
+  margin-bottom: .5rem;
+}
+.pick-stage-empty {
+  display: flex; align-items: center; gap: .6rem;
+  font-size: .74rem; line-height: 1.45; color: var(--ink-3);
+}
+.pick-stage-empty .z { font-family: var(--f-han); font-size: 1.8rem; color: var(--rule); flex: none; }
+.ps-top { display: flex; align-items: baseline; gap: .5rem; }
+.ps-id { display: flex; align-items: baseline; gap: .45rem; min-width: 0; }
+.ps-id .han { font-family: var(--f-han); font-size: 1.5rem; line-height: 1; }
+.ps-id span { font-size: .74rem; color: var(--ink-2); min-width: 0; }
+.ps-n { margin-left: auto; font-size: .68rem; color: var(--ink-3); white-space: nowrap; }
+.ps-box { display: grid; place-items: center; }
+.ps-box .tian { width: 168px; height: 168px; background: var(--sheet); border-radius: 6px; }
+.ps-tools { display: flex; gap: .35rem; }
+.ps-tools .btn { flex: 1; padding-left: .3rem; padding-right: .3rem; }
+.ps-tools .btn span { font-variant-numeric: tabular-nums; opacity: .7; }
 .pick-sorts { display: flex; gap: .3rem; flex-wrap: wrap; }
 .pick-sorts .filt { font-size: .7rem; padding: .22rem .5rem; }
 
@@ -1695,7 +2095,9 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .place-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--rule-2); overflow: hidden; }
 .place-prog > i { display: block; height: 100%; background: var(--jade); transition: width .4s ease; }
 .place-count { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
-.place-body { flex: 1; overflow-y: auto; display: grid; place-items: center; padding: 1.5rem 1rem 3rem; }
+/* the same trap, and the same keyword — see .nb-stage */
+.place-body { flex: 1; overflow-y: auto; display: grid; place-items: center;
+  align-items: safe center; padding: 1.5rem 1rem 3rem; }
 .place-inner {
   width: min(32rem, 100%); display: flex; flex-direction: column;
   align-items: center; gap: .9rem; text-align: center;
@@ -1985,6 +2387,15 @@ button.tier-head:hover { border-color: var(--ink-3); }
   font-weight: 600; width: 4.6rem; flex: none;
 }
 .sp-chips { display: flex; flex-wrap: wrap; gap: .3rem; flex: 1; }
+/* the phone's stand-in for a row of chips — laid out in the phone layer at the
+   foot of this file, and absent at every other width */
+.sp-step { display: none; align-items: center; gap: .1rem; border: 1px solid var(--rule);
+  border-radius: 7px; overflow: hidden; flex: none; }
+.sp-step button { background: var(--sheet); border: 0; width: 44px; height: 38px;
+  color: var(--ink-2); font-size: .95rem; line-height: 1; }
+.sp-step button[disabled] { opacity: .35; }
+.sp-step-v { min-width: 3.2rem; text-align: center; font-size: .95rem;
+  font-variant-numeric: tabular-nums; }
 .sp-chip {
   min-width: 2.3rem; padding: .32rem .5rem; border-radius: 7px; font-size: .82rem;
   border: 1px solid var(--rule); background: transparent; color: var(--ink-2);
@@ -2066,4 +2477,849 @@ button.tier-head:hover { border-color: var(--ink-3); }
 @media (min-width: 860px) {
   .sp-inner { max-width: 44rem; }
   .sp-marks { max-width: 34rem; }
+}
+
+/* A reading carried alongside a bracketed meaning, so it identifies the
+   character rather than competing with it for attention. */
+.opt-say { opacity: .72; font-size: .92em; white-space: nowrap; }
+.opt.on .opt-say, .opt.right .opt-say, .opt.wrong .opt-say { opacity: .85; }
+
+/* A character with no stroke data, set in type rather than built stroke by
+   stroke. Sized to sit in the 田字格 the way the animated one does. */
+.tian-plain {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  font-size: 7.2rem; line-height: 1; color: var(--ink);
+  user-select: none;
+}
+.no-strokes { text-align: center; max-width: 26rem; margin: 0 auto; font-size: .76rem; }
+.no-strokes .han { font-family: var(--f-han-ui); color: var(--ink-2); }
+
+/* ============================================================
+   The teaching card, on a screen wider than a phone
+
+   charCard() is six blocks in a 34rem column — the character, where it comes
+   from, how to remember it, what it is built from, the words it turns up in,
+   and a sentence. Stacked, that measured 1313px of reading inside a 592px
+   window at 1280x720 — 721px of overflow, every one of 763 characters, while
+   roughly 700px of screen sat empty on either side of the column. You met a
+   new character by scrolling past it.
+
+   So above 1000px — which takes in a 1024-wide tablet, not just a laptop —
+   the column widens and the card becomes two parts: the character on the
+   left, everything written about it on the right, in two balanced text
+   columns. Narrow screens are untouched: there the single column is right and
+   scrolling is the correct answer.
+   ============================================================ */
+
+.cardx { display: flex; flex-direction: column; gap: 1rem; }
+.cardx-blocks { display: flex; flex-direction: column; gap: 1rem; }
+.card-topper { display: flex; flex-direction: column; gap: .3rem; align-items: center; text-align: center; }
+
+@media (min-width: 1000px) {
+  .ses-inner, .ses-foot-inner { max-width: 64rem; }
+
+  .cardx {
+    display: grid; grid-template-columns: 17rem minmax(0, 1fr);
+    gap: 1.1rem; align-items: start;
+  }
+  /* The character stays put while you read about it — it is the thing being
+     taught, and on a stacked card it scrolled away first. */
+  .cardx > .card-hero { position: sticky; top: .2rem; }
+
+  /* Multi-column rather than grid: five blocks of unequal length into two
+     columns of equal height is exactly what column balancing does, and a
+     2-column grid would leave one of them a row short. break-inside keeps a
+     block whole, and the gap has to be a margin because column-gap is
+     horizontal only. */
+  .cardx-blocks { display: block; columns: 2; column-gap: .9rem; }
+  .cardx-blocks > .block { break-inside: avoid; margin: 0 0 .9rem; }
+
+  /* the card is wider, so the type in it can stop being cramped */
+  .cardx .words { gap: .5rem .9rem; }
+}
+
+/* ============================================================
+   Today, as a dashboard
+
+   The page is a set of choices about what to do next, so the choices have to
+   be visible at once. On a 1280x720 laptop that is 629px below the bars; this
+   page wanted 1808, most of it the day's character strip — which grows by
+   five every day and never stopped — and a whole restaurant menu printed
+   inside the side quest.
+   ============================================================ */
+
+.dash { display: flex; flex-direction: column; gap: 1rem; }
+.dash-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+/* Two cards stacked, not one block with its children flush against each
+   other: every other column in the dashboard spaces its cards with a gap, and
+   this one held a single card until the menu moved out and left a second. */
+.dash-wide { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+
+/* The day's characters and the day's practice, in one enclosure. */
+.dash-today { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+@media (min-width: 900px) {
+  .dash { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .dash-today { display: contents; }
+  .dash-side { grid-column: 1 / -1; }
+  .dash-wide { grid-column: 1 / -1; }
+}
+@media (min-width: 1180px) {
+  .dash { grid-template-columns: minmax(0, 2.1fr) minmax(0, .95fr); align-items: stretch; }
+  /* Two leaves side by side: the day's characters on the left, the day's
+     practice on the right. */
+  .dash-today {
+    display: grid; align-items: stretch;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: .9rem;
+  }
+  /* Equal columns. The cards used to size to their contents, so columns of
+     different lengths left a ragged bottom edge with the Go deeper band
+     hanging below the shortest of them. Stretching removes the negative space
+     rather than moving it somewhere else. */
+  .dash-col > :last-child { flex: 1 1 auto; }
+  .dash-today > .dash-col { height: 100%; }
+  /* the expanded day spans both columns, under them */
+  .dash-today .today-all { grid-column: 1 / -1; }
+
+  /* The hero's slack pooled under the day's characters. The three blocks share
+     it instead, which is also what makes the card read as a page with things
+     placed on it rather than a stack that ran out. */
+  .dash-today .hero { justify-content: space-between; }
+  .dash-today .sheet, .dash-today .hero { box-shadow: none; }
+  .dash-side { grid-column: 2; grid-row: 1; }
+  /* Go deeper reads across in three: the label and what it is for on the
+     left, the three modes in the middle with the room they need, and the reps
+     on the right in line with the heading rather than stacked under it.
+
+     The subtitle used to be hidden here (`display: none`), which left a 13rem
+     column holding two words and a lot of nothing while the three tiles were
+     squeezed into what was left. It is set smaller instead, so the column
+     earns its width and the tiles get theirs back. */
+  .dash-wide .deeper {
+    padding: .7rem 1rem;
+    display: grid; grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr) auto;
+    align-items: center; gap: 1.1rem;
+  }
+  /* the head dissolves so its two halves can take their own cells */
+  .dash-wide .deeper-head { display: contents; }
+  .dash-wide .deeper-title { display: flex; flex-direction: column; gap: .15rem; }
+  .dash-wide .deeper-sub { font-size: .7rem; line-height: 1.4; margin: 0; max-width: none; }
+  .dash-wide .deeper-count { order: 3; min-width: 0; max-width: 12rem; }
+  .dash-wide .tally-row { flex-wrap: nowrap; }
+  .dash-wide .pr-grid-3 { order: 2; gap: .55rem; }
+  .dash-wide .pr-deep { padding: .55rem .65rem; gap: .55rem; }
+  .dash-wide .deeper .pr-ring { width: 32px; height: 32px; }
+  .dash-wide .deeper .pr-deep-body small { font-size: .68rem; }
+  .dash-wide .sq { gap: .3rem 1rem; padding: .5rem .9rem; }
+  .dash-wide .sq-icon { font-size: 1.1rem; }
+  .dash-wide .sq-name b { font-size: .92rem; }
+  .dash-wide .sq-name .zh { font-size: .66rem; }
+  .dash-wide .sq-info .m { font-size: .8rem; }
+  .dash-wide .sq-info .p { font-size: .7rem; }
+
+  /* The last pass of compaction, measured rather than guessed: padding and
+     type scale that only the scrolling layout could afford. */
+  .dash { gap: .75rem; }
+  .dash-col { gap: .75rem; }
+  /* the page's own bottom padding is there to clear the end of a scroll; a
+     dashboard has no end to clear */
+  #viewToday .wrap { padding-bottom: .9rem; }
+  .dash .hero-cta { padding: .55rem .8rem; }
+  /* One line beside a ring. 1.7rem wrapped "You're clear for today, Jen." into
+     two, which read as unbalanced next to a circle. */
+  .dash .hero-title { font-size: 1.45rem; line-height: 1.15; white-space: nowrap; }
+  /* Every other ring and tick in this app is left-aligned — the practice list,
+     Go deeper — and this one sat on the right on its own. */
+  .dash .hero-top { align-items: center; gap: .85rem; }
+  /* the ring is a glance, not a feature: it can be smaller on a dashboard */
+  .dash .hero-ring { width: 62px; height: 62px; }
+  .dash .hero-sub { font-size: .82rem; line-height: 1.45; }
+  .dash .hero { gap: .7rem; padding: .9rem 1rem 1rem; }
+  /* a dashboard's call to action is already the biggest thing in its column */
+  .dash .hero-cta .btn-lg { padding: .7rem 1.1rem; font-size: .94rem; }
+  /* The practice list distributes its rows over the column instead of sitting
+     at the top of it, and the bar gets room above so it reads as a bar rather
+     than as an underline of the heading. */
+  .dash .todo-block { display: flex; flex-direction: column; }
+  .dash .todo-block .bar { margin-top: .35rem; }
+  /* A grid of equal fractions, not space-evenly: space-evenly distributes what
+     is left AFTER the flex gap, so the space above the first row and the space
+     between rows come out different — even by the spec, uneven to the eye. */
+  .dash .todo-list { flex: 1; display: grid; grid-auto-rows: 1fr; align-items: center; }
+  .dash .learned { gap: .35rem; padding-top: .75rem; }
+  .dash .todo-block { padding-bottom: .5rem; }
+  .dash .todo { padding-top: .42rem; padding-bottom: .42rem; }
+  .dash .wotw { padding: .8rem .85rem .85rem; gap: .45rem; }
+  .dash .wotw .wotw-word { padding: .55rem .6rem; }
+  .dash .wotw-note { font-size: .74rem; line-height: 1.45; }
+  .dash .wotw .note.dim { display: none; }
+  /* the setup card's pitch, trimmed to the two lines that carry it */
+  .dash .wotw-empty .note {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    font-size: .74rem; line-height: 1.45;
+  }
+  .dash .decks { padding: .7rem .8rem .75rem; gap: .4rem; }
+  .dash .decks .deck { padding: .45rem .6rem; gap: .6rem; }
+  .dash .decks .deck-cards { width: 30px; height: 38px; }
+  .dash .decks .deck-cards .dc { font-size: 1.05rem; }
+  /* and a two-character face on a 30px card is smaller again — this override
+     has to come after the generic one above, or the word goes edge to edge */
+  .dash .decks .deck-cards .dc1.dc-word { font-size: .58rem; }
+  .dash .decks .deck-text b { font-size: .88rem; }
+  .dash .decks .deck-text small { font-size: .7rem; }
+  /* The side quest is a band too, for the same reason Go deeper is: it is one
+     choice among the day's choices, not a column of its own. The whole menu
+     it used to print is behind "See the full menu", where there is room to
+     read it. */
+  .dash-wide .sq {
+    display: grid; grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr) auto;
+    align-items: center; gap: 1rem; padding: .6rem .9rem;
+  }
+  .dash-wide .sq-top { grid-column: 1; grid-row: 1; }
+  .dash-wide .sq .bar { grid-column: 1; grid-row: 2; align-self: start; }
+  .dash-wide .sq .note {
+    grid-column: 1; grid-row: 3; margin: 0; font-size: .68rem; line-height: 1.35;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;
+  }
+  .dash-wide .sq-target { grid-column: 2; grid-row: 1 / 4; padding: .45rem .55rem; }
+  .dash-wide .sq-glyph { width: 2.6rem; height: 2.6rem; font-size: 1.7rem; }
+  .dash-wide .sq-actions { grid-column: 3; grid-row: 1 / 4; flex-wrap: nowrap; }
+  .dash-wide .sq-actions .btn { min-width: 8.5rem; flex: none; }
+  .dash .deeper { padding: .7rem .9rem; }
+  .dash-wide .deeper .pr-meter { max-width: 22rem; }
+}
+
+/* ============================================================
+   The two blocks are an open notebook, not a page
+
+   The first pass gave the enclosure ruled lines, a vermilion margin rule down
+   the FAR LEFT, and two binder holes beside it. That reads as one page with
+   two columns printed on it — and they are not two columns, they are two
+   facing leaves: the day's characters on the left, the day's practice on the
+   right. So the margin rule and the holes belong in the GUTTER BETWEEN them,
+   where the fold of a real spread is, and the horizontal rules become squared
+   paper — the paper Chinese writing practice actually happens on.
+
+   Both enclosures are colourless — no --sunken tint — but not transparent:
+   the ground is --sheet, the same near-white the cards use, so the grid reads
+   as lines printed on a sheet of paper rather than on the desk under it.
+   Transparent was tried and is wrong; in dark mode the enclosure then sits
+   darker than the cards it holds.
+   ============================================================ */
+
+.dash-today { position: relative; }
+@media (min-width: 1180px) {
+  /* squared paper: the horizontal and vertical rules of a 田字格 workbook, at a
+     weight that stays behind the content rather than competing with it */
+  .dash-today, .dash-side {
+    padding: .55rem; border-radius: 12px;
+    border: 1px solid var(--rule-2); background-color: var(--sheet);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--rule) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--rule) 55%, transparent) 1px, transparent 1px);
+    background-size: 100% 1.15rem, 1.15rem 100%;
+    background-clip: padding-box;
+  }
+
+  /* a spread needs a gutter wide enough to put a fold in */
+  .dash-today { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: .9rem; }
+  .dash-today > .dash-col { position: relative; }
+
+  /* the fold, down the middle of the gutter — measured against the real gutter
+     centre rather than guessed */
+  .dash-today > .dash-col:nth-child(2)::before {
+    content: ""; position: absolute; top: .15rem; bottom: .15rem;
+    left: calc(-.45rem - .5px); width: 1px;
+    background: var(--seal); opacity: .18; pointer-events: none;
+  }
+  /* and the three holes a ring binder punches through it.
+
+     The first version was one dot plus a second faked with a box-shadow at a
+     fixed offset, which is why there were only two: a third shadow would have
+     landed past the bottom of a column whose height is not fixed. Three radial
+     gradients on a full-height strip place themselves at 20/50/80% of whatever
+     the column turns out to be, and each paints its own 1px rim. */
+  .dash-today > .dash-col:nth-child(2)::after {
+    content: ""; position: absolute; top: 0; bottom: 0;
+    left: calc(-.45rem - 4px); width: 8px;
+    background-image:
+      radial-gradient(circle at 50% 20%, var(--paper) 0 3px, var(--rule) 3px 4px, transparent 4px),
+      radial-gradient(circle at 50% 50%, var(--paper) 0 3px, var(--rule) 3px 4px, transparent 4px),
+      radial-gradient(circle at 50% 80%, var(--paper) 0 3px, var(--rule) 3px 4px, transparent 4px);
+    pointer-events: none;
+  }
+
+  /* Paper you cannot see is not paper. With the cards left as opaque sheets
+     the grid only showed in the padding round them, which is a texture on a
+     frame and not a page. Inside these two enclosures the cards give up their
+     fill and their border: the paper is the ground, and the fold is what
+     separates the left leaf from the right. */
+  .dash-today > .dash-col > *, .dash-side > * {
+    background: transparent; border-color: transparent; box-shadow: none;
+  }
+  /* Anything with a run of text in it keeps its own ground. Ruled lines behind
+     a heading are paper; ruled lines behind a paragraph are noise, and the
+     grid was running straight through the day's characters, the practice list
+     and the word's definition. They are the same --sheet as the enclosure, so
+     the fill shows as nothing at all — which is the point: it stops the grid
+     rather than drawing a box. */
+  .dash-today .lc, .dash-today .today-all, .dash-side .wotw-word,
+  .dash-today .learned, .dash-today .todo-list, .dash-side .wotw-note,
+  .dash-side .wotw .note, .dash-today .learned-empty {
+    background-color: var(--sheet);
+  }
+  /* NOT the decks: they carry the jade ramp, which is their own ground and
+     stops the grid just as well. Flattening them to --sheet here is what made
+     all three rungs measure the same luminance. */
+  /* and a little room, so the fill has an edge rather than ending at the ink */
+  .dash-today .learned, .dash-today .todo-list,
+  .dash-side .wotw-note, .dash-side .wotw .note {
+    border-radius: 8px; padding: .4rem .5rem;
+  }
+  .dash-today .learned { padding-bottom: .5rem; }
+
+  /* The side rail is an enclosure of its own now, with the same border and
+     padding, so its first card starts on the line the enclosure's first card
+     starts on. */
+  .dash-side > :first-child { margin-top: 0; }
+}
+
+/* ---------- a section is titled, not just labelled ----------
+
+   On a plain card an .eyebrow floating above the content is enough. On squared
+   paper it is not: the rules run straight through it and it reads as one more
+   line of text rather than the name of what follows. So on the dashboard it
+   becomes a tab — a small stuck-on label, sitting slightly proud of the block
+   it names.
+
+   Only inside the two paper enclosures and the Go deeper band; every other
+   .eyebrow in the app is still on a plain card and still wants to be quiet. */
+@media (min-width: 1180px) {
+  .dash-today .eyebrow, .dash-side .eyebrow, .dash-wide .deeper-title .eyebrow {
+    /* inline-block alone is not enough: in .decks and .deeper-title the label
+       is a flex child and would stretch to the full column, which makes some
+       tabs full-width bands and the rest chips */
+    display: inline-block; align-self: flex-start; padding: .2rem .5rem .22rem;
+    border-radius: 6px; border: 1px solid var(--rule-2);
+    background: var(--sunken); color: var(--ink-2);
+    letter-spacing: .1em;
+  }
+  /* Go deeper's band is itself --sunken, so a --sunken tab on it is invisible
+     but for its border. The tab is always the other one of the pair. */
+  .dash-wide .deeper-title .eyebrow { background: var(--sheet); }
+
+  /* the Chinese gloss is part of the label, so it sits inside the same tab */
+  .dash-today .eyebrow .han-label, .dash-side .eyebrow .han-label,
+  .dash-wide .deeper-title .eyebrow .han-label { opacity: 1; }
+
+  /* the tab wants the line to itself when the count beside it would otherwise
+     be baseline-aligned to a box rather than to text */
+  .dash-today .pr-head, .dash-today .learned-head,
+  .dash-side .pr-head { align-items: center; }
+}
+
+@media (min-width: 1180px) {
+  /* The greeting and the date are a block, not type floating on graph paper.
+     --sheet alone stops the grid but is the same colour as the ground it sits
+     on, so it needs an edge to read as a block at all. */
+  .dash-today .hero-top {
+    background: var(--sheet); border: 1px solid var(--rule-2); border-radius: 9px;
+    padding: .55rem .7rem; margin: -.1rem -.15rem .15rem;
+  }
+  /* and the buttons get a ground of their own back — the rule that strips the
+     cards' fill catches them too, and a call to action with no fill on squared
+     paper reads as a caption */
+  .dash-today .hero-cta .btn { background: var(--sunken); border-color: var(--rule); }
+  .dash-today .hero-cta .btn:hover { background: var(--sheet); border-color: var(--ink-3); }
+  .dash-today .hero-cta .btn-seal,
+  .dash-today .hero-cta .btn-seal:hover { background: var(--seal); border-color: var(--seal); }
+
+  /* Word of the week and the flashcards read as one surface with Go deeper —
+     the three things that are not today's work. */
+  .dash-side .wotw, .dash-side .decks {
+    background: var(--sunken); border: 1px solid var(--rule-2); border-radius: 10px;
+  }
+  .dash-side .wotw .wotw-word { background: var(--sheet); }
+}
+
+/* ============================================================
+   部首 — what a radical is, before a list of them
+
+   The page was 15,376px of wall: thirty cards of prose in one flat list and a
+   66-group tail below them, with nothing at the top saying what the thing
+   was. Someone new to the writing system arrived at a reference work and was
+   expected to know what to do with it. A worked example, a map, and four
+   themed groups replace the wall with a way in.
+   ============================================================ */
+
+.rad-intro { margin-bottom: .8rem; }
+
+/* ---- the worked example ---- */
+.rx { padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: .8rem; }
+.rx-lede { margin: .35rem 0 0; font-size: .86rem; line-height: 1.55; color: var(--ink-2); max-width: 44rem; }
+.rx-sum {
+  display: flex; align-items: center; justify-content: center; gap: .9rem; flex-wrap: wrap;
+  padding: .9rem .6rem; border-radius: 10px;
+  background: var(--sunken); border: 1px solid var(--rule-2);
+}
+.rx-part { display: flex; flex-direction: column; align-items: center; gap: .12rem; min-width: 5.5rem; }
+.rx-z {
+  font-size: 3.1rem; line-height: 1.05; color: var(--ink);
+  border-bottom: 3px solid transparent; padding: 0 .1em;
+}
+/* the meaning part underlined in jade, the sound part in gold — the whole
+   idea of the page, said once in colour */
+.rx-part.mean .rx-z { border-bottom-color: var(--jade); }
+.rx-part.sound .rx-z { border-bottom-color: var(--gold); }
+.rx-out .rx-z { font-size: 3.6rem; color: var(--seal); }
+.rx-p { font-family: var(--f-pin); font-size: .82rem; color: var(--ink-2); }
+.rx-role { font-size: .68rem; color: var(--ink-3); text-align: center; max-width: 8rem; }
+.rx-part.mean .rx-role { color: var(--jade); }
+.rx-part.sound .rx-role { color: var(--gold); }
+.rx-op { font-size: 1.3rem; color: var(--ink-3); font-weight: 300; }
+.rx-foot { margin: 0; font-size: .8rem; line-height: 1.55; color: var(--ink-2); max-width: 46rem; }
+
+/* ---- the map: a map before the territory ---- */
+.rad-map { padding: .9rem 1rem 1rem; display: flex; flex-direction: column; gap: .7rem; }
+.rad-map-head { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; flex-wrap: wrap; }
+.rad-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr)); gap: .4rem; }
+.rad-chip {
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+  padding: .4rem .3rem .45rem; border-radius: 8px; text-decoration: none;
+  border: 1px solid var(--rule-2); background: var(--sheet); color: var(--ink);
+}
+.rad-chip:hover { border-color: var(--ink-3); background: var(--sunken); }
+.rad-chip.part { border-color: color-mix(in srgb, var(--gold) 40%, transparent); }
+.rad-chip.full { border-color: color-mix(in srgb, var(--jade) 45%, transparent); background: var(--jade-wash); }
+.rc-z { font-family: var(--f-han); font-size: 1.5rem; line-height: 1.1; }
+.rc-n { font-size: .64rem; color: var(--ink-3); text-align: center; line-height: 1.2; }
+.rc-bar { width: 100%; height: 3px; border-radius: 2px; background: var(--rule-2); overflow: hidden; margin-top: .15rem; }
+.rc-bar > i { display: block; height: 100%; background: var(--jade); }
+.rad-scope { margin: 0 0 .2rem; font-size: .78rem; line-height: 1.55; max-width: 52rem; }
+
+/* ---- the themes ---- */
+.rad-theme { margin-top: 1.5rem; }
+.rad-theme-head { margin-bottom: .6rem; }
+.rad-theme-head h2 { font-size: 1.05rem; }
+.rad-theme-head .note { margin: .2rem 0 0; font-size: .78rem; }
+
+/* A radical with one character in it does not need the height of one with
+   twenty. */
+.rad.solo { padding-top: .7rem; padding-bottom: .7rem; }
+.rad.solo .rad-does { font-size: .78rem; }
+
+/* ---- the long tail, folded away ---- */
+.rad-more { margin-top: 1.6rem; }
+.rad-more > summary {
+  cursor: pointer; padding: .6rem .8rem; border-radius: 9px;
+  border: 1px solid var(--rule-2); background: var(--sunken);
+  font-weight: 600; font-size: .88rem;
+}
+.rad-more > summary .dim { display: block; font-weight: 400; font-size: .74rem; color: var(--ink-3); margin-top: .15rem; }
+.rad-more[open] > summary { margin-bottom: .8rem; }
+
+/* Two across where there is room. Thirty cards in a single column is most of
+   what made this page a wall. */
+@media (min-width: 900px) {
+  .rad-grid { grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); align-items: start; }
+  /* the big families earn the full width — 口 alone has 119 */
+  .rad-grid > .rad.wide { grid-column: 1 / -1; }
+}
+
+/* ============================================================
+   Milestones
+
+   One card, centred, over a dimmed page. The number arrives as the same red
+   seal the session grade stamps, at the same angle and on the same keyframes —
+   this app celebrates by stamping, and it should only ever have the one way of
+   doing it. Confetti would belong to different software.
+   ============================================================ */
+.hail { position: fixed; inset: 0; z-index: 72; display: grid; place-items: center; padding: 1rem; }
+.hail[hidden] { display: none; }
+.hail-veil { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 62%, transparent); }
+.hail-card {
+  position: relative; z-index: 1; width: min(24rem, 100%);
+  padding: 1.5rem 1.25rem 1.25rem; border-radius: 14px;
+  background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; align-items: center; gap: .7rem; text-align: center;
+  animation: hail-rise .3s cubic-bezier(.2,.9,.3,1) both;
+}
+.hail-seal {
+  min-width: 96px; padding: .5rem .7rem; border: 3px solid var(--seal); border-radius: 8px;
+  display: grid; place-items: center; color: var(--seal);
+  font-family: var(--f-han-ui); font-size: 1.9rem; line-height: 1.15; transform: rotate(-7deg);
+  animation: stamp .5s cubic-bezier(.2,1.4,.4,1) .12s both;
+}
+.hail-card h2 { margin: .2rem 0 0; font-size: 1.15rem; }
+.hail-card p { margin: 0; font-size: .86rem; line-height: 1.65; color: var(--ink-2); }
+.hail-stats { display: flex; gap: 1.4rem; margin: .2rem 0 .1rem; }
+.hail-stats div { display: flex; flex-direction: column; gap: .1rem; }
+.hail-stats b { font-size: 1.25rem; line-height: 1; }
+.hail-stats small { font-size: .68rem; color: var(--ink-3); }
+.hail-tier {
+  width: 100%; padding: .55rem .7rem; border-radius: 10px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--sheet));
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--rule));
+  font-size: .78rem; line-height: 1.55; color: var(--ink-2);
+}
+.hail-tier .han { color: var(--seal); }
+@keyframes hail-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .hail-card, .hail-seal { animation: none; }
+}
+
+/* ============================================================
+   The first run: four stages, and none of them a form
+
+   More picture than paragraph, deliberately. The seven prose cards this
+   replaced were clicked through unread, which is worse than not showing them.
+   ============================================================ */
+
+.intro { position: fixed; inset: 0; z-index: 74; display: grid; place-items: center; padding: 1rem; }
+.intro[hidden] { display: none; }
+.intro-veil { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 68%, transparent); }
+.intro-card {
+  position: relative; z-index: 1; width: min(38rem, 100%);
+  max-height: calc(100vh - 2rem); overflow-y: auto;
+  padding: 1.4rem 1.3rem 1.2rem; border-radius: 14px;
+  background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: .9rem;
+  animation: hail-rise .3s cubic-bezier(.2,.9,.3,1) both;
+}
+/* the greeting is the one stage that is only a picture */
+.intro-card.stage-0 { width: min(24rem, 100%); cursor: pointer; text-align: center; }
+
+/* ---------- the questions have to fit on the screen they are asked on ----------
+
+   Stage 1 is the only one with a form in it, and it was 928px of card in a
+   720px window — a first run that opens on a scrollbar, with the button that
+   dismisses it below the fold. The three fields were stacked in a 38rem
+   column: four levels wrapping to two rows, ten interests in two columns of
+   five, and generous gaps between the lot.
+
+   It gets its own width instead, and the two pickers are laid out across it.
+   Measured on a 1280x720 laptop: 928px down to about 560, so the whole
+   question — including the button — is on screen without moving. */
+.intro-card.stage-1 { width: min(52rem, 100%); gap: .7rem; }
+.intro-card.stage-1 .intro-head { gap: .2rem; }
+.intro-card.stage-1 .intro-head p { font-size: .8rem; line-height: 1.45; }
+.intro-card.stage-1 .intro-field { gap: .3rem; }
+/* four levels, one row each of them */
+@media (min-width: 700px) {
+  .intro-card.stage-1 .intro-levels { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* ten interests read as a block of tiles, not a tall list */
+  .intro-card.stage-1 .int-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+}
+@media (min-width: 1000px) {
+  .intro-card.stage-1 .int-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+.intro-card.stage-1 .int { padding: .45rem .55rem; gap: .45rem; }
+.intro-card.stage-1 .int-body b { font-size: .8rem; }
+.intro-card.stage-1 .intro-level { padding: .5rem .55rem; }
+.intro-card.stage-1 .intro-level small { font-size: .65rem; line-height: 1.3; }
+.intro-card.stage-1 .intro-hint { font-size: .72rem; line-height: 1.4; }
+
+/* The other three carry no form and already fit; this is the floor under all
+   of them — a stage that somehow outgrows the window still scrolls rather
+   than hiding its own Next button. */
+.intro-card { max-height: calc(100dvh - 2rem); }
+
+.intro-head { display: flex; flex-direction: column; gap: .3rem; }
+.intro-head h2 { font-size: 1.25rem; line-height: 1.2; }
+.intro-head p { margin: 0; font-size: .85rem; line-height: 1.6; color: var(--ink-2); }
+
+/* ---- 1. hello ---- */
+.intro-hello { display: flex; flex-direction: column; align-items: center; gap: .8rem; }
+.intro-seal {
+  width: 58px; height: 58px; border: 3px solid var(--seal); border-radius: 8px;
+  display: grid; place-items: center; color: var(--seal);
+  font-family: var(--f-han-ui); font-size: 1.6rem; transform: rotate(-7deg);
+  animation: stamp .5s cubic-bezier(.2,1.4,.4,1) both;
+}
+.intro-boxes { display: flex; gap: .6rem; }
+.intro-boxes .tian { width: 128px; height: 128px; }
+.intro-say { display: flex; flex-direction: column; gap: .1rem; }
+.intro-say .p { font-family: var(--f-pin); font-size: 1.1rem; color: var(--ink); }
+.intro-say .m { font-size: .82rem; color: var(--ink-3); }
+.intro-skip { margin: 0; font-size: .68rem; color: var(--ink-3); opacity: .75; }
+
+/* ---- 2. about you ---- */
+.intro-field { display: flex; flex-direction: column; gap: .4rem; font-size: .82rem; font-weight: 600; }
+.intro-hint { margin: 0; font-size: .76rem; line-height: 1.5; color: var(--ink-3); font-weight: 400; }
+.intro-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .4rem; }
+.intro-level {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .05rem;
+  padding: .5rem .6rem; border-radius: 9px; text-align: left; font-weight: 400;
+  border: 1px solid var(--rule); background: var(--sheet); color: var(--ink);
+}
+.intro-level .han { font-family: var(--f-han-ui); font-size: .84rem; color: var(--seal); }
+.intro-level b { font-size: .86rem; }
+.intro-level small { font-size: .68rem; color: var(--ink-3); line-height: 1.35; }
+.intro-level:hover:not(.on) { border-color: var(--ink-3); background: var(--sunken); }
+/* chosen reads as chosen, the same way the writing sources do */
+.intro-level.on { border-color: var(--seal); background: var(--seal-wash); }
+
+/* ---- 3. a character, taken apart ---- */
+.intro-foot { margin: 0; font-size: .8rem; line-height: 1.55; color: var(--ink-2); }
+
+/* ---- 4. how it goes ---- */
+.intro-flow { display: flex; align-items: stretch; gap: .5rem; }
+.intro-step {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem;
+  padding: .6rem .65rem; border-radius: 10px;
+  border: 1px solid var(--rule-2); background: var(--sunken);
+}
+.intro-step .k { font-family: var(--f-han-ui); font-size: .9rem; color: var(--seal); }
+.intro-step b { font-size: .88rem; }
+.intro-step small { font-size: .7rem; line-height: 1.4; color: var(--ink-3); }
+.intro-arrow { align-self: center; color: var(--ink-3); flex: none; }
+.intro-extras { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.intro-extra {
+  display: flex; flex-direction: column; gap: .15rem;
+  padding: .6rem .65rem; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, transparent);
+  background: color-mix(in srgb, var(--gold) 9%, var(--sheet));
+}
+.intro-extra .k { font-family: var(--f-han-ui); font-size: .95rem; }
+.intro-extra b { font-size: .86rem; }
+.intro-extra small { font-size: .7rem; line-height: 1.4; color: var(--ink-3); }
+
+.intro-foot-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .2rem; }
+.intro-dots { display: flex; gap: .3rem; }
+.intro-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--rule); }
+.intro-dots span.on { background: var(--seal); }
+
+@media (max-width: 620px) {
+  .intro-flow { flex-direction: column; }
+  .intro-arrow { transform: rotate(90deg); }
+  .intro-extras { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-card, .intro-seal { animation: none; }
+}
+
+/* ============================================================
+   The ? belongs to the page it is standing on
+
+   One card, a ring round the thing it is talking about, and a veil over the
+   rest. Six of these, one per tab — a manual you never have to go and find.
+   ============================================================ */
+
+/* the gear, as an inline icon rather than a text glyph or an emoji */
+.icon-btn .ic { width: 17px; height: 17px; display: block; }
+.help-btn { font-weight: 600; }
+.help-btn[hidden] { display: none; }
+
+.coach { position: fixed; inset: 0; z-index: 76; }
+.coach[hidden] { display: none; }
+.coach-veil { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 55%, transparent); }
+/* the ring is drawn round the live element, not over it, so what is being
+   explained stays legible */
+.coach-ring {
+  position: fixed; z-index: 1; pointer-events: none;
+  border: 2px solid var(--seal); border-radius: 12px;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--ink) 55%, transparent);
+  transition: top .2s, left .2s, width .2s, height .2s;
+}
+.coach-ring[hidden] { display: none; }
+.coach-lit { position: relative; z-index: 2; }
+.coach-card {
+  position: fixed; z-index: 3; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+  width: min(26rem, calc(100vw - 2rem));
+  padding: .9rem 1rem 1rem; border-radius: 12px;
+  background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.coach-top { display: flex; align-items: center; gap: .5rem; }
+.coach-top b { font-size: .95rem; flex: 1; min-width: 0; }
+.coach-k { font-family: var(--f-han-ui); font-size: 1rem; color: var(--seal); flex: none; }
+.coach-x {
+  flex: none; width: 1.6rem; height: 1.6rem; border-radius: 6px; line-height: 1;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink-3);
+}
+.coach-x:hover { color: var(--ink); border-color: var(--ink-3); }
+.coach-card p { margin: 0; font-size: .82rem; line-height: 1.6; color: var(--ink-2); }
+.coach-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.coach-dots { display: flex; gap: .3rem; }
+.coach-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--rule); }
+.coach-dots span.on { background: var(--seal); }
+.coach-nav { display: flex; gap: .4rem; }
+@media (prefers-reduced-motion: reduce) { .coach-ring { transition: none; } }
+
+/* ============================================================
+   On a phone
+   ============================================================
+
+   Everything from this line to the end of the file sits inside a max-width or
+   a pointer query. Nothing here can reach a desktop window, which is the whole
+   deal: the phone got a layout without the desktop giving anything up. The
+   check "the phone layer stays on the phone" in tools/smoke.mjs reads this
+   file from the marker above and fails if a bare rule appears below it.
+
+   860px is the line because that is where the desktop tab row appears. Below
+   it there is no room for seven tabs, and the burger stands in for them.
+   ============================================================ */
+
+@media (max-width: 859.98px) {
+
+  /* ---------- the sections sheet ---------- */
+
+  .icon-btn.burger { display: grid; }
+  .burger-bars { display: grid; gap: 3px; width: 15px; }
+  .burger-bars i { display: block; height: 1.5px; background: currentColor; border-radius: 1px; }
+
+  .drawer { position: fixed; inset: 0; z-index: 80; display: none; }
+  .drawer.on { display: block; }
+  .drawer-veil { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); animation: cheerFade .18s ease both; }
+  /* Anchored to the bottom, not dropped from the button. A phone is held from
+     the bottom and the list is the part you aim at — the button is one tap and
+     the list is seven. */
+  .drawer-sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: 84dvh; overflow-y: auto;
+    background: var(--paper); border-top: 1px solid var(--rule-2);
+    border-radius: 16px 16px 0 0;
+    padding: .5rem .7rem calc(.8rem + env(safe-area-inset-bottom));
+    animation: drawer-up .22s cubic-bezier(.22, .9, .3, 1) both;
+  }
+  @keyframes drawer-up { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .drawer-grip {
+    display: block; width: 34px; height: 4px; border-radius: 2px;
+    background: var(--rule); margin: .15rem auto .5rem;
+  }
+  .drawer-nav { display: flex; flex-direction: column; }
+  .drawer-nav button {
+    display: flex; align-items: baseline; gap: .7rem; text-align: left;
+    /* 3rem of row: a tab is the one control on this page you reach for without
+       looking, so it gets a target you cannot miss */
+    min-height: 3rem; padding: .6rem .7rem; border: 0; border-radius: 9px;
+    background: none; color: var(--ink-2); font-size: 1rem;
+  }
+  .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.1rem; color: var(--ink-3); flex: none; }
+  .drawer-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
+  .drawer-nav button.on .nz { color: var(--seal); }
+  .drawer-rule { display: block; height: 1px; background: var(--rule-2); margin: .3rem .7rem; }
+
+  /* The bottom bar used to hold 5.5rem of the page open under everything. It
+     is gone, and so is the gap it was keeping clear. */
+  .wrap { padding-bottom: 2.25rem; }
+
+  /* ---------- blocks that were laid out sideways ----------
+
+     Each of these is a row of three things that had room on a desktop and does
+     not at 375px, where the middle item is prose that wants the full width. */
+
+  /* the streak tracker: anchored right: 0 to a chip that has four icon buttons
+     to its right, so a 28-day row 445px wide started at 245px and ran off the
+     left of the screen. On a phone it is not a popover hanging off a chip —
+     it is a panel under the bar. */
+  .streak-pop { position: static; }
+  .tracker {
+    position: fixed; top: calc(3rem + env(safe-area-inset-top)); left: .7rem; right: .7rem;
+    width: auto; max-width: none; overflow-x: auto;
+  }
+
+  /* today's menu character: glyph and heading on one line, then the sentence,
+     then the button across the foot — instead of three columns each too
+     narrow to be read */
+  .sq-target {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "glyph info" "learn learn";
+    align-items: center; gap: .7rem .8rem;
+  }
+  .sq-glyph { grid-area: glyph; }
+  .sq-info  { grid-area: info; }
+  .sq-learn { grid-area: learn; align-self: stretch; width: 100%; }
+
+  /* the legibility figure: 2.1rem of number on the baseline of a paragraph
+     that wraps to three lines reads as a number that fell off the sentence */
+  .ink-top { flex-direction: column; align-items: flex-start; gap: .35rem; }
+
+  /* Go deeper: the ring is a 38px circle with 8px of stroke, leaving 30px for
+     a full-width han glyph that needs more than that to look like a character
+     rather than a smudge. */
+  .pr-ring { width: 48px; height: 48px; }
+  .pr-ring-k { font-size: 1.3rem; }
+
+  /* a sprint sheet: the character takes the middle of the space above the
+     answers rather than sitting on top of it. Two auto margins split the
+     slack — see .sp-q .sp-opts { margin-top: auto } above. */
+  .sp-q > :first-child { margin-top: auto; }
+
+  /* Questions and Minutes were seven and four chips wrapping under a label
+     that stayed vertically centred beside them, so the label sat in the middle
+     of its own control. A stepper is one row, and the chips stand down. */
+  .sp-row { align-items: center; }
+  .sp-row .sp-chips { display: none; }
+  .sp-row .sp-step { display: flex; }
+  /* the write-style row is three named choices, not a number — it keeps chips,
+     and gets the room by stacking under its label */
+  .sp-row.sp-row-style { flex-direction: column; align-items: stretch; gap: .35rem; }
+  .sp-row.sp-row-style .sp-chips { display: flex; }
+  .sp-row.sp-row-style .sp-row-lbl { width: auto; }
+
+  /* ---------- answers, where a thumb is ----------
+
+     A drill is read at the top and answered at the bottom. On a phone held
+     from the bottom in one hand, the top half of an 812px screen is a stretch
+     and the bottom quarter is not, so the prompt keeps the room it needs and
+     the answers sit on the floor of the screen.
+
+     margin-top: auto rather than a fixed height — a four-line sentence prompt
+     is still allowed to push the buttons down the page and scroll.
+
+     width: 100% because .ses-inner centres itself with margin: 0 auto, and an
+     auto cross-axis margin on a flex item eats the free space instead of
+     stretching into it. */
+  .ses-body { display: flex; flex-direction: column; }
+  .ses-inner { flex: 1 0 auto; width: 100%; }
+  .drill, .sp-q { flex: 1 0 auto; }
+  .drill .opts, .sp-q .sp-opts { margin-top: auto; }
+
+  /* Big enough to hit without aiming, and far enough apart that hitting the
+     wrong one is a decision rather than an accident. */
+  .opts, .sp-opts { gap: .7rem; }
+  .opts .opt, .sp-opts .sp-opt { min-height: 4rem; }
+  .opts.grid2 .opt, .sp-opts.grid2 .sp-opt { min-height: 5.6rem; font-size: 1.15rem; }
+  .opts.grid2 .opt .big, .sp-opts.grid2 .sp-opt .big { font-size: 3.4rem; }
+
+  /* One shape for the whole session.
+
+     .grid2 is set by the drill kind — character options get it, meaning and
+     reading options do not — so a single sitting gave you Recognise as a list,
+     Read in context as a list and Hear as a 2 x 2. Three tasks, three shapes,
+     none of them chosen. On a phone the answer layout is a setting, so it
+     governs all four kinds and a meaning simply wraps inside its box. */
+  :root[data-opt-cols="grid"] .opts { grid-template-columns: 1fr 1fr; }
+  :root[data-opt-cols="row"] .opts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .opts .opt { position: relative; justify-content: center; text-align: center; }
+  .opts:not(.grid2) .opt { font-size: .95rem; line-height: 1.32; padding: .8rem .6rem; }
+  .opts .opt-n { position: absolute; top: .4rem; left: .4rem; }
+  .opts .opt .mk { position: absolute; top: .4rem; right: .5rem; margin-left: 0; }
+  .sp-opts.grid3 .sp-opt { min-height: 4.6rem; }
+}
+
+/* ---------- what a finger can do that a mouse cannot, and the reverse ----------
+
+   pointer: coarse, not a width: a touchscreen laptop is both, and a narrow
+   window on a desktop is neither. */
+@media (pointer: coarse) {
+  /* the card takes tap, hold and swipe — see flashTouchDown. pan-y keeps the
+     page scrollable while the browser stops eating sideways drags, and a long
+     press on a card should peek at the back, not offer to select the glyph. */
+  .flash-stage { touch-action: pan-y; }
+  .flash-stage .card3d {
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .flash-taps { display: block; }
+}
+
+/* The burger is an eighth thing in a bar that already held seven, and the
+   wordmark is what gives. Measured, not guessed: the row needs about 410px to
+   lay out without squeezing, so below 480 the name stands down and the seal
+   carries the identity on its own — which is what it already does between
+   860 and the width where the tab row stops being tight, for the same reason. */
+@media (max-width: 479.98px) {
+  .brand-name { display: none; }
+  .topbar { gap: .45rem; padding-left: .6rem; padding-right: .6rem; }
 }

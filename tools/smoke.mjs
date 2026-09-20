@@ -15,16 +15,22 @@ const CONTRACT = [
   'HQ', 'STAGES', 'CHAR_INDEX', 'FAMILIES', 'RADICALS', 'QUESTS',
   'TIERS', 'TIER_UNLOCK', 'tierOf', 'tierChars', 'tierFrom', 'tierProgress',
   'tierUnlocked', 'tierNeeds', 'unlockedCeiling', 'isLocked',
-  'POS_LABEL', 'MENU', 'MENU_CHARS',
-  'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote',
+  'POS_LABEL', 'MENU', 'MENU_CHARS', 'EXTRA_GLOSS',
+  'MENU_READ', 'MENU_LEVELS', 'MENU_PRINTED', 'MENU_SPOKEN_ONLY',
+  'MENU_INK', 'MENU_INK_CEILING',
+  'mergeState', 'mergeChar', 'mergeDay', 'mergeSprint', 'useRemote', 'dropRemote',
+  'state', 'blank', 'load', 'save', 'dayKey', 'toneOf', 'connectRemote', 'capName',
   'rec', 'isKnown', 'strength', 'grade', 'introduce', 'today', 'tally', 'liveStreak',
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay', 'dayReps',
+  'studyAhead', 'aheadToday', 'dayGoal', 'newLeftToday', 'GOAL_MIN', 'GOAL_MAX',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
-  'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle',
+  'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle', 'fillInterests',
+  'MILESTONES', 'milestoneDue', 'markMilestone', 'hailed',
   'FESTIVALS', 'festivalThisWeek', 'festivalDate', 'wotwEntry',
   'menuProgress', 'menuToday', 'menuLearned', 'menuKnown',
+  'menuLearn', 'menuCanRead', 'taughtHere', 'menuTier', 'menuOnWall', 'menuOwn',
   'MENU_TIERS', 'practicePool', 'knownChars', 'daysStudied',
   'sprintState', 'sprintMark', 'sprintMarkOf', 'sprintHits', 'sprintMisses', 'sprintByMode',
   'sprintTrouble', 'sprintFluent', 'sprintForget', 'rightRun', 'troubleScore',
@@ -33,10 +39,32 @@ const CONTRACT = [
 ];
 
 /* typeof guards so a missing name reports cleanly instead of crashing */
-const api = new Function(
-  read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
-  'return {' + CONTRACT.map(n => `${n}: typeof ${n} === "undefined" ? undefined : ${n}`).join(',') + '};'
-)();
+let api;
+try {
+  api = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {' + CONTRACT.map(n => `${n}: typeof ${n} === "undefined" ? undefined : ${n}`).join(',') + '};'
+  )();
+} catch (e) {
+  /* The data files throw at load for exactly one reason often enough to be
+     worth naming: STAGES[].end is cumulative and hand-written, and
+     `STAGES.find(s => i < s.end).n` returns undefined for every character past
+     a short last entry — a null-property error that says nothing about stages.
+     Diagnose it from the source before giving up. */
+  console.error('\nthe data files would not load: ' + e.message);
+  try {
+    const src = read('js/data.js');
+    const ends = [...src.matchAll(/\{n:\s*\d+,[^}]*?end:\s*(\d+)/g)].map(m => +m[1]);
+    const chars = (src.match(/\{c:"/g) || []).length;
+    if (ends.length && chars && ends[ends.length - 1] < chars)
+      console.error(`  → STAGES ends at ${ends[ends.length - 1]} and there are ${chars} characters. ` +
+                    'Every character past the last `end` has no stage. Recompute the column.');
+    const wrong = ends.filter((e, i) => i && e <= ends[i - 1]);
+    if (wrong.length) console.error('  → STAGES ends do not ascend: ' + ends.join(' '));
+  } catch { /* the diagnosis is a courtesy; the throw above is the failure */ }
+  console.error('');
+  process.exit(1);
+}
 
 let failures = 0;
 const ok = (label, cond, detail = '') => {
@@ -72,7 +100,7 @@ console.log('\nversion');
 }
 
 console.log('\ncurriculum');
-const { HQ, CHAR_INDEX, MENU, MENU_CHARS, STAGES } = api;
+const { HQ, CHAR_INDEX, MENU, MENU_CHARS, MENU_READ, MENU_PRINTED, STAGES } = api;
 ok(`${HQ.length} characters`, HQ.length > 0);
 ok('no duplicates', new Set(HQ.map(c => c.c)).size === HQ.length);
 const missing = HQ.filter(c => !c.c || !c.p || !c.m || !c.story || !c.o || !c.pos?.length || !c.words?.length || c.sent?.length !== 3);
@@ -83,16 +111,55 @@ ok('every character lands in a stage', HQ.every(c => STAGES.some(s => s.n === c.
 
 console.log('\nmenu');
 const cjk = s => [...s].filter(c => /[一-鿿]/.test(c));
-const onMenu = new Set([...cjk(MENU.title), ...cjk(MENU.name),
+/* what renderMenuCard actually prints, level by level — the checks below are
+   the independent second opinion on MENU_READ, so they are spelled out from
+   MENU here rather than read back off the thing under test */
+const print1 = new Set([...cjk(MENU.title), ...cjk(MENU.name),
   ...MENU.sections.flatMap(s => [...cjk(s.head), ...s.items.flatMap(i => cjk(i[0]))])]);
+const print2 = new Set([...print1,
+  ...MENU.sections.flatMap(s => s.items.flatMap(i => i[4] ? cjk(i[4][0]) : []))]);
+const print3 = new Set([...print2, ...cjk(MENU.specials.head), ...cjk(MENU.specials.note[0]),
+  ...MENU.specials.items.flatMap(i => cjk(i[0]))]);
+const onMenu = print3;
 const spoken = new Set(MENU.phrases.flatMap(p => cjk(p[0])));
 ok('every printed glyph is a taught character', [...onMenu].every(c => CHAR_INDEX[c]),
    [...onMenu].filter(c => !CHAR_INDEX[c]).join(' '));
 ok('every spoken glyph is a taught character', [...spoken].every(c => CHAR_INDEX[c]),
    [...spoken].filter(c => !CHAR_INDEX[c]).join(' '));
 ok('quest covers the whole menu', [...onMenu, ...spoken].every(c => MENU_CHARS.includes(c)));
-ok('printed characters come first', MENU_CHARS.slice(0, onMenu.size).every(c => onMenu.has(c)),
+ok('printed characters come first', MENU_CHARS.slice(0, MENU_PRINTED.length).every(c => onMenu.has(c)),
    'so day one lights up a visible dish');
+
+/* The card is not all on the wall at once, and the model has to know it. */
+ok(`level 1 prints ${print1.size} characters`, MENU_READ[1].length === print1.size,
+   `model says ${MENU_READ[1].length}`);
+ok('level 2 adds the small print', MENU_READ[2].length === print2.size,
+   `model says ${MENU_READ[2].length}, card prints ${print2.size}`);
+ok(`level 3 adds the board — ${print3.size} in all`, MENU_READ[3].length === print3.size,
+   `model says ${MENU_READ[3].length}`);
+ok('each level contains the one below it',
+   MENU_READ[1].every(c => MENU_READ[2].includes(c)) && MENU_READ[2].every(c => MENU_READ[3].includes(c)));
+ok('the quest counts the whole card, not the dish names',
+   MENU_PRINTED.length === print3.size && [...print3].every(c => MENU_PRINTED.includes(c)));
+/* Six characters live in the ordering phrases and nowhere on the card. A
+   seventh is a deliberate decision, not a silent one. */
+ok('exactly 6 characters are spoken-only', api.MENU_SPOKEN_ONLY.length === 6,
+   api.MENU_SPOKEN_ONLY.join(' '));
+ok('and none of them is printed anywhere',
+   api.MENU_SPOKEN_ONLY.every(c => !print3.has(c) && spoken.has(c)));
+/* Ink, not vocabulary: the wall with repeats. */
+ok(`the card is ${api.MENU_INK.length} characters of ink`,
+   api.MENU_INK.length > MENU_PRINTED.length,
+   `${api.MENU_INK.length} printed vs ${MENU_PRINTED.length} distinct`);
+ok('every level of a tier has a label', api.MENU_TIERS.every(t => t.n && t.label));
+ok('and no threshold — the gate is not a count',
+   api.MENU_TIERS.every(t => t.at === undefined && t.by === undefined));
+/* This menu is taught end to end, so the bar runs to 100 and draws no tick.
+   If a dish ever arrives that the curriculum does not teach, this fails and
+   the bar needs the ceiling mark turned on — and the grey needs a third ink. */
+ok('the curriculum teaches every character on the card',
+   api.MENU_INK_CEILING === api.MENU_INK.length,
+   `${api.MENU_INK.length - api.MENU_INK_CEILING} printed characters are never taught`);
 
 console.log('\nscheduling');
 api.load();
@@ -112,10 +179,67 @@ const pick = api.menuToday();
 ok('picks a character', !!pick.c);
 ok('the pick is stable within the day', api.menuToday().c === pick.c);
 ok('the pick is printed on the menu', onMenu.has(pick.c), pick.c);
-const before = api.menuProgress().known;
-api.menuLearned();
-ok('learning it advances the quest', api.menuProgress().known === before + 1);
-ok('and it joins the flashcard deck', api.menuKnown().includes(pick.c));
+/* The one that matters: printed on the menu AS IT STANDS. A pick off a level
+   you cannot see yet is red ink above a card that does not contain it. */
+ok('and printed at the level you are on', api.menuOnWall().includes(pick.c),
+   `${pick.c} is not on the level ${api.menuTier().n} wall`);
+ok('the wall is this level and no more',
+   api.menuOnWall().length === MENU_READ[api.menuTier().n].length);
+
+/* Cross-reference in, progression out. Learning here must leave the library,
+   the review queue and the day record exactly where they were. */
+{
+  const charsBefore = JSON.stringify(api.state.chars);
+  const dueBefore = api.dueList().slice().sort().join(' ');
+  const dayBefore = JSON.stringify(api.state.days[api.dayKey()] || null);
+  const before = api.menuProgress().known;
+  const ownBefore = api.menuOwn();
+  api.menuLearned();
+  ok('learning it advances the quest', api.menuProgress().known === before + 1);
+  ok('and it joins the flashcard deck', api.menuKnown().includes(pick.c));
+  ok('and the quest counts it as its own', api.menuOwn() === ownBefore + 1);
+  ok('and the menu can read it', api.menuCanRead(pick.c) && api.taughtHere(pick.c));
+  ok('but the library never heard of it', !api.isKnown(pick.c),
+     'a menu character is recognition, not retention');
+  ok('state.chars is untouched', JSON.stringify(api.state.chars) === charsBefore);
+  ok('the review queue is untouched', api.dueList().slice().sort().join(' ') === dueBefore);
+  ok("the day's record is untouched",
+     JSON.stringify(api.state.days[api.dayKey()] || null) === dayBefore,
+     'an errand is not part of the day\u2019s list');
+  ok('and the pick still reads as done today', api.menuToday().c === pick.c);
+}
+
+/* A character learned the ordinary way still inks the menu in — that is the
+   whole point of the page. */
+{
+  const other = MENU_PRINTED.find(c => !api.menuCanRead(c));
+  api.introduce(other);
+  ok('a character learned anywhere else inks the menu in', api.menuCanRead(other), other);
+}
+
+/* Gate three: you get the next menu when you can read this one. Nothing on
+   another tab can spring it, and clearing the wall promotes you on the spot —
+   so "level exhausted, card unfinished" is a state that cannot happen. */
+{
+  const save = api.state.menuTaught.slice();
+  api.state.menuTaught = MENU_READ[1].slice();
+  ok('reading level 1 promotes you to level 2', api.menuTier().n === 2);
+  api.state.menuTaught = MENU_READ[2].slice();
+  ok('reading level 2 promotes you to level 3', api.menuTier().n === 3);
+  ok('and the wall is now the whole card', api.menuOnWall().length === MENU_PRINTED.length);
+  /* a stale pick from a level you have left is repaired, not honoured */
+  api.state.menuPick = { d: api.dayKey(), c: '\u4e0d\u5b58\u5728'[0], done: false };
+  const repaired = api.menuToday();
+  ok('a pick that is no longer on the wall gets re-picked',
+     repaired.c === null || api.menuOnWall().includes(repaired.c), String(repaired.c));
+  api.state.menuTaught = MENU_PRINTED.slice();
+  api.state.menuPick = null;
+  const fin = api.menuToday();
+  ok('reading the whole card finishes the quest', fin.c === null && fin.done);
+  ok('and the bar says so', api.menuProgress().done && api.menuProgress().pct === 1);
+  api.state.menuTaught = save;
+  api.state.menuPick = null;
+}
 
 console.log('\npractice');
 const someone = api.knownChars();
@@ -138,14 +262,24 @@ ok('a missed stroke never demotes the character', api.rec(hw).lvl === lvlBefore)
 ok('and never drags it back to today', api.rec(hw).due > api.dayKey());
 ok('but the attempt is recorded', api.rec(hw).wrong > 0);
 ok('and no writing credit is given', (api.rec(hw).skills.w || 0) === 0);
-const lvl2 = api.rec(hw).lvl;
+const lvlAfterStroke = api.rec(hw).lvl;
 api.grade(hw, false, 'r');
-ok('a missed RECOGNITION still costs a level', api.rec(hw).lvl < lvl2);
+ok('a missed RECOGNITION still costs a level', api.rec(hw).lvl < lvlAfterStroke);
 
 console.log('\nmenu tiers');
 ok('three tiers defined', api.MENU_TIERS.length === 3);
-ok('tier 1 needs nothing', api.MENU_TIERS[0].at === 0);
-ok('tiers ascend', api.MENU_TIERS.every((t, i, a) => !i || t.at > a[i - 1].at));
+ok('tiers are numbered in order', api.MENU_TIERS.every((t, i) => t.n === i + 1));
+/* There is no `at` to ascend any more. The old checks pinned a threshold
+   gate — level 2 at 15 menu characters, level 3 at 30 — which let the specials
+   board arrive because of work done on the Today tab. What replaced it is
+   checked up in `side quest`: you get the next menu when you can read this one. */
+ok('a fresh record starts at level 1', (() => {
+  const save = api.state.menuTaught, chars = api.state.chars;
+  api.state.menuTaught = []; api.state.chars = {};
+  const n = api.menuTier().n;
+  api.state.menuTaught = save; api.state.chars = chars;
+  return n === 1;
+})());
 const withDesc = MENU.sections.flatMap(s => s.items).filter(i => i[4]);
 ok('every dish has a description for tier 2', withDesc.length === MENU.sections.flatMap(s => s.items).length);
 const tierGlyphs = [...withDesc.flatMap(i => cjk(i[4][0])),
@@ -340,6 +474,966 @@ console.log('\neverything speakable has a clip');
   }
 }
 
+console.log('\na meaning in brackets is not a translation');
+{
+  /* A handful of the meanings open with a bracket — (measure: flat
+     things), (completed action marker) — and they are exactly the characters
+     with no English word behind them. In a recognition drill that fails twice
+     over: against three plain meanings it is answerable by elimination, and
+     against another bracketed one it asks the learner to tell 张 from 条 by a
+     couple of words of somebody's English. */
+  const jobs = HQ.filter(c => /^\(/.test(c.m));
+  ok(`${jobs.length} meanings are a job description rather than a translation`,
+     jobs.length > 0, jobs.map(c => c.c).join(''));
+  ok('and there are enough of them to draw a full set of distractors from',
+     jobs.length >= 4, jobs.length + ' of ' + HQ.length);
+
+  const appSrc = read('js/app.js');
+  ok('there is one test for that shape of gloss',
+     /const isJobGloss = m => \/\^\\\(\/\.test\(String\(m\)\);/.test(appSrc));
+  ok('a bracketed answer draws bracketed distractors',
+     /const kin = isJobGloss\(ch\.m\) \? pool\.filter\(x => isJobGloss\(x\.m\)\) : pool;/.test(appSrc));
+  ok('and falls back to the ordinary pool if there are not enough',
+     /if \(others\.length < 3\) \{[\s\S]{0,200}?3 - others\.length\)/.test(appSrc));
+
+  /* THE condition. Tagging a lone bracketed option would hand the answer
+     over: one option carrying pinyin and three without is a tell, and a
+     learner stops reading the options and starts looking for the pinyin. */
+  ok('the reading rides along only when two or more options need it',
+     /const say = ms\.filter\(isJobGloss\)\.length >= 2;/.test(appSrc));
+  ok('and it is never attached on any weaker condition',
+     !/isJobGloss\)\.length >= 1/.test(appSrc) && !/isJobGloss\)\.length > 0/.test(appSrc));
+  ok('an option only carries a reading if its own meaning is bracketed',
+     /say && o && isJobGloss\(m\)/.test(appSrc));
+
+  /* the one place the same gloss stands alone, with nothing to compare it to */
+  ok('the placement prompt gets the reading unconditionally',
+     /class="place-q">\$\{esc\(ch\.m\)\}\$\{isJobGloss\(ch\.m\)/.test(appSrc));
+  ok('and asks which character *is* it, not what it means',
+     /Which character \$\{isJobGloss\(ch\.m\) \? "is" : "means"\}/.test(appSrc));
+  ok('the reading is set quieter than the meaning it rides with',
+     /\.opt-say \{ opacity: \.72/.test(read('css/app.css')));
+}
+
+console.log('\na character with no stroke data is still drawn');
+{
+  /* hanzi-writer fills an empty mount, so a character it has no data for
+     leaves the 田字格 blank — a sound and a meaning attached to nothing, and
+     no error anywhere to say why. Every character in this curriculum has data
+     today; this is a guard, because the failure mode is silent and the fix
+     costs nothing while the data is there. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  ok('there is one test for whether a character can be animated',
+     /const drawable = c => !!\(window\.STROKE_DATA && window\.STROKE_DATA\[c\]\);/.test(appSrc));
+  ok('the box sets the character in type when it cannot be built',
+     /function writerBox[\s\S]*?drawable\(char\)[\s\S]*?tian-plain/.test(appSrc));
+  ok('and the stylesheet sizes it to sit in the 田字格',
+     /\.tian-plain \{[^}]*place-items: center/.test(css));
+  ok('the stroke-order and writing buttons are hidden rather than left to fail',
+     /\$\{drawable\(ch\.c\) \? `[\s\S]*?data-act="animate"[\s\S]*?data-act="practise"[\s\S]*?` : ""\}/.test(appSrc));
+  ok('and a note under the card says why', /class="note no-strokes"/.test(appSrc)
+     && /\.no-strokes \{/.test(css));
+
+  /* the guard is dormant only as long as the data is complete — if that ever
+     stops being true, tools/audit-strokes.mjs is what says so */
+  let bundle = null;
+  try { const w = {}; new Function('window', read('js/strokes.js'))(w); bundle = w.STROKE_DATA; } catch { /* not bundled */ }
+  const gaps = bundle ? HQ.filter(c => !bundle[c.c]).map(c => c.c) : null;
+  ok('every character in the curriculum has stroke data right now',
+     gaps && !gaps.length, gaps ? gaps.join(' ') : 'strokes.js unreadable');
+}
+
+console.log('\na sentence gets to finish before the card moves');
+{
+  /* Read them in context plays the line back when you answer it, and the next
+     card's renderStep() calls stopPhrase() — so a flat 1400ms advance was
+     what silenced the audio. Timed in the app: 我可以问你一个问题吗？ is
+     4957ms of clips, so 1400 cut it off after 2.8 characters of ten. */
+  const appSrc = read('js/app.js');
+  ok('there is a shorter tail for after a line has played',
+     /const PHRASE_TAIL_MS = \d+;/.test(appSrc));
+  const tail = +(appSrc.match(/const PHRASE_TAIL_MS = (\d+);/) || [])[1];
+  const flat = +(appSrc.match(/const AUTO_ADVANCE_MS = (\d+);/) || [])[1];
+  ok('and it is shorter than the plain one, because you have already heard the line',
+     tail > 0 && tail < flat, tail + ' vs ' + flat);
+  ok('sayPhrase can tell you when it has finished',
+     /function sayPhrase\(text, force, onDone\)/.test(appSrc));
+  ok('and something already playing can be attached to',
+     /function onPhraseEnd\(fn\) \{[\s\S]*?if \(!phraseActive\) return false;/.test(appSrc));
+  ok('the advance waits for it', /function armAdvance\(/.test(appSrc));
+  ok('and settle arms through that rather than a bare timeout',
+     /armAdvance\(next/.test(appSrc) && !/advanceTimer = setTimeout\(next, AUTO_ADVANCE_MS\)/.test(appSrc));
+
+  /* the three details that make it safe */
+  ok('clearing an advance bumps a generation counter',
+     /function clearAdvance\(\) \{[^}]*advanceGen\+\+/.test(appSrc));
+  ok('and anything queued behind a line checks it before firing',
+     (appSrc.match(/if \(gen !== advanceGen\) return;/g) || []).length >= 1);
+  ok('a chain cut short drops its callback, so skipping cannot advance the next card early',
+     /function stopPhrase\(\) \{[^}]*phraseEnd = null;/.test(appSrc));
+  /* While the line plays the button reads as a plain Next, which is true:
+     nothing is ticking, and pressing it still works. */
+  ok('the Next button is not born with a countdown on it',
+     /<button class="btn" id="cont" style=/.test(appSrc));
+  ok('and gets one only when an advance is actually armed',
+     /classList\.add\("btn-timed"\)/.test(appSrc));
+
+  /* the second bug found in there */
+  ok('the verdict replays the line that was read, not one character of it',
+     /if \(item\.said\) sayPhrase\(item\.said, true\); else say\(ch\.c, true\);/.test(appSrc));
+  ok('and the reading drill records what it said',
+     /item\.said = spoken \|\| ch\.c;/.test(appSrc));
+}
+
+console.log('\nthe ? belongs to the page it is standing on');
+{
+  const appSrc = read('js/app.js'), sprintSrc = read('js/sprint.js'),
+        html = read('index.html'), css = read('css/app.css');
+  const all = appSrc + sprintSrc + html;
+
+  ok('there is a guide overlay', /<div class="coach" id="coach"/.test(html) && /const COACH = \{/.test(appSrc));
+  /* one per tab, keyed by view, so openCoach() reads the page you are on */
+  const block = appSrc.slice(appSrc.indexOf('const COACH = {'), appSrc.indexOf('let coach = {'));
+  const guides = [...block.matchAll(/^  (\w+): \{ label:/gm)].map(m => m[1]);
+  const views = [...(appSrc.match(/const RENDER = \{([\s\S]*?)\};/) || [])[1].matchAll(/(\w+): render/g)].map(m => m[1]);
+  ok(`there is a guide for every tab (${guides.length})`,
+     views.every(v => guides.includes(v)), views.filter(v => !guides.includes(v)).join(' '));
+  ok('and no guide for a tab that does not exist',
+     guides.every(g => views.includes(g)), guides.filter(g => !views.includes(g)).join(' '));
+
+  /* POINT AT SELECTORS THAT ACTUALLY EXIST. Two different failures look
+     identical from inside the overlay — a ring around nothing. This catches
+     the first: a class invented outright, in no file. The second — a real
+     class that is not rendered on the tab the step points at — is what
+     coachSteps() skips at runtime, and what the browser loop proved. */
+  const sels = [...block.matchAll(/sel: "\.([\w-]+)"/g)].map(m => m[1]);
+  ok(`every step points somewhere (${sels.length} steps)`, sels.length >= 15);
+  const invented = sels.filter(c => !all.includes('"' + c + '"') && !new RegExp('class="[^"]*\\b' + c + '\\b').test(all)
+                                    && !new RegExp('\\b' + c + '\\b').test(all.replace(/sel: "\.[\w-]+"/g, '')));
+  ok('and no step points at a class that is in no file', !invented.length, invented.join(' '));
+  /* every one of them is styled, too — a class nothing draws is the same
+     ring around nothing by a different route */
+  const unstyled = sels.filter(c => !new RegExp('\\.' + c + '\\b').test(css));
+  ok('every target is a class the stylesheet knows', !unstyled.length, unstyled.join(' '));
+
+  /* a step whose target is not on screen is skipped, not pointed at nothing —
+     and "not on screen" means no box, not merely no element: a class that
+     exists on another tab resolves to a 0x0 node and used to keep its step */
+  ok('steps with no target on screen are dropped',
+     /\.filter\(s => \{ const el = coachTarget\(v, s\.sel\); return el && el\.getBoundingClientRect\(\)\.width > 0; \}\)/.test(appSrc));
+  /* .search exists on Write AND Library; an unscoped querySelector found the
+     Write one from every tab, so the Library's step ringed the corner */
+  ok('and a step resolves its target inside its own tab',
+     /function coachTarget\(v, sel\)/.test(appSrc)
+     && /const el = coachTarget\(coach\.view, s\.sel\);/.test(appSrc));
+  const dupes = [...new Set(sels.filter(c => sels.filter(x => x === c).length > 1))];
+  ok('no two guides point at the same class', !dupes.length, dupes.join(' '));
+  ok('and an empty guide never opens', /if \(!steps\.length\) return;/.test(appSrc));
+
+  /* the ? names the page it is standing on, and hides where there is none */
+  ok('the help button is synced on every tab change', /  syncHelp\(\);/.test(appSrc)
+     && /function syncHelp\(\)/.test(appSrc));
+  ok('it hides rather than opening an empty overlay', /b\.hidden = !has;/.test(appSrc));
+  ok('and names the page', /How \$\{COACH\[view\]\.label\} works/.test(appSrc));
+
+  /* the first run's is locked; the one from the ? is not */
+  ok('the locked one has no ✕', /coach\.locked \? "" :/.test(appSrc));
+  ok('and refuses to close', /if \(coach\.locked && !force\) return;/.test(appSrc));
+  ok('the introduction ends by opening it, locked', /openCoach\("today", true\)/.test(appSrc));
+  ok('and the ? opens it unlocked', /\$\("#helpBtn"\)\?\.addEventListener\("click", \(\) => openCoach\(\)\)/.test(appSrc));
+
+  /* the gear: ⚙ is thin monochrome text; ⚙️ is a colour glyph between two
+     line icons; an SVG inherits currentColor and matches them */
+  ok('the settings icon is not a bare text glyph', !/aria-label="Settings">⚙<\/button>/.test(html));
+  /* the markup, not the comment above it explaining what NOT to use */
+  const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
+  ok('nor the emoji presentation of one', !/⚙\uFE0F/.test(htmlNoComments));
+  ok('it is an inline icon that inherits its colour',
+     /settings-btn"[\s\S]{0,220}?<svg class="ic"[\s\S]{0,140}?stroke="currentColor"/.test(html));
+}
+
+console.log('\nthe first run is four stages, and none of them a form');
+{
+  const appSrc = read('js/app.js'), html = read('index.html'), css = read('css/app.css');
+  ok('there is an introduction to open', /<div class="intro" id="intro"/.test(html)
+     && /function startIntro\(/.test(appSrc));
+  ok('and boot opens it rather than the tour', /^  startIntro\(\);/m.test(appSrc)
+     && !/^  startTour\(\);/m.test(appSrc));
+  const stages = (appSrc.match(/\[renderIntroHello, renderIntroAbout, renderIntroChar, renderIntroHow\]/) || [])[0];
+  ok('it is four stages', !!stages);
+  ok('and each one is written', ['renderIntroHello', 'renderIntroAbout', 'renderIntroChar', 'renderIntroHow']
+     .every(f => new RegExp('function ' + f + '\\(').test(appSrc)));
+
+  /* the hello has to finish: it used to cut away on a flat timeout that
+     clipped the second character */
+  ok('the greeting is timed from the real strokes, not a flat wait',
+     /STROKE_DATA\[c\] \|\| \{\}\)\.strokes \|\| \[\]\)\.length \* \(STROKE_MS/.test(appSrc));
+  ok('with time to look at it afterwards', /LOOK_MS = \d{4}/.test(appSrc));
+  ok('and a click skips it', /host\.onclick = introNext;/.test(appSrc));
+
+  /* the questionnaire moved inside the introduction: two questions after a
+     greeting read as someone saying hello back */
+  ok('the questions are a stage, not a dialog after the tour',
+     /function renderIntroAbout/.test(appSrc)
+     && !/maybeOfferProfile\(\);/.test(appSrc.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('and the old placement dialog no longer chains off the tour',
+     !/function maybeOfferPlacement/.test(appSrc));
+
+  /* stages 3 and 4 wait for Next and have nothing else to click */
+  ok('the explanatory stages have one control each',
+     (appSrc.match(/host\.onclick = null;/g) || []).length >= 3);
+  ok('and the wordmark reopens them', /function replayIntro\(\)[\s\S]{0,120}?introStep = 2;/.test(appSrc)
+     && /id="brandBtn"/.test(html));
+  ok('the seven-card tour is kept, in Settings',
+     /const TOUR = \[/.test(appSrc) && appSrc.includes('id="tourBtn"'));
+}
+
+console.log('\nplacement waits for the moment it is relevant');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' + 'return {blank,load,INTEREST_KEYS,INTERESTS,wordOfWeek,state};')();
+  const appSrc = read('js/app.js');
+
+  ok('a fresh record has been asked nothing', a.blank().levelAsked === false && a.blank().level === null);
+  ok('the introduction asks with a gauge rather than a quiz',
+     /const LEVELS = \[/.test(appSrc) && /none at all/i.test(appSrc));
+  ok('and the first press of the session button is where it is acted on',
+     /async function maybeAskLevel\(\)/.test(appSrc)
+     && /if \(await maybeAskLevel\(\)\) startSession\(\)/.test(appSrc));
+  ok('study ahead starts the same session, so it asks too',
+     /if \(await maybeAskLevel\(\)\) \{ studyAhead\(5\); startSession\(\); \}/.test(appSrc));
+  ok('"none at all" is not asked at all', /if \(!state\.level \|\| state\.level === "none"\) return true;/.test(appSrc));
+  ok('the wording quotes what they said', /You said \$\{said\}/.test(appSrc));
+  ok('and it is asked once, for good', /state\.levelAsked = true; save\(\);/.test(appSrc));
+  /* the level is kept and not otherwise acted on — we do not yet know what
+     else to do with it, and collecting it costs nothing */
+  ok('the level itself is only recorded',
+     (appSrc.match(/state\.level\b/g) || []).length <= 5,
+     String((appSrc.match(/state\.level\b/g) || []).length));
+  /* Nothing chosen means everything: the word of the week is purely a reward,
+     and nobody should meet the card explaining why it is empty. */
+  const st = (() => {
+    globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), { interests: [] }));
+    return a.load();
+  })();
+  ok('an empty interest list fills itself on load',
+     st.interests.length === a.INTEREST_KEYS.length, String(st.interests.length));
+  ok('so the word of the week always has something to pick', !!a.wordOfWeek());
+  ok('and the same rule runs where the questions are answered',
+     /fillInterests\(\);\s*\/\* nothing chosen means everything \*\//.test(appSrc));
+}
+
+console.log('\nmilestones');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {HQ,state,load,blank,MILESTONES,milestoneDue,markMilestone,hailed,placeKnown,introduce,knownChars,resetProgress};')();
+  const reset = () => { globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(a.blank()); return a.load(); };
+
+  ok('the list is every hundred, plus the end',
+     a.MILESTONES.slice(0, -1).every(m => m % 100 === 0)
+     && a.MILESTONES[a.MILESTONES.length - 1] === a.HQ.length,
+     a.MILESTONES.join(' '));
+  ok('and it ascends', a.MILESTONES.every((m, i) => !i || m > a.MILESTONES[i - 1]));
+  /* coarse on purpose: every fifty would give fifteen of these and each would
+     mean half as much */
+  ok('there are few enough of them to mean something', a.MILESTONES.length <= 10, a.MILESTONES.length);
+
+  let st = reset();
+  ok('nothing is due before anything is learned', a.milestoneDue() === null);
+  a.HQ.slice(0, 99).forEach(c => a.introduce(c.c));
+  ok('and nothing at ninety-nine', a.milestoneDue() === null, String(a.knownChars().length));
+  a.introduce(a.HQ[99].c);
+  ok('the first hundred is due at a hundred', a.milestoneDue() === 100);
+
+  /* Offer the HIGHEST passed, not the lowest: placement can credit three
+     hundred at once, and a queue of overlays to click through would turn the
+     moment into a chore. */
+  st = reset();
+  a.placeKnown(a.HQ.slice(0, 320).map(c => c.c));   /* st is the record load() returned */
+  ok('a big jump offers the highest passed, not the lowest', a.milestoneDue() === 300);
+  a.markMilestone(300);
+  ok('and marking it marks everything under it',
+     [100, 200, 300].every(m => a.hailed().includes(m)), a.hailed().join(' '));
+  ok('so nothing queues up behind it', a.milestoneDue() === null);
+
+  /* Record what was celebrated; do not derive it from the count. The count
+     goes down as well as up — a reset, a character dropped from the
+     curriculum — and deriving it congratulates someone twice for the same
+     hundred. */
+  const before = a.knownChars().length;
+  a.HQ.slice(260, 320).forEach(c => { delete st.chars[c.c]; });
+  ok('sixty characters can go away', a.knownChars().length === before - 60);
+  ok('and nothing re-arms', a.milestoneDue() === null, a.hailed().join(' '));
+
+  /* the record is the record: a fresh one has celebrated nothing */
+  const fresh = a.resetProgress();
+  ok('a reset clears what was celebrated', !(fresh.hailed || []).length);
+  ok('and hailed is part of a blank record', Array.isArray(a.blank().hailed));
+
+  /* A milestone with no card opens an empty overlay, and app.js has no DOM in
+     this harness — so compare the two as text. */
+  const appSrc = read('js/app.js');
+  const cards = [...appSrc.slice(appSrc.indexOf('const HAIL = {'), appSrc.indexOf('function openHail'))
+    .matchAll(/^\s{2}(\d+):/gm)].map(m => +m[1]);
+  ok(`every milestone has a card (${cards.length})`,
+     a.MILESTONES.every(m => cards.includes(m)),
+     a.MILESTONES.filter(m => !cards.includes(m)).join(' '));
+  ok('and every card has a milestone', cards.every(c => a.MILESTONES.includes(c)),
+     cards.filter(c => !a.MILESTONES.includes(c)).join(' '));
+
+  /* the four decisions, in the source */
+  ok('placement marks silently rather than celebrating the test you just took',
+     /hailSilently\(\);\n    closePlacement\(true\);/.test(appSrc));
+  /* and then carries straight on into the session it was asked for, rather
+     than returning to the button that opened it */
+  ok('finishing the check starts the day it just placed you in',
+     /if \(andStart && placeThenStart\) setTimeout\(startSession, 260\);/.test(appSrc));
+  ok('but only when the check was opened from the session button',
+     /if \(yes\) \{ placeThenStart = true; openPlacement\(\); return false; \}/.test(appSrc)
+     && /\$\("#placeClose"\).onclick = \(\) => closePlacement\(false\);/.test(appSrc));
+  /* declining it starts the same session immediately */
+  ok('and declining it starts from the beginning there and then',
+     /if \(await maybeAskLevel\(\)\) startSession\(\);/.test(appSrc));
+  ok('a finished session is where it fires', /maybeHail\(700\);/.test(appSrc));
+  ok('and it celebrates with the same stamp the session grade uses',
+     /\.hail-seal \{[^}]*animation: stamp /s.test(read('css/app.css')));
+  const strip = t => t.replace(/\/\*[\s\S]*?\*\//g, '');
+  ok('there is no second celebratory gesture',
+     !/confetti/i.test(strip(appSrc) + strip(read('css/app.css'))));
+}
+
+console.log('\nthe numbers that turn out to be hardcoded');
+{
+  /* Adding characters is not only adding characters. Every number below is one
+     that has to track the data and does not do so by itself. */
+
+  /* STAGES[].end is cumulative and hand-written. Miss one and
+     STAGES.find(s => i < s.end) returns undefined for every character past it,
+     and ch.stage = ….n throws at LOAD with a null-property error that says
+     nothing about stages. So: count the characters per stage rather than
+     trusting the arithmetic. */
+  let running = 0;
+  const drift = [];
+  for (const st of STAGES) {
+    const n = HQ.filter(c => c.stage === st.n).length;
+    if (running + n !== st.end) drift.push(`stage ${st.n}: end=${st.end}, ${running}+${n}=${running + n}`);
+    running = st.end;
+  }
+  ok(`every stage's end is the running total of its characters (${STAGES.length} stages)`,
+     !drift.length, drift.join('; '));
+  ok('the ends ascend', STAGES.every((st, i) => !i || st.end > STAGES[i - 1].end));
+  /* the one that throws rather than misbehaving */
+  ok('and the last one covers the whole library',
+     STAGES[STAGES.length - 1].end >= HQ.length,
+     `${STAGES[STAGES.length - 1].end} vs ${HQ.length}`);
+  ok('so every character finds a stage without falling off the end',
+     HQ.every(c => STAGES.find(st => c.i < st.end)));
+
+  /* Tiers are aspirational — `to` is the milestone the tier stands for, not
+     how many characters are written — but they still have to ascend, and
+     tierOf() must answer for every index. */
+  ok('the tiers ascend', api.TIERS.every((t, i) => !i || t.to > api.TIERS[i - 1].to));
+  ok('and every character lands in one', HQ.every(c => !!api.tierOf(c.i)));
+
+  /* Prose that states a count. None of these break; all of them become lies.
+     This is `grep -n for the old number` turned into something that runs. */
+  const files = ['js/app.js', 'js/srs.js', 'js/sprint.js', 'tools/smoke.mjs', 'tools/audit-strokes.mjs'];
+  const claims = [];
+  for (const f of files) {
+    const src = read(f);
+    /* "all 763", "the 763 characters", "of 763 characters" — a number stated
+       as the size of the library, in prose, in the present tense */
+    for (const m of src.matchAll(/\b(?:all|the|of)\s+(\d{3,4})\s*(?:characters|meanings|of them)\b/g))
+      claims.push({ f, n: +m[1], text: m[0] });
+    for (const m of src.matchAll(/\blibrary (?:is|has|holds|stops at)\s+(\d{3,4})\b/g))
+      claims.push({ f, n: +m[1], text: m[0] });
+  }
+  const wrong = claims.filter(c => c.n !== HQ.length);
+  ok(`no comment states a library size that is not the library size (${claims.length} checked)`,
+     !wrong.length, wrong.map(c => `${c.f}: "${c.text}"`).join(' | '));
+
+  /* A threshold with the library's own size in it is usually measuring the
+     wrong thing — the practice-pool check was calibrated that way and passed
+     at one size while failing at another with the rotation working perfectly. */
+  ok('no check calibrates itself against HQ.length',
+     !/HQ\.length \* 0\.\d/.test(read('tools/smoke.mjs')));
+}
+
+console.log('\nthe radicals page has a way in');
+{
+  /* 15,376px of wall: thirty cards of prose in one flat list and a 66-group
+     tail below them, with nothing at the top saying what a radical IS.
+     Someone new to the writing system arrived at a reference work and was
+     expected to know what to do with it. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+
+  /* 1. show it — one worked example, built from the curriculum's own comp
+     data so it cannot drift out of step with the character it describes */
+  ok('there is a worked example', /function radDemo\(\)/.test(appSrc) && /\$\{radDemo\(\)\}/.test(appSrc));
+  const demo = (appSrc.match(/const RAD_DEMO = "(.)"/) || [])[1];
+  ok('and its character is taught here', !!demo && !!CHAR_INDEX[demo], demo);
+  const dch = CHAR_INDEX[demo] || {};
+  ok('with a meaning part and a sound part to show',
+     (dch.comp || []).length >= 2, (dch.comp || []).join('+'));
+  ok('the example reads its parts from the data, not from prose',
+     /const \[mean, sound\] = ch\.comp;/.test(appSrc));
+  ok('and both of its parts are themselves taught',
+     (dch.comp || []).slice(0, 2).every(k => CHAR_INDEX[k] || api.RADICALS[k]),
+     (dch.comp || []).slice(0, 2).join(' '));
+  ok('meaning is marked one colour and sound another',
+     /\.rx-part\.mean \.rx-z \{ border-bottom-color: var\(--jade\)/.test(css)
+     && /\.rx-part\.sound \.rx-z \{ border-bottom-color: var\(--gold\)/.test(css));
+
+  /* 2. a map before the territory */
+  ok('every radical appears as a chip, anchored to its card',
+     /class="rad-chip[\s\S]{0,80}?href="#rad-\$\{esc\(k\)\}"/.test(appSrc)
+     && /id="rad-\$\{esc\(k\)\}"/.test(appSrc));
+  ok('and each chip carries how far through it you are', /class="rc-bar"/.test(appSrc));
+
+  /* 3. themes, not a flat list — the 214 ordering is by stroke count, which is
+     for paper dictionaries and useless for learning what the parts mean */
+  const themeBlock = appSrc.slice(appSrc.indexOf('const RAD_THEMES'), appSrc.indexOf('const RAD_DEMO'));
+  const themes = (themeBlock.match(/\{ k: "\w+",/g) || []).length;
+  ok(`the radicals are grouped by theme (${themes})`, themes >= 4);
+  ok('and anything not hand-placed lands in a catch-all rather than vanishing',
+     /const strays = documented\.filter\(k => !placed\.has\(k\)\);/.test(appSrc)
+     && /name: "Others"/.test(appSrc));
+
+  /* every key named in a theme has to be a radical that exists */
+  const keys = [...appSrc.matchAll(/keys: \[([^\]]*)\]/g)]
+    .flatMap(m => [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]));
+  const unknown = keys.filter(k => !api.RADICALS[k]);
+  ok(`every themed key is a real radical (${keys.length} keys)`, !unknown.length, unknown.join(' '));
+  ok('and no radical is named twice', new Set(keys).size === keys.length);
+  /* a radical in the data but in no theme is allowed — it goes to Others —
+     but it is worth knowing how many are sitting there */
+  const documented = Object.keys(api.RADICALS).filter(k => api.FAMILIES[k] && api.FAMILIES[k].length);
+  const strays = documented.filter(k => !keys.includes(k));
+  ok('and nothing is in Others right now', !strays.length, strays.join(' '));
+
+  /* the long tail, folded */
+  ok('the other shared parts fold away', /<details class="rad-more">/.test(appSrc));
+
+  /* §11: a number like this goes stale the moment the library grows */
+  ok('the coverage line counts rather than states',
+     /\$\{214 - documented\.length\}/.test(appSrc));
+  ok('and no count in it is typed out',
+     !/other 184 are real/.test(appSrc) && !/These 30 are the ones/.test(appSrc));
+}
+
+console.log('\nwriting practice: two exercises, not one control');
+{
+  /* The source switch was a segmented control — one box split in half, the
+     selected half filled solid with --ink, each side carrying a bare number.
+     They are two exercises, not two settings of one: single characters from
+     today's lesson, or a real word written straight through. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  ok('the two sources are two cards', /<div class="nb-seg" role="tablist">/.test(appSrc)
+     && (appSrc.match(/class="nb-mode /g) || []).length === 1);
+  ok('each is a tab, and says which is chosen', /role="tab"/.test(appSrc) && /aria-selected=/.test(appSrc));
+  /* the count had nothing to say what it counted */
+  ok('and each count says what it is a count of',
+     /"to trace"/.test(appSrc) && /"you can write"/.test(appSrc));
+  ok('an exercise with nothing in it says so rather than showing a greyed zero',
+     /off \? "none yet"/.test(appSrc));
+  /* a solid slab of ink is heavier than anything else on a page whose subject
+     is a faint grey character to trace */
+  ok('selected is a wash and a border, not a slab of ink',
+     /\.nb-mode\.on \{ border-color: var\(--seal\); background: var\(--seal-wash\)/.test(css));
+  ok('and they stack rather than crowd at phone width',
+     /@media \(max-width: 520px\) \{ \.nb-seg \{ grid-template-columns: 1fr; \} \}/.test(css));
+
+  /* the rest follows from that */
+  ok('the shuffle no longer shares a row with the switch', /class="btn btn-ghost btn-sm nb-next"/.test(appSrc));
+  ok('the word being written is in the band, at full size',
+     /<span class="nb-now-what">/.test(appSrc) && /\.nb-now-what \.han \{ font-family: var\(--f-han\); font-size: 1\.25rem/.test(css));
+  ok('the progress bar spans the same width as the cards',
+     /\.nb-progress \{[^}]*width: 100%/.test(css));
+  /* the title bar said the word and the round, and so did the band six
+     millimetres below */
+  ok('and the title bar says only what page you are on',
+     /\$\("#nbTitle"\)\.innerHTML = `<span class="han">抄写<\/span> Writing practice`;/.test(appSrc));
+}
+
+console.log('\nthe stroke player is under the picker, not over the page');
+{
+  /* A modal is the wrong shape: you watch the animation *in order to* write
+     the character, and a dialog makes you dismiss the thing you are copying
+     before you can copy it. */
+  const appSrc = read('js/app.js'), css = read('css/app.css'), html = read('index.html');
+  ok('there is a docked place for it', /<div class="pick-stage" id="pickStage"><\/div>/.test(appSrc)
+     && /\.pick-stage \{/.test(css));
+  ok('it sits under the picker head, above the search',
+     /id="pickStage"[\s\S]{0,120}?class="search pick-find"/.test(appSrc));
+  ok('and it is filled whenever the picker renders', /\n  renderPickStage\(\);/.test(appSrc));
+  ok('nothing opens it as a dialog', !/id="strokeOrder"/.test(html) && !/showStrokeOrder/.test(appSrc));
+  /* Again / Step (with a counter) / Show */
+  ok('it can replay from the start', /id="psPlay"/.test(appSrc));
+  ok('and step one stroke at a time, for the ones that go past too fast',
+     /id="psStep"/.test(appSrc) && /animateStroke\(at\+\+\)/.test(appSrc));
+  ok('with a stroke counter', /id="psAt"/.test(appSrc) && /`\$\{at\}\/\$\{n\}`/.test(appSrc));
+  ok('and show the whole character', /id="psShow"/.test(appSrc));
+  ok('a character with no data says so rather than drawing nothing',
+     /if \(!drawable\(c\)\) \{[\s\S]{0,260}?pick-stage-empty/.test(appSrc));
+  ok('and with nothing picked it says what it is for',
+     /Pick a character below and its stroke order plays here/.test(appSrc));
+}
+
+console.log('\nsmaller fixes, in the same pass');
+{
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+
+  /* `closest` is an Element method, and an event target is not always one: a
+     click dispatched on `document` has `document` as its target, which threw
+     and took the rest of the handler chain down with it. */
+  const tips = appSrc.slice(appSrc.indexOf('function initTips'), appSrc.indexOf('/* ---------- flashcards'));
+  ok('the tooltip listeners guard their target',
+     /e\.target instanceof Element \? e\.target\.closest/.test(tips));
+  ok('and none of them calls closest on a raw target any more',
+     !/const g = e\.target\.closest/.test(tips) && !/if \(e\.target\.closest/.test(tips));
+
+  /* the face is a card; it needs no caption */
+  ok('a flashcard face carries no hint', !/class="hint">Tap to flip/.test(appSrc));
+  ok('and the stylesheet has stopped styling one', !/\.card-face \.hint \{/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('the buttons name the arrow keys that already worked',
+     /<span class="fk">←<\/span> Back/.test(appSrc) && /Next <span class="fk">→<\/span>/.test(appSrc));
+  ok('and still say Done on the last card', /last \? "Done" :/.test(appSrc));
+
+  /* the deck used to sample its own contents, so its face was whichever word
+     came first — it read as a card about that word */
+  ok('the vocabulary deck says 生字 rather than one of its own cards',
+     /combos\.length \? "生字" : ""/.test(appSrc));
+  ok('and two characters are sized to fit a face drawn for one',
+     /\.dash \.decks \.deck-cards \.dc1\.dc-word \{ font-size/.test(css));
+}
+
+console.log('\na page that looks wrong beside its siblings is overriding something');
+{
+  /* Each of these was reported as "this one page looks wrong", and each turned
+     out to be a page opting out of a convention the other tabs follow. The fix
+     is never the page — it is the opt-out. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  /* the rule, not the comment that explains why it is gone */
+  const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  /* .wp-wrap { max-width: 78rem } pinned the Exercise book at every width,
+     overriding the 34 / 62 / 74rem .wrap steps through: measured 1248px
+     against 1184 for every other tab. Deleted, not tuned. */
+  ok('the Exercise book uses the same wrap as every other tab',
+     !/\.wp-wrap \{/.test(cssNoComments) && !/class=\x22wrap wp-wrap\x22/.test(appSrc));
+  ok('and .wrap still steps through its three widths',
+     (css.match(/\.wrap \{ max-width: 34rem|\.wrap \{ max-width: 62rem|\.wrap \{ max-width: 74rem/g) || []).length === 3);
+  /* it titled itself with an .eyebrow — 0.68rem uppercase — against the 1.6rem
+     display face the other tabs use, so Write read as a section inside some
+     larger page */
+  ok('and titles itself with a heading, not an eyebrow',
+     /<div class="wp-title">\s*<h1>/.test(appSrc));
+
+  /* A horizontally scrolling row is fine for five things and a trap for
+     eighteen: 1641px inside 1136, five chips off the right edge. */
+  ok('the stage filter is one control rather than thirteen chips',
+     /<select class="filt filt-sel/.test(appSrc) && /id="libStage"/.test(appSrc));
+  ok('the state filters stay as chips',
+     /const filters = \[\["all","All"\],\["due","Due"\],\["learning","Learning"\],\["strong","Strong"\],\["new","Not started"\]\];/.test(appSrc));
+  ok('and no stage is left out of it', /STAGES\.map\(st =>/.test(appSrc));
+  ok('the chip handler no longer catches the picker',
+     /\.filt\[data-f\]/.test(appSrc));
+  ok('and the picker wears the chip\'s clothes', /\.filt-sel \{/.test(css));
+}
+
+console.log('\nnames are capitalised, and the greeting uses the first one');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {capName,load,blank};')();
+  ok('each word is capitalised', a.capName('jennifer lo') === 'Jennifer Lo');
+  ok('and so is the part after a hyphen', a.capName('mary-jane') === 'Mary-Jane');
+  ok('and after an apostrophe, straight or curly',
+     a.capName("o'brien") === "O'Brien" && a.capName('o\u2019brien') === 'O\u2019Brien');
+  /* the rest of the word is left alone, or tidiness breaks real names */
+  ok('but the rest of the word is left exactly as typed',
+     a.capName('McRae') === 'McRae' && a.capName('van der Berg') === 'Van Der Berg',
+     a.capName('McRae') + ' / ' + a.capName('van der Berg'));
+  ok('whitespace is trimmed', a.capName('  jen  ') === 'Jen');
+  ok('and nothing at all is still nothing', a.capName('') === '' && a.capName(undefined) === '');
+
+  /* Applied on save AND on load: records written before this existed carry
+     whatever was typed, and the greeting says it back every morning. */
+  globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), { name: "jen o'brien" }));
+  ok('a name already in storage is repaired on load', a.load().name === "Jen O'Brien");
+
+  /* the headline is one line by design */
+  const appSrc = read('js/app.js');
+  ok('the greeting takes the first name only',
+     /state\.name\.split\(\/\\s\+\/\)\[0\]/.test(appSrc));
+  ok('and the name is capitalised where it is saved too', /capName\(\$\("#pfName"\)\.value\)/.test(appSrc));
+}
+
+console.log('\nToday is a dashboard, not a scroll');
+{
+  /* Everything on Today is a choice about what to do next, so a page you have
+     to scroll to see the choices hides half of them. Measured on a 1280x720
+     laptop before: 1808px of page against 629px below the bars. Layout cannot
+     be measured here, so this pins the structure; the numbers are in the
+     commit. */
+  const appSrc = read('js/app.js'), css = read('css/app.css'), html = read('index.html');
+  ok('Today is laid out as a dashboard', /<div class="dash">/.test(appSrc));
+  ok('the day\'s characters and the day\'s practice share an enclosure',
+     /<div class="dash-today">[\s\S]*?<div class="dash-col">\$\{hero\}[\s\S]*?<div class="dash-col">\$\{todoBlock\}/.test(appSrc));
+  ok('the side rail puts the word of the week above the flashcards',
+     /<div class="dash-col dash-side">\$\{wotw\}\$\{decks\}<\/div>/.test(appSrc));
+  ok('and Go deeper reads across the foot rather than eating a column',
+     /<div class="dash-wide">\$\{deeper\}/.test(appSrc));
+  ok('the columns are equal-height, so nothing hangs below the shortest',
+     /\.dash \{ grid-template-columns[^}]*align-items: stretch/.test(css)
+     && /\.dash-today > \.dash-col \{ height: 100%/.test(css));
+  ok('and a narrow screen keeps its ordinary stacked cards',
+     /\.dash \{ display: flex; flex-direction: column/.test(css));
+
+  /* the one block that grew without bound */
+  ok('the day\'s characters are a rail, not a wall', /<div class="learned-rail">/.test(appSrc));
+  ok('it scrolls in one row rather than wrapping',
+     /\.learned-strip \{[^}]*flex-wrap: nowrap[^}]*overflow-x: auto/s.test(css));
+  ok('with arrows once there are more than fit', /LT_VISIBLE/.test(appSrc)
+     && /class="lt-arrow"/.test(appSrc));
+  ok('and a See all that spans the whole enclosure',
+     /class="today-all"/.test(appSrc) && /\.dash-today \.today-all \{ grid-column: 1 \/ -1/.test(css));
+  ok('which is glance-state, not a saved preference',
+     /^let todayOpen = false;/m.test(appSrc) && !/state\.todayOpen/.test(appSrc));
+
+  /* the template it writes, not the comment above it explaining the change */
+  const tracker = appSrc.slice(appSrc.indexOf('$("#tracker").innerHTML'), appSrc.indexOf('function tallyMark'));
+  /* the tracker */
+  ok('the four-week tracker hangs off the streak chip',
+     /<div class="streak-pop">[\s\S]*?class="chip chip-streak[\s\S]*?id="tracker"/.test(html));
+  ok('and is no longer a bar of its own', !/<div class="tracker" id="tracker"><\/div>/.test(html));
+  ok('it sizes to its contents rather than cropping the row it exists to show',
+     /\.tracker \{[^}]*width: max-content/s.test(css));
+  ok('a second click closes it even with the pointer still on the chip',
+     /\.streak-pop\.shut \.tracker \{ opacity: 0/.test(css) && /classList\.toggle\("shut", !opening\)/.test(appSrc));
+  ok('and it spends its words on what the chip does not say',
+     /in a row/.test(tracker) && /best \$\{state\.streak\.best\}/.test(tracker) && !/🔥/.test(tracker));
+}
+
+console.log('\nthe day\'s block: the ring, the headline and the labels');
+{
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  /* Every other ring and tick in this app is left-aligned — the practice list,
+     Go deeper — and this one sat on the right on its own. */
+  ok('the progress ring leads the hero rather than trailing it',
+     /<div class="hero-top">\s*\$\{ring\}/.test(appSrc));
+  /* "You're clear for today, Jen." wrapped to two lines in a dashboard column */
+  ok('the headline is short enough for one line', /`All clear\$\{who\}\.`/.test(appSrc));
+  ok('and is held to one line at dashboard width',
+     /\.dash \.hero-title \{[^}]*white-space: nowrap/.test(css));
+
+  /* New and Due did not say what they meant */
+  ok('the queue pills say what they are', /To learn <b>/.test(appSrc) && /To review <b>/.test(appSrc)
+     && /Done <b>/.test(appSrc));
+  ok('and neither is called New or Due any more',
+     !/qpill new">New /.test(appSrc) && !/qpill due">Due /.test(appSrc));
+  ok('each explains whose decision it is',
+     /Your daily goal/.test(appSrc) && /schedule's decision, not yours/.test(appSrc));
+
+  /* the hero's slack is distributed, not pooled under the last block */
+  ok('the hero distributes its slack rather than pooling it',
+     /\.dash-today \.hero \{ justify-content: space-between/.test(css));
+  ok('and the practice list distributes its rows over the column',
+     /\.dash \.todo-list \{[^}]*grid-auto-rows: 1fr/.test(css));
+  ok('with room above the bar so it reads as a bar, not an underline',
+     /\.dash \.todo-block \.bar \{ margin-top/.test(css));
+}
+
+console.log('\nthe two blocks are an open notebook, not a page');
+{
+  /* The first pass put a ruled margin down the FAR LEFT of the enclosure,
+     which made the whole thing read as one page with two columns printed on
+     it. They are not two columns — they are two facing leaves, so the fold and
+     the binder holes belong in the GUTTER BETWEEN them. */
+  const css = read('css/app.css');
+  const fold = /\.dash-today > \.dash-col:nth-child\(2\)::before \{([^}]*)\}/.exec(css);
+  ok('the fold is drawn on the second leaf, not the enclosure', !!fold);
+  ok('and it sits in the gutter, to the LEFT of that leaf',
+     /left: calc\(-\.45rem - \.5px\)/.test(fold[1]), (fold[1] || '').trim().slice(0, 70));
+  const holes = /\.dash-today > \.dash-col:nth-child\(2\)::after \{([^}]*)\}/.exec(css);
+  ok('the binder holes are in the same gutter', !!holes && /left: calc\(-\.45rem - 4px\)/.test(holes[1]));
+  ok('and there are three of them, placed by proportion rather than a fixed offset',
+     (holes[1].match(/radial-gradient/g) || []).length === 3
+     && /50% 20%/.test(holes[1]) && /50% 50%/.test(holes[1]) && /50% 80%/.test(holes[1]));
+  ok('nothing fakes a second hole with a box-shadow', !/box-shadow: 0 11rem/.test(css));
+
+  /* squared paper, on a sheet rather than on the desk */
+  ok('both enclosures are squared paper',
+     /\.dash-today, \.dash-side \{[^}]*background-image:[\s\S]*?linear-gradient\(90deg/.test(css));
+  ok('and colourless but not transparent — the ground is the same sheet the cards use',
+     /\.dash-today, \.dash-side \{[^}]*background-color: var\(--sheet\)/.test(css));
+  ok('the cards give up their fill so the grid runs under them',
+     /\.dash-today > \.dash-col > \*, \.dash-side > \* \{[^}]*background: transparent/.test(css));
+  ok('but anything with a run of text in it keeps a ground, or the rules run through the prose',
+     /\.dash-today \.learned, \.dash-today \.todo-list[\s\S]{0,200}?background-color: var\(--sheet\)/.test(css));
+  ok('the side rail is an enclosure of its own, so its first card starts on the same line',
+     /\.dash-side > :first-child \{ margin-top: 0/.test(css));
+  ok('and the gutter is wide enough to put a fold in',
+     /\.dash-today \{ grid-template-columns[^}]*gap: \.9rem/.test(css));
+  ok('none of it exists below the breakpoint the enclosure does',
+     (css.match(/@media \(min-width: 1180px\)/g) || []).length >= 3);
+}
+
+console.log('\na section on paper needs a title, not a label');
+{
+  const css = read('css/app.css');
+  const tab = /\.dash-today \.eyebrow, \.dash-side \.eyebrow, \.dash-wide \.deeper-title \.eyebrow \{([^}]*)\}/.exec(css);
+  ok('the eyebrow becomes a stuck-on tab on the dashboard', !!tab);
+  /* inline-block alone is not enough: in .decks and .deeper-title the label is
+     a flex child and stretches to the full column */
+  ok('and is stopped from stretching to the full column',
+     /align-self: flex-start/.test(tab[1]), (tab[1] || '').trim().slice(0, 60));
+  ok('Go deeper\'s tab takes the other half of the pair, since its band is already sunken',
+     /\.dash-wide \.deeper-title \.eyebrow \{ background: var\(--sheet\)/.test(css));
+  ok('the Chinese gloss is part of the label now, not a whisper after it',
+     /\.dash-wide \.deeper-title \.eyebrow \.han-label \{ opacity: 1/.test(css));
+  /* every other eyebrow in the app is still on a plain card and still quiet */
+  ok('and every other eyebrow in the app is left alone',
+     /\.eyebrow \{\n  font-size: \.68rem/.test(css));
+}
+
+console.log('\nthe flashcard decks are one hue at three depths');
+{
+  /* Three decks in three unrelated hues said nothing. They are not unrelated:
+     today's characters are a handful, everything you know is more, and the
+     words those characters make is more again. */
+  const css = read('css/app.css');
+  const pct = re => +(re.exec(css) || [])[1];
+  const a = pct(/\.decks \.deck \{[^}]*background: color-mix\(in srgb, var\(--jade\) (\d+)%/s);
+  const b = pct(/\.decks \.deck-all \{[^}]*background: color-mix\(in srgb, var\(--jade\) (\d+)%/s);
+  const c = pct(/\.decks \.deck-words \{[^}]*background: color-mix\(in srgb, var\(--jade\) (\d+)%/s);
+  ok('all three decks are the same hue', !!(a && b && c));
+  ok('and the ramp deepens as the deck gets bigger', a < b && b < c, `${a} < ${b} < ${c}`);
+  ok('no deck is gold or vermilion any longer',
+     !/\.deck-words \{[^}]*var\(--seal-wash\)/s.test(css) && !/\.deck-all \{[^}]*var\(--jade-wash\)/s.test(css));
+  /* the ramp costs --ink-3 its legibility on the deepest rung: 2.5:1 light,
+     2.2:1 dark. Measured after the fix — light 6.98/6.24/5.54, dark
+     6.58/5.49/4.53 — every rung over 4.5:1. */
+  ok('the caption moved up a step to survive it',
+     /\.decks \.deck-text small \{ color: var\(--ink-2\)/.test(css));
+  ok('and the deepest rung eases off rather than going deeper still', c <= 24, String(c));
+  ok('the deepest card face is lifted off the ground it sits on',
+     /\.decks \.deck-words \.dc \{ background: var\(--sheet\)/.test(css));
+}
+
+console.log('\nno block borrows a class name that already means something');
+{
+  /* Day one looked padded out: three empty flashcard decks at 178px each
+     instead of 60. oneDeck() marked an empty deck ".empty" — and .empty is a
+     general-purpose empty-state panel in this stylesheet (text-align: center;
+     flex-direction: column; padding: 2.5rem 1rem). It read as a layout
+     problem and was not one.
+
+     This is the second class-name collision in this app; .menu-head was the
+     first. So: every class the markup asks for, checked against what the
+     stylesheet says it means. */
+  const appSrc = read('js/app.js'), sprintSrc = read('js/sprint.js'), css = read('css/app.css');
+  ok('an empty deck has a name of its own', /deck-bare/.test(appSrc) && /\.deck-bare \{/.test(css));
+  ok('and does not borrow the empty-state panel',
+     !/class="deck deck-\$\{tone\} \$\{deck\.length \? "" : "empty"\}/.test(appSrc));
+
+  /* .empty is still the panel it always was, and only panels use it */
+  ok('.empty is still a full empty-state panel', /\.empty \{[^}]*padding: 2\.5rem/.test(css));
+  /* as a whole token in the class list — learned-empty and wotw-empty are
+     their own names and are not this one */
+  const borrowers = [...(appSrc + sprintSrc).matchAll(/class="([^"]*)"/g)]
+    .map(m => m[1]).filter(c => c.split(/\s+/).includes('empty'));
+  ok('nothing uses it as a modifier on something else',
+     borrowers.every(c => c.trim() === 'empty'), borrowers.join(' | '));
+}
+
+console.log('\nthe teaching card fits the screen it teaches on');
+{
+  /* charCard() is six blocks in a 34rem column. Stacked, that measured 1313px
+     of reading inside a 592px window at 1280x720 — every one of the
+     characters overflowed, while ~700px of screen sat empty either side. You
+     met a new character by scrolling past it. Layout cannot be measured here,
+     so this pins the structure the measurement depends on; the numbers are in
+     the commit. */
+  const appSrc = read('js/app.js'), css = read('css/app.css');
+  ok('the card wraps its two parts', /<div class="cardx">/.test(appSrc));
+  ok('and its text blocks separately', /<div class="cardx-blocks">/.test(appSrc));
+  const card = appSrc.slice(appSrc.indexOf('function charCard'), appSrc.indexOf('function bindCard'));
+  ok('every block in the card is inside the text wrapper',
+     (card.match(/<div class="block sheet">/g) || []).length === 5,
+     (card.match(/<div class="block sheet">/g) || []).length + ' blocks');
+  ok('the wrappers are balanced',
+     (card.match(/<div /g) || []).length === (card.match(/<\/div>/g) || []).length,
+     (card.match(/<div /g) || []).length + ' open, ' + (card.match(/<\/div>/g) || []).length + ' close');
+
+  /* the intro's header is the character's own label, so it rides in the hero
+     column rather than as a band above the card — 66px of the difference */
+  ok('charCard takes a topper', /function charCard\(ch, \{ writerId, topper = "" \}\)/.test(appSrc));
+  ok('and the session intro passes one',
+     /charCard\(ch, \{ writerId: wid, topper \}\)/.test(appSrc));
+  ok('the intro no longer puts a band above the card',
+     !/body\.innerHTML = `\s*<div class="stack"[^`]*charCard/s.test(appSrc));
+
+  /* the wide-screen layout itself */
+  ok('a wide screen splits the card into character and text',
+     /@media \(min-width: 1000px\)[\s\S]*?\.cardx \{[\s\S]*?grid-template-columns: 17rem/.test(css));
+  ok('and balances the text into two columns, not a grid',
+     /\.cardx-blocks \{ display: block; columns: 2/.test(css));
+  ok('with each block kept whole',
+     /\.cardx-blocks > \.block \{ break-inside: avoid/.test(css));
+  ok('the gap is a margin, because column-gap is horizontal only',
+     /\.cardx-blocks > \.block \{[^}]*margin: 0 0 \.9rem/.test(css));
+  ok('the character stays put while you read about it',
+     /\.cardx > \.card-hero \{ position: sticky/.test(css));
+  ok('and the session column widens to hold it',
+     /\.ses-inner, \.ses-foot-inner \{ max-width: 64rem/.test(css));
+  /* narrow screens keep the single column — scrolling is right there */
+  ok('a narrow screen is left stacked',
+     /\.cardx \{ display: flex; flex-direction: column/.test(css));
+}
+
+console.log('\nsection headings are one convention, and hoverable');
+{
+  /* Two conventions used to coexist: sprint.js put Chinese first — 错字本
+     Mistake notebook — while Today put it last or left it out. The convention
+     is English first, Chinese second, because in a section heading the English
+     is the label and the Chinese is a gloss on it. That is deliberately the
+     opposite of the nav tabs and drill labels, where the Chinese *is* the
+     label and stays in front. */
+  const appSrc = read('js/app.js'), sprintSrc = read('js/sprint.js');
+  const both = appSrc + sprintSrc;
+  const eyebrows = [...both.matchAll(/<span class="eyebrow"[^>]*>([\s\S]*?)<\/span>\s*(?:<\/span>|<\/div>|`|\n)/g)]
+    .map(m => m[1]);
+  ok('there are section headings to check', eyebrows.length > 15, eyebrows.length + ' found');
+  /* no heading may open with Chinese, and none may carry a raw .han span */
+  const chineseFirst = eyebrows.filter(t => /^\s*(?:<span class="han">)?\s*[\u4e00-\u9fff]/.test(t));
+  ok('no heading leads with the Chinese', !chineseFirst.length, chineseFirst.join(' | '));
+  const rawHan = eyebrows.filter(t => /<span class="han">/.test(t));
+  ok('and none sets its Chinese by hand instead of through hanLabel()',
+     !rawHan.length, rawHan.join(' | '));
+  const glossed = eyebrows.filter(t => /hanLabel\(/.test(t));
+  ok(`nearly every heading carries a Chinese gloss (${glossed.length} of ${eyebrows.length})`,
+     glossed.length >= eyebrows.length - 1);
+
+  /* the point of hanLabel is that the characters are hoverable */
+  ok('hanLabel makes each character hoverable',
+     /const hanLabel = str =>[\s\S]*?data-ch="\$\{esc\(c\)\}"/.test(appSrc));
+  ok('and the stylesheet sets it quieter than the English it follows',
+     /\.eyebrow \.han-label \{[^}]*text-transform: none/.test(read('css/app.css')));
+  ok('with a cursor that says it can be looked up',
+     /\.eyebrow \.han-label \[data-ch\] \{ cursor: help/.test(read('css/app.css')));
+
+  /* every character used in a heading has to have something to say on hover */
+  const inHeadings = new Set();
+  for (const m of both.matchAll(/hanLabel\("([^"]+)"\)/g))
+    [...m[1]].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) inHeadings.add(c); });
+  ok('every heading character is a real character', inHeadings.size > 20, inHeadings.size + ' distinct');
+  const silent = [...inHeadings].filter(c => !api.CHAR_INDEX[c] && !api.EXTRA_GLOSS[c]);
+  ok('and every one of them has a gloss to show', !silent.length, silent.join(' '));
+}
+
+console.log('\nuntaught characters on screen still have something to say');
+{
+  /* The tooltip was built only from the curriculum, so anything printed
+     without being taught — menu dishes, example words, sentences, the word of
+     the week, the Chinese in the headings — had no tooltip at all. Hovering a
+     dish and being told nothing reads as broken rather than as out of scope. */
+  const EXTRA = api.EXTRA_GLOSS;
+  ok('there is a generated gloss table', EXTRA && Object.keys(EXTRA).length > 200,
+     EXTRA ? Object.keys(EXTRA).length + ' glosses' : 'missing');
+  ok('and it is generated, not hand-written',
+     /Generated by tools\/fetch-glosses\.mjs/.test(read('js/data.js')));
+  ok('nothing in it is already taught',
+     !Object.keys(EXTRA).some(c => api.CHAR_INDEX[c]),
+     Object.keys(EXTRA).filter(c => api.CHAR_INDEX[c]).join(' '));
+  ok('every entry has a reading and a sense',
+     Object.values(EXTRA).every(v => Array.isArray(v) && v[0] && v[1]));
+  ok('no gloss is longer than a tooltip line',
+     Object.values(EXTRA).every(v => v[1].length <= 56),
+     Object.entries(EXTRA).filter(([, v]) => v[1].length > 56).map(([c]) => c).join(' '));
+  ok('and none of them explains Chinese with Chinese',
+     !Object.values(EXTRA).some(v => /[\u4e00-\u9fff]/.test(v[1])),
+     Object.entries(EXTRA).filter(([, v]) => /[\u4e00-\u9fff]/.test(v[1])).map(([c]) => c).join(' '));
+
+  /* what the app actually prints without teaching it */
+  const printed = new Set();
+  const add = t => [...String(t || '')].forEach(c => { if (/[\u4e00-\u9fff]/.test(c)) printed.add(c); });
+  add(MENU.title); add(MENU.name);
+  MENU.sections.forEach(s => { add(s.head); s.items.forEach(i => { add(i[0]); if (i[4]) add(i[4][0]); }); });
+  (MENU.phrases || []).forEach(p => add(p[0]));
+  add(MENU.specials.head); MENU.specials.items.forEach(i => add(i[0])); add(MENU.specials.note[0]);
+  HQ.forEach(ch => { ch.words.forEach(w => add(w[0])); add(ch.sent[0]); });
+  Object.values(api.INTERESTS).forEach(c => c.words.forEach(w => add(w[0])));
+  api.FESTIVALS.forEach(f => f.words.forEach(w => add(w[0])));
+  const untaught = [...printed].filter(c => !CHAR_INDEX[c]);
+  const mute = untaught.filter(c => !EXTRA[c]);
+  ok(`${untaught.length} characters are printed without being taught`, untaught.length > 0);
+  ok('and every one of them can be hovered for an answer', !mute.length, mute.join(' '));
+
+  /* the code path that shows it */
+  const appSrc = read('js/app.js');
+  ok('gloss() consults the generated table', /EXTRA_GLOSS\[c\]/.test(appSrc));
+  ok('and the tooltip falls back to it instead of bailing out',
+     /if \(!ch\) \{[\s\S]{0,400}?Not in the curriculum/.test(appSrc));
+}
+
+console.log('\nthe display face draws an ordinary J');
+{
+  /* Fraunces draws a J that drops below the baseline and curls left, and the
+     one heading that addresses the learner by name — "Ready when you are,
+     Jen." — is display type, so it is exactly where it shows. Pinning the WONK
+     axis does nothing: Google Fonts serves an instanced face per weight and
+     the axis is not in the file, and the stylistic sets leave the J alone.
+     The only fix is a different family, so the family is what is pinned. */
+  const css = read('css/app.css'), html = read('index.html');
+  ok('the display family is Newsreader', /--f-display:\s*"Newsreader"/.test(css));
+  ok('and Fraunces is gone from the stylesheet and the page',
+     !/Fraunces/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')) && !/Fraunces/.test(html));
+  ok('the font request asks for the family the stylesheet names',
+     /family=Newsreader:opsz,wght@6\.\.72,500;6\.\.72,600;6\.\.72,700/.test(html));
+  ok('nothing tries to pin a variation axis that is not served',
+     !/font-variation-settings/.test(css));
+  /* the headline that made this visible */
+  ok('a headline still addresses the learner by name',
+     /Ready when you are\$\{who\}/.test(read('js/app.js')));
+}
+
+console.log('\nthe radical cards count the form they print');
+{
+  /* RADICALS[].strokes is prose beside a glyph, and the glyph is `form` — the
+     squeezed shape, not the dictionary key. 心 is four strokes and 忄 is
+     three; the card shows 忄, so "3 strokes" is the true statement and the
+     entry said 4. tools/audit-strokes.mjs found that by deriving every count
+     from Make Me a Hanzi; this pins the answers so the fix cannot quietly
+     come undone between audits.
+
+     23 of the 30 printed forms are characters in their own right and are
+     checked against the bundle directly. The other seven are left-edge forms
+     with no glyph entry anywhere — 亻 and 氵 are not characters — so their
+     counts are pinned here, each one derived by the audit from a character
+     built out of it (忄 from 忙, 氵 from 汉, and so on). Run
+     `node tools/audit-strokes.mjs` to re-derive them from upstream. */
+  const SQUEEZED = { "亻": 2, "氵": 3, "忄": 3, "扌": 3, "饣": 3, "刂": 2, "衤": 5 };
+  let bundle = null;
+  try { const w = {}; new Function('window', read('js/strokes.js'))(w); bundle = w.STROKE_DATA; } catch { /* not bundled */ }
+  const wrong = [], unchecked = [];
+  for (const [key, r] of Object.entries(api.RADICALS)) {
+    const form = r.form || key;
+    const n = bundle && bundle[form] ? bundle[form].strokes.length
+            : SQUEEZED[form] !== undefined ? SQUEEZED[form] : null;
+    if (n === null) { unchecked.push(key + ' ' + form); continue; }
+    if (n !== r.strokes) wrong.push(`${key} prints ${form}, says ${r.strokes}, is ${n}`);
+  }
+  ok(`every radical card states the stroke count of the form it prints (${Object.keys(api.RADICALS).length} cards)`,
+     !wrong.length, wrong.join('; '));
+  ok('and every printed form has something to check it against', !unchecked.length, unchecked.join(' '));
+  /* the audit is the thing that derives these from upstream — it has to exist */
+  const audit = read('tools/audit-strokes.mjs');
+  ok('the stroke audit covers all five passes',
+     ['coverage', 'simplified forms', 'stated stroke counts', 'structure', 'components']
+       .every(p => audit.includes(p)));
+}
+
 console.log('\nno drill shows a character you have not met');
 {
   /* The build-the-word drill filtered its target on CHAR_INDEX — is this in
@@ -351,26 +1445,46 @@ console.log('\nno drill shows a character you have not met');
      This can only be checked properly in the browser, where renderDrill lives.
      What is asserted here is the data condition it relies on: that every
      character has a word it can be drilled with, and soon. */
+  /* How long a character waits for a pairing it could actually be drilled
+     with — not whether it waits at all.
+
+     This used to ask a yes/no question, and count a single-character "word"
+     as an answer to it. That cannot tell a wait of one character from a wait
+     of sixteen, and a wait of one is not a problem in any sense: 你 and 好
+     cannot both be first, and whichever loses is ready in the same session.
+     Measuring the wait, over pairings that are genuinely two characters or
+     more, says the thing worth knowing — and it came out stricter rather than
+     looser.
+
+     Stage 1 is excluded from the tight bound because at that point almost
+     nothing has been taught and the question is meaningless — 目 waits 15 and
+     could not do otherwise — but it is still held to the outer one, so
+     nothing can be stranded there. */
   const cjk = t => [...String(t)].filter(c => /[\u4e00-\u9fff]/.test(c));
   const at = new Map(HQ.map((c, i) => [c.c, i]));
-  const waits = HQ.map((ch, i) => {
-    let best = Infinity;
-    for (const w of ch.words) {
-      const g = cjk(w[0]);
-      if (!g.every(x => at.has(x))) continue;
-      best = Math.min(best, Math.max(0, Math.max(...g.map(x => at.get(x))) - i));
-    }
-    return best;
-  });
-  ok('every character eventually has a word made only of taught characters',
-     waits.every(w => w !== Infinity),
-     HQ.filter((_, i) => waits[i] === Infinity).map(c => c.c).join(''));
-  const slow = HQ.filter((_, i) => waits[i] > 30);
-  ok('and none waits more than 30 characters for it', !slow.length,
-     slow.map((c, i) => c.c).join(''));
-  const now = waits.filter(w => w === 0).length;
-  ok('most have one the moment they are taught', now > HQ.length * 0.9,
-     now + ' of ' + HQ.length);
+  const waitFor = ch => {
+    const ready = ch.words
+      .filter(w => cjk(w[0]).length > 1 && cjk(w[0]).every(x => at.has(x)))
+      .map(w => Math.max(...cjk(w[0]).map(x => at.get(x))));
+    return ready.length ? Math.max(0, Math.min(...ready) - at.get(ch.c)) : Infinity;
+  };
+  const DAY = 5;                       /* one session's worth of new characters */
+  const all = HQ.map(waitFor);
+  ok('every character eventually gets a word made only of taught characters',
+     all.every(w => w < Infinity), HQ.filter((_, i) => all[i] === Infinity).map(c => c.c).join(' '));
+  const slow = HQ.filter((_, i) => all[i] > DAY * 14);
+  ok('and none waits more than a fortnight of sessions for it', !slow.length,
+     slow.map(c => c.c).join(' '));
+
+  const past = HQ.filter(ch => ch.stage > 1);
+  const waits = past.map(waitFor);
+  const within = waits.filter(w => w <= DAY).length;
+  ok('past the first stage, nearly all are drillable within a session',
+     within > past.length * 0.9, `${within} of ${past.length} wait ${DAY} characters or fewer`);
+  {
+    const worst = HQ.map((ch, i) => ({ c: ch.c, w: all[i] })).sort((a, b) => b.w - a.w).slice(0, 3);
+    console.log(`    longest waits: ${worst.map(x => `${x.c} ${x.w}`).join(', ')}`);
+  }
   /* a word is only useful as a drill if it actually contains its character */
   const off = HQ.filter(ch => ch.words.some(w => !w[0].includes(ch.c)));
   ok('every word listed under a character contains it', !off.length,
@@ -614,6 +1728,183 @@ console.log('\ntiers gate the library');
      fresh.unlockedCeiling() === Math.min(fresh.TIERS[1].to, fresh.HQ.length));
 }
 
+console.log("\nthe Library's stage chips reach every stage");
+{
+  /* The chips are "s" + the stage number, and the filter used to read that
+     number as libFilter[1] behind a `length === 2` guard. With thirteen
+     stages, s10 to s13 failed the guard, the clause never ran, and four chips
+     lit up while showing the whole library. */
+  const appjs = read('js/app.js');
+  ok('the single-digit guard is gone', !/libFilter\.length === 2/.test(appjs));
+  const lit = (appjs.match(/\/\^s\(\\d\+\)\$\//) || [])[0];
+  ok('the stage key is matched by digits, not by length', !!lit, lit || 'not found');
+  const re = new RegExp('^s(\\d+)$');
+
+  /* the chip keys the page actually builds, checked against the curriculum */
+  const keys = STAGES.map(st => 's' + st.n);
+  const parsed = keys.map(k => (re.exec(k) || [])[1]);
+  ok('every stage chip parses', parsed.every((n, i) => +n === STAGES[i].n),
+     keys.filter((k, i) => +parsed[i] !== STAGES[i].n).join(' ') || 'all');
+  ok('including the double-digit ones', STAGES.some(st => st.n >= 10) && +re.exec('s13')[1] === 13);
+  /* and each one picks out its own stage rather than the whole library */
+  const picked = STAGES.map(st => HQ.filter(ch => ch.stage === +re.exec('s' + st.n)[1]).length);
+  ok('and selects only its own characters', picked.every((n, i) => n > 0 && n < HQ.length),
+     picked.join(' '));
+  ok('the stages between them account for the whole library',
+     picked.reduce((a, b) => a + b, 0) === HQ.length, picked.reduce((a, b) => a + b, 0) + ' of ' + HQ.length);
+  /* "strong" also begins with s, and must not be read as a stage */
+  ok('a filter that merely starts with s is not a stage', !re.test('strong'));
+}
+
+console.log('\nthe tally stays in its corner');
+{
+  /* tallyRow(n, max) draws complete 正 up to `max` and then collapses to one
+     mark and a multiplier. The default of 6 was chosen for a page that could
+     scroll, and in a fixed corner it fails at *particular* counts rather than
+     large ones: 50 reps came out as 正 × 10 and fitted, while 31 drew seven
+     glyphs — measured at 209px against 117px for the capped row. */
+  const appjs = read('js/app.js');
+  const src = appjs.slice(appjs.indexOf('function tallyRow'));
+  const body = src.slice(0, src.indexOf('\n}\n') + 3);
+  const glyphs = new Function('tallyMark', body + '\nreturn tallyRow;')(n => '<m' + n + '>');
+  const count = (n, max) => ((glyphs(n, max).match(/<m\d>/g) || []).length);
+
+  ok('the Go deeper corner asks for a cap', /tallyRow\(exToday, 3\)/.test(appjs));
+  /* the counts that used to draw a seventh glyph, and the ones that never did */
+  const swept = [15, 16, 20, 26, 31, 34, 50, 120, 400];
+  ok('no count draws more than four glyphs at the corner\'s cap',
+     swept.every(n => count(n, 3) <= 4),
+     swept.map(n => n + ':' + count(n, 3)).join(' '));
+  ok('and 31 in particular is three marks and a multiplier, not seven marks',
+     count(31, 3) === 1 && /× 6 \+ 1/.test(glyphs(31, 3)), glyphs(31, 3));
+  ok('the uncapped default is what it used to be, for pages that can scroll',
+     count(31) === 7);
+  ok('a corner that fits is left as it is', count(15, 3) === 3 && count(5, 3) === 1);
+  ok('and no reps at all still says so', /no reps yet today/.test(glyphs(0, 3)));
+  /* CSS side: the corner is bounded and a mark never wraps onto a second line */
+  const css = read('css/app.css');
+  ok('the corner has a width it cannot exceed', /\.deeper-count \{[^}]*max-width:/.test(css));
+  ok('and the row of marks never wraps', /\.tally-row \{[^}]*flex-wrap: nowrap/.test(css));
+}
+
+console.log('\nevery speakable button has something listening');
+{
+  /* `data-speak` was on the menu's five "Say it out loud" phrases from the
+     start and nothing anywhere ever listened for it — a row of buttons that
+     did nothing at all. app.js needs a browser, so this reads the source: the
+     attribute and its reader have to travel together. */
+  const appjs = read('js/app.js');
+  const emitted = (appjs.match(/data-speak=/g) || []).length;
+  ok('the markup still marks phrases as speakable', emitted > 0, emitted + ' emitted');
+  ok('and a listener reads dataset.speak', /\bdataset\.speak\b/.test(appjs));
+  ok('it is a delegated listener, so markup rendered later is covered',
+     /document\.addEventListener\("click"[\s\S]{0,200}?closest\("\[data-speak\]"\)/.test(appjs));
+  ok('it speaks even with audio off, because the click is the request',
+     /sayPhrase\(text, true\)/.test(appjs));
+  ok('and init wires it up', /^\s*initSpeakables\(\);/m.test(appjs));
+  ok('a click that makes no sound still reads as a click',
+     /classList\.add\("said"\)/.test(appjs) && /\.phrase\.said/.test(read('css/app.css')));
+}
+
+console.log('\nspace moves you on; it does not answer for you');
+{
+  /* app.js needs a browser, so this reads the source. #skipW was in the
+     space-bar target list, which on a writing drill — the one that comes
+     straight after meeting a character — meant two taps of space gave up on
+     the quiz without a stroke being written: the first dismissed the card, the
+     second hit "Show me the strokes". */
+  const appjs = read('js/app.js');
+  const adv = appjs.match(/const go2 = [^;]+;/g) || [];
+  ok('the session has one space-bar target list', adv.length === 1, adv.length + ' found');
+  ok('and the writing skip is not on it', !/#skipW/.test(adv[0] || '#skipW'), adv[0]);
+  ok('it still advances the cards that are meant to advance',
+     ['#cont', '#gotIt', '#fin', '#again'].every(id => (adv[0] || '').includes(id)), adv[0]);
+  /* a held key must not run ahead into whatever renders next */
+  ok('and space is swallowed while a drill is still open',
+     /else if \(session\.queue\[session\.idx\]\?\.t === "drill"\) e\.preventDefault\(\);/.test(appjs));
+  /* skipping is still available — on its own key, where it is a decision */
+  ok('S is still how you ask for the strokes',
+     (appjs.match(/=== "s"\) \{ e\.preventDefault\(\); \(\$\("#skipW"\) \|\| \$\("#againW"\)\)\?\.click\(\); \}/g) || []).length === 2);
+}
+
+console.log('\nstudying ahead: today only');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {state,load,blank,save,today,dayKey,studyAhead,aheadToday,dayGoal,newLeftToday,goalMet,nextNew,introduce,tally,remainingNew};')();
+  /* load() REASSIGNS the module-level `state`, so the object handed back in
+     the harness snapshot goes stale the moment it is called. Always read the
+     record load() returns, never `a.state`. */
+  const reset = (over = {}) => {
+    globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), over));
+    return a.load();
+  };
+
+  let st = reset();
+  const base = st.goalNew;
+  ok('the day starts on the standing goal', a.dayGoal() === base);
+  a.studyAhead(5);
+  ok('asking for more deals more today', a.dayGoal() === base + 5);
+  ok('but the setting is untouched', st.goalNew === base);
+  a.studyAhead(5);
+  ok('and twice is still the setting', st.goalNew === base && a.dayGoal() === base + 10);
+
+  /* tomorrow: the same record, read on a different day */
+  const tomorrow = new Date(a.dayKey() + 'T12:00:00');
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const k2 = a.dayKey(tomorrow);
+  ok('the extra belongs to the day it was asked for', !(st.days[k2] && st.days[k2].ahead));
+
+  /* a finished day stays finished */
+  st = reset();
+  a.nextNew(st.goalNew).forEach(c => { a.introduce(c); a.tally('new'); });
+  const was = a.goalMet();
+  a.studyAhead(5);
+  ok('a day that was done is still done after asking for more', was && a.goalMet() === was);
+
+  /* ---- the runaway ----
+
+     The second half of the same bug, and the half that survives fixing the
+     setting. nextNew(n) returns the next n characters you have NEVER seen, so
+     it cannot see what today already taught you: dealing nextNew(dayGoal()) on
+     a finished day of five handed out ten more. Click, finish, click, finish,
+     and the day went 5 -> 15 -> 30 -> 50 while the hero counted down a
+     different number from the one the session dealt. */
+  st = reset();
+  const round = () => {
+    const owed = a.newLeftToday();
+    a.nextNew(owed).forEach(c => { a.introduce(c); a.tally('new'); });
+    return owed;
+  };
+  const first = round();
+  ok('the first session deals the standing goal', first === base, 'dealt ' + first);
+  ok('and the day is then clear', a.newLeftToday() === 0);
+
+  const dealt = [];
+  for (let i = 0; i < 4; i++) { a.studyAhead(5); dealt.push(round()); }
+  ok('every study-ahead round deals exactly five', dealt.every(n => n === 5), dealt.join(','));
+  ok('so four rounds taught 5 + 20, not 5 -> 15 -> 30 -> 50',
+     st.days[a.dayKey()].new === base + 20, 'learned ' + st.days[a.dayKey()].new);
+  ok('and the setting never moved through any of it', st.goalNew === base);
+}
+
+console.log('\nthe setting repairs itself');
+{
+  const a = new Function(
+    read('js/data.js') + '\n' + read('js/srs.js') + '\n' +
+    'return {load,blank,GOAL_MIN,GOAL_MAX};')();
+  const stored = goalNew => {
+    globalThis.localStorage._d['hanzi-quest-v1'] = JSON.stringify(Object.assign(a.blank(), { goalNew }));
+    return a.load().goalNew;
+  };
+  /* what a record left by the old `goalNew += 5` actually looks like */
+  ok('a goalNew the stepper cannot produce goes back to the default',
+     stored(60) === a.blank().goalNew, 'got ' + stored(60));
+  ok('but a number someone could have chosen is left alone', stored(12) === 12);
+  ok('and neither is zero a setting', stored(0) === a.blank().goalNew);
+  ok('the stepper range is the one the repair uses', a.GOAL_MIN === 1 && a.GOAL_MAX === 30);
+}
+
 console.log('\nstreak safety');
 api.setState ? 0 : 0;
 ok('days studied counts every active day', typeof api.daysStudied() === 'number' && api.daysStudied() >= 1);
@@ -623,6 +1914,7 @@ console.log('\nreset leaves nothing behind');
    anything the record grew afterwards survived a "reset everything". */
 api.nextNew(3).forEach(api.introduce);
 api.state.menuPick = { d: api.dayKey(), c: api.MENU_CHARS[0], done: false };
+api.state.menuTaught = [api.MENU_CHARS[1]];
 api.state.lastBackup = 1;
 api.state.somethingAddedLater = 'still here';
 api.save();
@@ -631,6 +1923,7 @@ const fresh = api.resetProgress();
 ok('characters are gone', Object.keys(fresh.chars).length === 0);
 ok('days are gone', Object.keys(fresh.days).length === 0);
 ok('the streak is gone', fresh.streak.cur === 0 && fresh.streak.last === null);
+ok("the side quest's own book is gone too", !fresh.menuTaught.length && !fresh.menuPick);
 ok('settings are back to their defaults', fresh.goalNew === api.blank().goalNew);
 const strays = Object.keys(fresh).filter(k => !(k in api.blank()));
 ok('no key outlives the reset', !strays.length, strays.join(' '));
@@ -753,6 +2046,67 @@ console.log('\nsprint: the record behind the sheets');
   ok('and a brutal one does not', fresh.sprintGrade('r', 100, 60).zh === '狂');
   ok('the clock formats as minutes and seconds', fresh.fmtClock(95000) === '1:35');
 
+  /* ---- every button goes somewhere ----
+
+     Cantonese Quest's Menu had a "Learn 個" button calling openMenuLesson(), a
+     name that appeared exactly once in the whole repository: at the call site.
+     The click threw a ReferenceError and the button did nothing, and nothing
+     caught it — smoke can load srs.js and data.js because they are DOM-free,
+     but app.js is not.
+
+     A general "is every called name declared" scan was tried there and
+     abandoned: it read prose inside string literals as calls (o:"A person (人)
+     with..." is person(); CSS var(--seal) is var()) and cried wolf 132 times.
+     Scoped to handler bodies — which is where a dead name actually hides — it
+     is exact and has no false-positive surface.
+
+     The whole handler body, not just its first call. The first version
+     matched one call per handler, which is fine for `onclick = () => foo()`
+     and blind to everything after the first line of a braced body; the
+     function it was meant to catch was called on line three. */
+  const OPEN = /(?:\.onclick\s*=|addEventListener\(\s*["'][a-z]+["']\s*,)\s*(?:async\s*)?(?:\(\s*[\w$,\s]*\)|[\w$]+)?\s*=>\s*/g;
+  const DIRECT = /\.onclick\s*=\s*([A-Za-z_$][\w$]*)\s*;/g;
+  /* `el.onclick = null` CLEARS a handler rather than naming one, and so do
+     the other literals. Reading them as called names is the checker crying
+     wolf, which is how a checker gets ignored. */
+  const CLEARS = new Set(['null', 'undefined', 'false', 'true']);
+  const called = new Set();
+  for (const m of appSrc.matchAll(DIRECT)) if (!CLEARS.has(m[1])) called.add(m[1]);
+  for (const m of appSrc.matchAll(OPEN)) {
+    let i = m.index + m[0].length;
+    let body;
+    if (appSrc[i] === "{") {
+      /* walk to the matching brace so the whole body is covered */
+      let depth = 0, j = i;
+      for (; j < appSrc.length; j++) {
+        if (appSrc[j] === "{") depth++;
+        else if (appSrc[j] === "}") { depth--; if (!depth) break; }
+      }
+      body = appSrc.slice(i, j + 1);
+    } else {
+      body = appSrc.slice(i, appSrc.indexOf("\n", i) + 1 || undefined);
+    }
+    for (const c of body.matchAll(/(^|[^\w$.])([A-Za-z_$][\w$]*)\s*\(/g)) called.add(c[2]);
+  }
+  /* `if` and friends open a handler body and are not calls; the rest the
+     browser supplies. */
+  const NOT_A_CALL = new Set(['if', 'for', 'while', 'switch', 'return', 'typeof', 'await', 'catch',
+                              'function', 'else', 'do', 'new', 'delete', 'void', 'in', 'of', 'try', 'throw',
+                              'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'confirm',
+                              'alert', 'fetch', 'requestAnimationFrame', 'Promise', 'Object', 'Array',
+                              'Math', 'JSON', 'Set', 'Map', 'Date', 'Number', 'String', 'Boolean', 'Error',
+                              'RegExp', 'KeyboardEvent', 'CustomEvent', 'Event', 'IntersectionObserver',
+                              'getComputedStyle', 'addEventListener', 'removeEventListener', 'scrollTo',
+                              'SpeechSynthesisUtterance', 'matchMedia', 'structuredClone', 'queueMicrotask']);
+  /* A name declared in any of the four counts: app.js is loaded last and
+     shares the global scope with data.js, srs.js and sprint.js. */
+  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js');
+  const isDeclared = n => new RegExp(
+    `(?:const|let|var|function)\\s+${n.replace(/\$/g, '\\$')}(?![\\w$])`).test(declaredIn);
+  const dead = [...called].filter(n => !NOT_A_CALL.has(n) && !isDeclared(n));
+  ok(`every handler in app.js calls something that exists (${called.size} checked)`,
+     !dead.length, dead.join(' '));
+
   /* the cross-file contract, both ways */
   const needsFromApp = ['startRepair', 'REPAIR_SIZE', 'esc', 'bare', 'searchable', 'optionSet',
                         'say', 'stopPhrase', 'toneMark', 'clipFor', 'clipCount', 'openChar',
@@ -775,6 +2129,342 @@ console.log('\nsprint: the record behind the sheets');
   ok('and gives it a tab in both navs', (read('index.html').match(/data-nav="sprint"/g) || []).length === 2);
   ok('the mistake notebook has somewhere to send you',
      /function startRepair/.test(appSrc) && /REPAIR_MODE/.test(appSrc));
+}
+
+console.log('\nthe menu has a tab of its own');
+{
+  const appSrc = read('js/app.js'), html = read('index.html'), css = read('css/app.css');
+
+  ok('app.js renders the menu tab', /RENDER = \{[^}]*menu: renderQuest/.test(appSrc));
+  ok('index.html gives it a view', /id="viewMenu"/.test(html));
+  ok('and a tab in both navs', (html.match(/data-nav="menu"/g) || []).length === 2);
+  ok('the overlay it replaced is gone', !/openQuest/.test(appSrc),
+     'two renderings of one page, and the readable one was the one you had to go and find');
+  /* The quest is rendered once, on its own tab. It had a block on the Today
+     dashboard, then a one-line pointer where the block had been; both were
+     the menu turning up on a page about the day's five characters. */
+  ok('the dashboard does not render the quest at all',
+     !/sq-peek/.test(appSrc) && (appSrc.match(/class="sheet sq"/g) || []).length === 1);
+
+  /* The phrases belong on this page: six characters appear in them and
+     nowhere on the card, so this row is the only place they are legible. */
+  const quest = appSrc.slice(appSrc.indexOf('function renderQuest()'),
+                             appSrc.indexOf('$("#learnMenu")?.addEventListener'));
+  ok('renderQuest renders the phrase list', /MENU\.phrases\.map/.test(quest) && /class="phrase-list"/.test(quest));
+  ok('and the day\u2019s character is highlighted in them', /glyphs\(ph\[0\], target\)/.test(quest));
+  ok('the menu card is on the page at full size', /renderMenuCard\(target, true\)/.test(quest));
+  ok('and the legend says what the inks mean', /class="menu-legend"/.test(quest));
+
+  /* Every character the quest reaches has to be legible somewhere on the
+     page, or the page is asking for something it does not show. */
+  const shown = new Set([...print3, ...spoken]);
+  ok('every character the quest counts is printed or spoken on this page',
+     MENU_CHARS.every(c => shown.has(c)),
+     MENU_CHARS.filter(c => !shown.has(c)).join(' '));
+
+  /* The lesson is the card and no drill — a drill would grade it, and
+     grading is the schedule. */
+  ok('teachOne teaches one character', /function teachOne\(c, opts = \{\}\)/.test(appSrc));
+  ok('and the menu lesson is the card with no drill',
+     /session\.queue = menu\s*\n\s*\? \[\{ t: "intro", c, menu \}\]/.test(appSrc));
+  ok('the intro records it in the quest\u2019s book', /if \(item\.menu\) menuLearn\(item\.c\);/.test(appSrc));
+  ok('and not in the library', /else if \(!isKnown\(item\.c\)\) \{ introduce/.test(appSrc));
+  /* Finishing one used to tick off "Learn today's characters" — a task about
+     the day's five, completed from a different tab. */
+  ok('a menu lesson ticks nothing off', /if \(session\.menu\) \{ \/\* the side quest keeps its own books \*\//.test(appSrc));
+  ok('and clears no task either', /if \(session\.menu \|\| task\.copy \|\| didToday\(task\.id\)\) return;/.test(appSrc));
+  ok('every session start declares the flag',
+     (appSrc.match(/session\.menu = /g) || []).length === (appSrc.match(/session\.questAtStart = /g) || []).length,
+     'a stale menu flag would suppress a real session\u2019s bookkeeping');
+
+  /* the page's own classes are drawn */
+  ['ink-read', 'ink-bar', 'menu-say', 'sq-learn', 'menu-intro'].forEach(c =>
+    ok(`.${c} is styled`, new RegExp('\\.' + c + '\\b').test(css)));
+}
+
+/* ============================================================
+   The phone, and the promise that it costs the desktop nothing
+
+   The deal made when the viewport tag went in was that every rule written for
+   a phone would live inside a max-width or a pointer query, so a desktop
+   window could not see any of it. That is a promise about the shape of a file,
+   which is exactly the kind of promise a check can keep.
+   ============================================================ */
+console.log('\nthe phone layer stays on the phone');
+{
+  const html = read('index.html');
+  const css = read('css/app.css');
+
+  /* Without this tag a phone lays out at 980px and every max-width block below
+     is dead. It is the one line the whole phone layer rests on. */
+  const vp = html.match(/<meta name="viewport" content="([^"]*)">/);
+  ok('index.html declares a viewport', !!vp);
+  ok('  at the device width', !!vp && /width=device-width/.test(vp[1]));
+  ok('  with the safe area covered', !!vp && /viewport-fit=cover/.test(vp[1]),
+     'env(safe-area-inset-*) stays 0 without viewport-fit=cover');
+
+  const MARK = '   On a phone\n   ============================================================';
+  const at = css.indexOf(MARK);
+  ok('css/app.css has a phone layer, marked', at >= 0);
+
+  if (at >= 0) {
+    /* Everything past the marker, with comments and the contents of each block
+       removed, should be nothing but @media openers. Brace counting is enough
+       here: this file has no strings containing braces. */
+    /* The marker sits inside a comment, so start past the end of it — from
+       here on the file is ordinary CSS and the comment stripper can work. */
+    const tailCss = css.slice(css.indexOf('*/', at) + 2);
+    const noComments = tailCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    const top = [];                    /* every selector at nesting depth 0 */
+    let depth = 0, buf = '';
+    for (const ch of noComments) {
+      if (ch === '{') { if (depth === 0) top.push(buf.trim()); depth++; buf = ''; }
+      else if (ch === '}') { depth--; buf = ''; }
+      else if (depth === 0) buf += ch;
+    }
+    const bare = top.filter(sel => !/^@media\b/.test(sel));
+    ok('every block in it is a media query', bare.length === 0,
+       bare.length ? `bare rule(s): ${bare.slice(0, 3).join(' / ')}` : '');
+
+    /* A media query can still be a desktop rule. These are the only two ways
+       to address a phone without addressing a desktop window as well. */
+    const reaches = top.filter(sel => /^@media\b/.test(sel))
+      .filter(sel => !/max-width|pointer\s*:\s*coarse|hover\s*:\s*none/.test(sel));
+    ok('and every one of them is narrow-only or touch-only', reaches.length === 0,
+       reaches.length ? reaches.slice(0, 3).join(' / ') : '');
+  }
+
+  /* The bottom bar is gone, so nothing should still be styling it or drawing
+     it. A rule left behind for a deleted element is invisible until someone
+     reuses the class name. */
+  ok('the phone bottom bar is gone from the markup', !/<nav class="nav"/.test(html));
+  ok('  and from the stylesheet', !/^\.nav[\s.{]/m.test(css.replace(/\.nav-sep/g, '')));
+
+  /* Every section needs a way in at both widths: a tab in the desktop row and
+     a row in the phone sheet. */
+  const tabs = [...html.matchAll(/data-nav="(\w+)"/g)].map(m => m[1]);
+  const inTop = new Set(tabs.slice(0, tabs.length / 2));
+  const secs = ['today', 'menu', 'sprint', 'write', 'library', 'radicals', 'record'];
+  ok(`all ${secs.length} sections are in the desktop row`, secs.every(v => inTop.has(v)));
+  ok('and all of them are in the phone sheet', secs.every(v =>
+    new RegExp(`drawer-nav[\\s\\S]*data-nav="${v}"`).test(html)));
+  ok('the burger opens and shuts it', /burgerBtn/.test(read('js/app.js'))
+     && /function openDrawer/.test(read('js/app.js')) && /function closeDrawer/.test(read('js/app.js')));
+  ok('and picking a tab shuts it', /closeDrawer\(\);\s*\n\s*window\.scrollTo/.test(read('js/app.js')));
+}
+
+
+console.log('\nwhat a finger does, and what it is spared');
+{
+  const app = read('js/app.js');
+  const css = read('css/app.css');
+
+  /* Four across or two-up is a setting with three answers, and only one of
+     them asks the window. If the width query ever came back the setting would
+     stop working at one end without failing anywhere. */
+  ok('the answer layout is a stored setting', api.blank().optCols === 'auto');
+  ok('  resolved in one place', /function optColsEffective/.test(app) && /function applyOptCols/.test(app));
+  ok('  and written where the stylesheet reads it',
+     /dataset\.optCols\s*=\s*optColsEffective\(\)/.test(app) && /\[data-opt-cols="row"\]/.test(css));
+  ok('  the width only decides on auto',
+     /pick === "auto" \? \(optColsMQ\.matches/.test(app));
+  ok('  and it is offered as three choices, not two',
+     ['auto', 'row', 'grid'].every(v => app.includes(`["${v}", "`)));
+  ok('  no width query still owns the option grid',
+     !/@media \(min-width: 820px\)[\s\S]{0,120}\.opts\.grid2/.test(css),
+     'the 820px rule would overrule the setting below it');
+
+  /* Trackpad writing wants a trackpad. Android reports requestPointerLock and
+     then has nothing to lock, so the capability test alone put a dead button
+     on every phone. */
+  ok('the trackpad asks for a fine pointer', /pointer: fine/.test(app));
+  ok('  and padStart refuses without one',
+     /function padStart\([\s\S]{0,400}?!padSupported\(\)[\s\S]{0,80}?return false/.test(app),
+     'T on a keyboard still calls in, and a tablet has both');
+  const padButtons = [...app.matchAll(/id="(padW|nbPad|wpPad)"/g)].length;
+  const padGated = [...app.matchAll(/padSupported\(\) \? `<button[^`]*id="(padW|nbPad|wpPad)"/g)].length;
+  ok(`  and all ${padButtons} trackpad buttons are behind it`, padButtons > 0 && padGated === padButtons,
+     `${padGated} of ${padButtons} gated`);
+
+  /* The card's three gestures. The tap must not also flip, or a phone would
+     turn the card over every time it was asked to say it. */
+  ok('the flashcard takes tap, hold and swipe',
+     ['flashTouchDown', 'flashTouchMove', 'flashTouchUp', 'flashTouchReset'].every(f =>
+       new RegExp(`function ${f}`).test(app)));
+  ok('  only on a coarse pointer', /flashTouchy = \(\) => matchMedia\("\(pointer: coarse\)"\)/.test(app));
+  ok('  and a tap there does not also flip the card',
+     /if \(flashTouchy\(\)\) return;/.test(app));
+  ok('  a cancelled hold puts the card back', /pointercancel[\s\S]{0,140}flashFlip\(false\)/.test(app));
+  ok('  and leaving the deck clears the gesture', /function flashKeysReset[\s\S]{0,200}flashTouchReset\(\)/.test(app));
+  /* Both lines must answer the SAME question, or a device that says
+     hover: none and pointer: fine (or the reverse) shows both, or neither. */
+  ok('  both hint lines exist, and only one shows at a time',
+     /class="flash-keys"/.test(read('index.html')) && /class="flash-taps"/.test(read('index.html'))
+     && /@media \(pointer: coarse\) \{ \.flash-keys \{ display: none/.test(css)
+     && /@media \(pointer: coarse\)[\s\S]{0,400}?\.flash-taps \{ display: block/.test(css));
+
+  /* .opt-n is the drill's numbering and also the inline keycap used in prose.
+     Hiding it wholesale on touch left "reload with  held, or ." in Settings. */
+  ok('the answer numbering hides on touch without taking prose keycaps with it',
+     /@media \(hover: none\) \{ \.opts \.opt-n, \.sp-opts \.opt-n, \.key-hint/.test(css));
+}
+
+
+console.log('\nthe square and the writer are the same square');
+{
+  const app = read('js/app.js');
+  const css = read('css/app.css');
+
+  /* hanzi-writer emits width/height attributes and no viewBox, so its SVG
+     cannot scale after it is built. A writer built to a different number than
+     its 田字格 sits in the corner and puts every stroke you draw about 40% off
+     the guide lines — and nothing errors, so it reads as bad handwriting. */
+  ok('the writer measures the square it is mounted in', /function writerPx/.test(app)
+     && /width: px, height: px/.test(app));
+  const carried = [...app.matchAll(/makeWriter\([^)]*\{[^}]*\bwidth:\s*\d/g)];
+  ok('  and no call site carries its own copy of a CSS size', carried.length === 0,
+     carried.length ? carried[0][0].slice(0, 60) : '');
+
+  /* A viewport unit here is correct when the square is built and wrong the
+     first time the phone is turned sideways, because the writer inside it
+     cannot follow. */
+  const boxes = [/\.writer-box \{ width: ([^;]+);/, /\.nb-sq \{ position: relative; width: ([^;]+);/];
+  boxes.forEach(re => {
+    const m = css.match(re);
+    ok(`  ${m ? m[1].trim() : '?'} is a fixed size`, !!m && /^\d+px$/.test(m[1].trim()));
+  });
+
+  /* Centring a scrolling flex column puts its first item above the scroll
+     origin the moment the content overflows, where nothing can reach it. */
+  ['.nb-stage', '.place-body'].forEach(sel => {
+    const blk = css.slice(css.indexOf(sel + ' {'));
+    ok(`${sel} falls back to the top when it overflows`,
+       /safe center/.test(blk.slice(0, blk.indexOf('}'))));
+  });
+}
+
+
+/* ============================================================
+   Two devices, one record
+
+   The merge is the only part of cross-device sync that can lose somebody's
+   work, and it loses it silently — a morning on the phone simply isn't there
+   any more. So it is exercised here against made-up records rather than
+   trusted to read correctly.
+   ============================================================ */
+console.log('\ntwo devices, one record');
+{
+  const { mergeState, mergeChar, mergeDay, mergeSprint, blank } = api;
+
+  const ch = (o = {}) => Object.assign({
+    lvl: 0, due: '2026-01-01', seen: 0, right: 0, wrong: 0,
+    skills: { r: 0, p: 0, c: 0, w: 0 }, shown: { r: 0, p: 0, c: 0, w: 0 },
+    first: '2026-01-01', last: '2026-01-01'
+  }, o);
+
+  /* the counters only ever go up, so the union of two counts is the true count */
+  {
+    const a = ch({ seen: 5, right: 4, wrong: 1, skills: { r: 3, p: 0, c: 1, w: 0 }, last: '2026-01-05' });
+    const b = ch({ seen: 3, right: 3, wrong: 0, skills: { r: 1, p: 2, c: 0, w: 0 }, last: '2026-01-03' });
+    const m = mergeChar(a, b);
+    ok('a character keeps the higher of every count', m.seen === 5 && m.right === 4 && m.wrong === 1);
+    ok('  and the best of each skill', m.skills.r === 3 && m.skills.p === 2 && m.skills.c === 1);
+  }
+
+  /* lvl and due are a place in a queue, not a score — maxing them would invent
+     a schedule that neither device ever had */
+  {
+    const a = ch({ lvl: 4, due: '2026-03-01', last: '2026-01-02' });
+    const b = ch({ lvl: 1, due: '2026-01-06', last: '2026-01-05' });
+    const m = mergeChar(a, b);
+    ok('the schedule comes whole from the later sighting', m.lvl === 1 && m.due === '2026-01-06');
+    ok('  and the first time it was ever seen is the earlier one', m.first === '2026-01-01');
+    ok('  and the last is the later one', m.last === '2026-01-05');
+  }
+
+  /* the case the whole merge exists for */
+  {
+    const morning = Object.assign(blank(), {
+      updated: 1000,
+      chars: { 一: ch({ seen: 4, right: 4, last: '2026-01-05' }), 二: ch({ seen: 2, last: '2026-01-05' }) },
+      days: { '2026-01-05': { new: 2, rev: 9, revC: { 一: true } } },
+      streak: { cur: 3, best: 7, last: '2026-01-05' },
+      hailed: [50]
+    });
+    const afternoon = Object.assign(blank(), {
+      updated: 2000,
+      chars: { 一: ch({ seen: 1, last: '2026-01-04' }), 三: ch({ seen: 6, last: '2026-01-05' }) },
+      days: { '2026-01-05': { new: 1, rev: 4, revC: { 三: true } }, '2026-01-04': { new: 5, rev: 0 } },
+      streak: { cur: 1, best: 2, last: '2026-01-05' },
+      hailed: [50, 100],
+      goalNew: 9
+    });
+    const m = mergeState(morning, afternoon);
+
+    ok('no character studied on either device is lost',
+       ['一', '二', '三'].every(c => m.chars[c]), Object.keys(m.chars).join(''));
+    ok('  and a character on both keeps the bigger count', m.chars['一'].seen === 4);
+    ok('a day counted on both keeps the bigger tally',
+       m.days['2026-01-05'].rev === 9 && m.days['2026-01-05'].new === 2);
+    ok('  and the characters revised are the union of both',
+       !!m.days['2026-01-05'].revC['一'] && !!m.days['2026-01-05'].revC['三']);
+    ok('  and a day only one device knew about survives', m.days['2026-01-04'].new === 5);
+    ok('a best streak cannot be undone by the other device not knowing', m.streak.best === 7);
+    ok('milestones already celebrated are never re-celebrated',
+       m.hailed.length === 2 && m.hailed[0] === 50 && m.hailed[1] === 100);
+    ok('a setting follows the clock, not the union', m.goalNew === 9);
+    ok('and merging is the same either way round',
+       JSON.stringify(mergeState(afternoon, morning)) === JSON.stringify(m));
+  }
+
+  /* the trivial cases, which are the ones that actually run on day one */
+  {
+    const fresh = blank();
+    ok('merging a blank record against a real one changes nothing real',
+       mergeState(fresh, fresh).chars && Object.keys(mergeState(fresh, fresh).chars).length === 0);
+    ok('  and a missing side is simply the other side', mergeState(null, fresh) === fresh);
+  }
+
+  /* sprint sheets are a list, and two devices produce two lists */
+  {
+    const run = (at, right) => ({ at, right, ms: 1000, n: 20, secs: 60, mode: 'l', on: '2026-01-05' });
+    const m = mergeSprint(
+      { runs: [run(3, 18), run(1, 10)], best: { 'l:20': run(3, 18) }, marks: {}, pick: {}, cleared: {} },
+      { runs: [run(2, 12), run(1, 10)], best: { 'l:20': run(2, 12) }, marks: {}, pick: {}, cleared: {} });
+    ok('finished sheets from both devices are kept, newest first',
+       m.runs.length === 3 && m.runs[0].at === 3 && m.runs[2].at === 1);
+    ok('  the same sheet is not counted twice', m.runs.filter(r => r.at === 1).length === 1);
+    ok('  and the better best wins', m.best['l:20'].right === 18);
+  }
+
+  /* the plumbing around it */
+  const srs = read('js/srs.js');
+  ok('a pull merges rather than overwrites', /mergeState\(state, remote\)/.test(srs));
+  ok('  and pushes back what the other device was missing',
+     /push unconditionally/.test(srs) && /pushRemote\(\);\s*\n\s*return changed;/.test(srs));
+}
+
+console.log('\nsigning in is optional, and off until it is configured');
+{
+  const syn = read('js/sync.js');
+  const html = read('index.html');
+  ok('js/sync.js is loaded, stamped, and after srs.js',
+     html.indexOf('js/sync.js') > html.indexOf('js/srs.js') && /js\/sync\.js\?v=/.test(html));
+  ok('with no project configured the feature does not exist',
+     /apiKey: ""/.test(syn) && /const syncConfigured = \(\) => !!SYNC_CONFIG\.apiKey/.test(syn)
+     && /syncConfigured\(\) \? `<div class="settings-row" id="syncRow"/.test(read('js/app.js')));
+  ok('  and nothing is fetched until it is', /if \(!syncConfigured\(\)\) return;/.test(syn));
+  ok('the SDK is pinned to an exact version', /firebase@\d+\.\d+\.\d+\//.test(syn));
+  ok('  and comes from the CDN the rest of the app uses',
+     syn.includes('https://cdn.jsdelivr.net/npm/firebase@'));
+  ok('a blocked popup falls back to a redirect rather than failing',
+     /auth\/popup-blocked/.test(syn) && /signInWithRedirect/.test(syn));
+  ok('the three setup failures each name their own fix',
+     ['auth/unauthorized-domain', 'auth/operation-not-allowed', 'permission-denied']
+       .every(c => syn.includes(c)));
+  ok('signing out lets go of the remote document',
+     /async function syncSignOut[\s\S]{0,320}dropRemote\(\)/.test(syn));
+  ok('the security rule is written down where it is needed', /allow read, write: if request\.auth/.test(syn));
 }
 
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');

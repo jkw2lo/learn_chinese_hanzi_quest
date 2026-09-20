@@ -1,54 +1,131 @@
 <title>Hanzi Quest</title>
+<!-- Without this a phone lays the page out at 980px and shrinks the result to
+     fit, so every max-width block in css/app.css below 860px was unreachable:
+     the bottom bar, the stacked dashboard and the two-up options had never
+     once run on a real phone. viewport-fit=cover because the CSS already asks
+     for env(safe-area-inset-bottom), which stays 0 without it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- One version, stamped onto every asset URL below.
      A browser that has cached js/app.js will keep serving it until something
      about the URL changes, which is why a push can be live and invisible at
      the same time. Bump with: node tools/version.mjs <next>  -->
-<script>const APP_VERSION = "1.7.1", APP_DATE = "2026-09-18";</script>
+<script>const APP_VERSION = "1.11.2", APP_DATE = "2026-09-20";</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/app.css?v=1.7.1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/app.css?v=1.11.2">
 
 <div class="app">
 
   <header class="topbar">
-    <div class="brand">
+    <!-- Seven tabs fit the bottom bar exactly, which is one tab away from not
+         fitting and is in any case seven labels asked to be legible at 375px.
+         They live behind this instead. The sheet it opens is anchored to the
+         bottom of the screen rather than under the button, because that is
+         where a thumb is on a phone held from the bottom. -->
+    <button class="icon-btn burger" id="burgerBtn" aria-label="Sections"
+            aria-expanded="false" aria-controls="drawer">
+      <span class="burger-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+    </button>
+    <!-- the wordmark reopens the two explanatory stages of the introduction:
+         "what was that about the parts" is a day-three question -->
+    <button class="brand" id="brandBtn" title="What this is, and how it goes">
       <span class="brand-seal" aria-hidden="true">汉</span>
       <span class="brand-name">Hanzi Quest</span>
-    </div>
+    </button>
     <nav class="top-nav" aria-label="Sections">
+      <!-- Four groups, divided: the daily loop, the two ways of practising,
+           the two references, and the record. A seven-tab row with no seams
+           reads as seven equal things; it is not. -->
       <button data-nav="today" class="on"><span class="nz">今天</span> Today</button>
+      <button data-nav="menu" class="grp-end"><span class="nz">菜单</span> Menu</button>
       <button data-nav="sprint"><span class="nz">速练</span> Sprint</button>
+      <button data-nav="write" class="grp-end"><span class="nz">练字</span> Write</button>
       <button data-nav="library"><span class="nz">字库</span> Library</button>
-      <button data-nav="write"><span class="nz">练字</span> Write</button>
-      <button data-nav="radicals"><span class="nz">部首</span> Radicals</button>
+      <button data-nav="radicals" class="grp-end"><span class="nz">部首</span> Radicals</button>
       <button data-nav="record"><span class="nz">记录</span> Record</button>
     </nav>
-    <span class="chip chip-streak cold streak-chip">🔥 0</span>
-    <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">💾</button>
-    <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">⚙</button>
-    <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">◐</button>
+    <!-- The four-week tracker used to be a bar of its own under the top bar,
+         saying 🔥 N beside a chip that already said 🔥 N. It lives behind this
+         chip now: hover it, focus it, or tap it. -->
+    <div class="streak-pop">
+      <button class="chip chip-streak cold streak-chip" aria-haspopup="true" aria-expanded="false">🔥 0</button>
+      <div class="tracker" id="tracker" role="note"></div>
+    </div>
+    <!-- Second, next to the streak, because the thing a lost reader reaches
+         for should sit where the eye already is — and still the quietest
+         glyph in the row: a guide you cannot escape is worse than none. -->
+    <!-- Drawn, not typed. A text glyph in a 30px box is centred as a line box,
+         and a line box reserves descender space the glyph never uses — so "?"
+         and "◐" sat visibly high inside their borders. An inline SVG has no
+         baseline to honour, so the grid centres the ink itself. -->
+    <button class="icon-btn help-btn" id="helpBtn" title="How this page works" aria-label="How this page works" hidden>
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M9.2 9.3a2.85 2.85 0 1 1 3.75 2.7c-.63.23-1.05.83-1.05 1.5v.6"/>
+        <path d="M12 17.3h.01"/>
+      </svg>
+    </button>
+    <!-- 💾 was a colour emoji sitting between two line icons, at whatever size
+         and baseline the platform's emoji font felt like. The same floppy,
+         drawn in the same stroke as its neighbours. -->
+    <button class="icon-btn save-btn" title="Save your progress to a file" aria-label="Save your progress to a file">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <path d="M17 21v-8H7v8"/>
+        <path d="M7 3v5h8"/>
+      </svg>
+    </button>
+    <!-- Not ⚙ (U+2699), which renders as thin monochrome text and all but
+         vanished beside its neighbours — and not ⚙️ either, whose emoji
+         presentation is a colour glyph sitting oddly on a pale bar between two
+         line icons. An inline SVG inherits currentColor and matches them. -->
+    <button class="icon-btn settings-btn" title="Settings" aria-label="Settings">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.1"/>
+        <path d="M19.4 14a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 18.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.54 14a1.7 1.7 0 0 0-1.56-1.03H2.9a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.56-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.5h.08A1.7 1.7 0 0 0 10 2.94V2.9a2 2 0 1 1 4 0V3a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08A1.7 1.7 0 0 0 21.06 10h.04a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.56 1.03z"/>
+      </svg>
+    </button>
+    <button class="icon-btn theme-btn" title="Switch between light and dark" aria-label="Switch theme">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
   </header>
-
-  <div class="tracker" id="tracker"></div>
 
   <main>
     <section class="view on" id="viewToday"></section>
+    <section class="view" id="viewMenu"></section>
     <section class="view" id="viewSprint"></section>
-    <section class="view" id="viewLibrary"></section>
     <section class="view" id="viewWrite"></section>
+    <section class="view" id="viewLibrary"></section>
     <section class="view" id="viewRadicals"></section>
     <section class="view" id="viewRecord"></section>
   </main>
+</div>
 
-  <nav class="nav" aria-label="Sections">
-    <button data-nav="today" class="on"><span class="nz">今天</span><span class="nl">Today</span></button>
-    <button data-nav="sprint"><span class="nz">速练</span><span class="nl">Sprint</span></button>
-    <button data-nav="library"><span class="nz">字库</span><span class="nl">Library</span></button>
-    <button data-nav="write"><span class="nz">练字</span><span class="nl">Write</span></button>
-    <button data-nav="radicals"><span class="nz">部首</span><span class="nl">Radicals</span></button>
-    <button data-nav="record"><span class="nz">记录</span><span class="nl">Record</span></button>
-  </nav>
+<!-- sections, on a phone: the same four groups the desktop row has, in one
+     bottom sheet. Each button carries data-nav, so go() lights it and the
+     single [data-nav] handler in app.js wires it without knowing it exists. -->
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Sections" hidden>
+  <div class="drawer-veil" id="drawerVeil"></div>
+  <div class="drawer-sheet">
+    <span class="drawer-grip" aria-hidden="true"></span>
+    <nav class="drawer-nav" aria-label="Sections">
+      <button data-nav="today" class="on"><span class="nz">今天</span><span class="nl">Today</span></button>
+      <button data-nav="menu"><span class="nz">菜单</span><span class="nl">Menu</span></button>
+      <span class="drawer-rule" role="separator"></span>
+      <button data-nav="sprint"><span class="nz">速练</span><span class="nl">Sprint</span></button>
+      <button data-nav="write"><span class="nz">练字</span><span class="nl">Write</span></button>
+      <span class="drawer-rule" role="separator"></span>
+      <button data-nav="library"><span class="nz">字库</span><span class="nl">Library</span></button>
+      <button data-nav="radicals"><span class="nz">部首</span><span class="nl">Radicals</span></button>
+      <span class="drawer-rule" role="separator"></span>
+      <button data-nav="record"><span class="nz">记录</span><span class="nl">Record</span></button>
+    </nav>
+  </div>
 </div>
 
 <!-- study session -->
@@ -102,10 +179,38 @@
       <button class="btn btn-ghost" id="flashPrev">Back</button>
       <button class="btn" id="flashNext">Next</button>
     </div>
+    <!-- The card used to carry "Tap to flip", which is a caption on a card.
+         What the keys do is the thing nobody could have guessed. -->
+    <p class="flash-keys"><kbd>space</kbd> hear it &nbsp;·&nbsp;
+      <kbd>space</kbd> <kbd>space</kbd> next card &nbsp;·&nbsp;
+      <kbd>hold space</kbd> peek at the back &nbsp;·&nbsp;
+      <kbd>←</kbd> <kbd>→</kbd> back and forward</p>
+    <!-- the same three things, for a thumb: only one of these two lines is
+         ever on screen, and which one is a question about the pointer -->
+    <p class="flash-taps">tap to hear it &nbsp;·&nbsp; hold to peek at the back &nbsp;·&nbsp; swipe on</p>
   </div>
 </div>
 
 <!-- celebration -->
+<!-- one guide per tab, explaining the page you are actually looking at -->
+<div class="coach" id="coach" role="dialog" aria-label="Guide" hidden>
+  <div class="coach-veil" id="coachVeil"></div>
+  <div class="coach-ring" id="coachRing" hidden></div>
+  <div class="coach-card" id="coachCard"></div>
+</div>
+
+<!-- the first run: four stages, and none of them a form -->
+<div class="intro" id="intro" role="dialog" aria-label="Introduction" hidden>
+  <div class="intro-veil"></div>
+  <div class="intro-card" id="introCard"></div>
+</div>
+
+<!-- a milestone: one card, over a dimmed page -->
+<div class="hail" id="hail" role="dialog" aria-label="Milestone" hidden>
+  <div class="hail-veil"></div>
+  <div class="hail-card" id="hailCard"></div>
+</div>
+
 <div class="cheer" id="cheer" aria-hidden="true">
   <div class="cheer-card">
     <span class="cheer-seal" id="cheerSeal"></span>
@@ -164,12 +269,15 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.1/dist/hanzi-writer.min.js"></script>
-<script src="js/data.js?v=1.7.1"></script>
-<script src="js/strokes.js?v=1.7.1"></script>
+<script src="js/data.js?v=1.11.2"></script>
+<script src="js/strokes.js?v=1.11.2"></script>
 <!-- js/audio.js is deliberately not here. It is 859 KB gzipped of base64 speech
      that nothing needs in the first second, and as a blocking script it held up
      every view behind it. app.js fetches it after the first render. -->
-<script src="js/srs.js?v=1.7.1"></script>
+<script src="js/srs.js?v=1.11.2"></script>
+<!-- after srs.js, which owns the record it syncs, and inert until a Firebase
+     project is configured at the top of the file -->
+<script src="js/sync.js?v=1.11.2"></script>
 <!-- before app.js: app.js builds its RENDER map at load and names renderSprint in it -->
-<script src="js/sprint.js?v=1.7.1"></script>
-<script src="js/app.js?v=1.7.1"></script>
+<script src="js/sprint.js?v=1.11.2"></script>
+<script src="js/app.js?v=1.11.2"></script>

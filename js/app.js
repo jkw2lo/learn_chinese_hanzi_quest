@@ -21,7 +21,28 @@ const RADICAL_GLOSS = {
   "酉":["yǒu","a wine jar; fermentation"], "艹":["cǎo","grass (compressed 艸)"],
   "犭":["quǎn","beast (compressed 犬)"], "八":["bā","eight; dividing"]
 };
-const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m] : (RADICAL_GLOSS[c] || ["", ""]);
+/* Three sources, in order of how much they know about the character: the
+   curriculum, the hand-written radical notes above, and the generated
+   reference glosses for everything else the app prints without teaching it —
+   menu dishes, example words, sentences, the word of the week, the Chinese in
+   the section headings. Before the third existed those characters had no
+   tooltip at all, and a character you can hover and be told nothing about
+   reads as broken rather than as out of scope. */
+const gloss = c => CHAR_INDEX[c] ? [CHAR_INDEX[c].p, CHAR_INDEX[c].m]
+  : (RADICAL_GLOSS[c] || (typeof EXTRA_GLOSS !== "undefined" && EXTRA_GLOSS[c]) || ["", ""]);
+
+/* A meaning in brackets is not a translation.
+
+   A handful of the meanings open with one — (measure: flat things),
+   (completed action marker), (question and pause marker). They are exactly
+   the characters with no English word behind them: the particles and the
+   measure words. A learner told "(measure: flat things)" is being asked about
+   my phrasing rather than about their Chinese.
+
+   So wherever a meaning like that has to stand in for the character on its
+   own — a drill option, a placement prompt — the reading rides along. zhāng
+   is the thing that identifies 张; the bracket only says what it is for. */
+const isJobGloss = m => /^\(/.test(String(m));
 
 /* ---------- tiny helpers ---------- */
 
@@ -31,6 +52,21 @@ const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;",
 /* shuffle lives in data.js — srs.js needs it as well */
 const pick = (arr, n) => shuffle([...arr]).slice(0, n);
 const one = arr => arr[(Math.random() * arr.length) | 0];
+
+/* ---------- Chinese in a section heading ----------
+
+   Section headings carry Chinese as well as English, and there is no reason
+   the characters in the interface itself should be the only ones on screen you
+   cannot look up — 加练 and 错字本 are exactly the kind of thing a learner
+   wants to hover. tools/fetch-glosses.mjs scans this file, so anything used
+   here has a gloss without anybody having to remember to add one.
+
+   English first, then the Chinese — the opposite of the drill labels and the
+   nav, which are Chinese-first because there the Chinese *is* the label. In a
+   section heading the English is what you read and the Chinese is a gloss on
+   it, so it follows rather than leads. */
+const hanLabel = str => `<span class="han han-label">${[...str].map(c =>
+  /[\u4e00-\u9fff]/.test(c) ? `<span data-ch="${esc(c)}">${esc(c)}</span>` : esc(c)).join("")}</span>`;
 
 /* Nobody types tone marks, so searches compare against bare letters. "shui"
    finds 水, and "lv" finds 绿 — the usual keyboard stand-in for ü. */
@@ -161,23 +197,36 @@ function playClip(text) {
   } catch { return false; }
 }
 
-let phraseTimer = null;
+let phraseTimer = null, phraseEnd = null, phraseActive = false;
 
 /* Only single characters have bundled clips, and the system voice can't be
    relied on here — so a word or sentence is read one character at a time from
    the clips. Not connected speech, but every character is actually spoken. */
+/* A chain cut short does not owe anyone the callback: otherwise skipping a
+   card would advance the next one early. */
 function stopPhrase() {
   clearTimeout(phraseTimer);
   phraseTimer = null;
+  phraseEnd = null;
   if (audioEl) audioEl.onended = null;
 }
 
-function sayPhrase(text, force) {
+/* Attach to a chain already in flight. settle() runs after the audio has
+   started — the drill speaks first and grades second — so it cannot pass a
+   callback in, and there is no length to know up front either: a line is one
+   clip per character and the clips load lazily. */
+function onPhraseEnd(fn) {
+  if (!phraseActive) return false;
+  phraseEnd = fn;
+  return true;
+}
+
+function sayPhrase(text, force, onDone) {
   if ((!state.audio && !force) || !text) return;
   const chars = [...text].filter(c => /[\u4e00-\u9fff]/.test(c));
   if (!chars.length) return;
   stopPhrase();
-  if (chars.length === 1) return say(chars[0], force);
+  if (chars.length === 1) { say(chars[0], force); if (onDone) onDone(); return; }
 
   /* One missing clip used to abandon the whole word to the system voice, which
      on a machine without a Chinese voice meant silence: 现金 said nothing
@@ -188,10 +237,18 @@ function sayPhrase(text, force) {
      keeps a bundle that has drifted from the data merely imperfect rather than
      mute. */
   lastSaid = text;
+  phraseActive = true;
+  phraseEnd = onDone || null;
   const a = ensureAudioEl();
   let i = 0;
+  const done = () => {
+    a.onended = null;
+    phraseActive = false;
+    const fn = phraseEnd; phraseEnd = null;
+    if (fn) fn();
+  };
   const step = () => {
-    if (i >= chars.length) { a.onended = null; return; }
+    if (i >= chars.length) { done(); return; }
     const c = chars[i++];
     if (!clipFor(c)) {           /* nothing recorded for this one — carry on */
       a.onended = null;
@@ -353,20 +410,60 @@ function inkColors() {
     jade: cs.getPropertyValue("--jade").trim() || "#3F7D63"
   };
 }
+/* The size of a writing square is decided in CSS and used in JS, and the two
+   have to agree to the pixel.
+
+   hanzi-writer emits an SVG with width and height attributes and no viewBox,
+   so it does not scale: built at 190 inside a 268px 田字格 it sits in the
+   top-left corner, and because it positions strokes from its own bounding
+   rect, everything you draw lands about 40% off the guide lines behind it.
+   Nothing errors — the square just quietly stops being the square.
+
+   Four call sites used to carry their own width and height, each one a copy of
+   a number in the stylesheet. They ask the square instead now, so there is one
+   place to change a size and the writer cannot be left behind. */
+function writerPx(mount) {
+  const sq = mount.closest(".tian");
+  /* a square that hasn't been laid out yet measures 0 — 190 is what every one
+     of these was before they were sized, so it is the safe floor */
+  return Math.round(sq ? sq.getBoundingClientRect().width : 0) || 190;
+}
 function makeWriter(mount, char, opts = {}) {
   if (!window.HanziWriter || !window.STROKE_DATA[char] || !mount) return null;
   const c = inkColors();
+  const px = writerPx(mount);
   return HanziWriter.create(mount, char, Object.assign({
-    width: 190, height: 190, padding: 8,
+    /* padding scaled from the old 8-in-190, so a bigger square keeps the
+       proportions the character was drawn to */
+    width: px, height: px, padding: Math.max(4, Math.round(px * 0.042)),
     strokeColor: c.stroke, outlineColor: c.outline, drawingColor: c.jade,
     showOutline: true, showCharacter: true,
     strokeAnimationSpeed: 1, delayBetweenStrokes: 180,
     charDataLoader: (ch, onComplete) => onComplete(window.STROKE_DATA[ch])
   }, opts));
 }
+/* Whether the stroke-by-stroke animation can be built for this character.
+   Everything else about it — reading it, saying it, setting it in type —
+   works either way. */
+const drawable = c => !!(window.STROKE_DATA && window.STROKE_DATA[c]);
+
+/* The 田字格, with the character in it.
+
+   hanzi-writer fills an empty mount, so a character it has no data for leaves
+   the box simply blank — a sound and a meaning attached to nothing, with no
+   error anywhere to say why. The font draws these perfectly well; it is only
+   the animation that needs the data. So when there is none the character is
+   set in type instead of being built, and the box says what it is rather than
+   showing nothing at all.
+
+   Every character in this curriculum has data today. This is a guard: the
+   failure mode is silent, and the fix costs nothing while the data is there. */
 function writerBox(char, id) {
-  return `<div class="writer-box"><div class="tian">${TIAN_SVG}
-    <div class="tian-slot"><div id="${id}"></div></div></div></div>`;
+  const inner = drawable(char)
+    ? `<div class="tian-slot"><div id="${id}"></div></div>`
+    : `<div class="tian-slot"><div id="${id}" class="tian-plain han"
+         title="No stroke-order data has been published for this character">${esc(char)}</div></div>`;
+  return `<div class="writer-box"><div class="tian">${TIAN_SVG}${inner}</div></div>`;
 }
 
 /* ============================================================
@@ -389,7 +486,14 @@ const PAD_SENSITIVITY = 0.55;   /* trackpad travel : ink travel */
 const pad = { active: false, svg: null, box: null, lockEl: null, dot: null, hint: null,
               x: 0, y: 0, ink: false, onEnd: null, onDraw: null, quiet: false };
 
-const padSupported = () => !!document.body.requestPointerLock && !!window.MouseEvent;
+/* Trackpad writing needs a trackpad. Pointer lock is the capability test, but
+   it is not enough on its own: Android reports requestPointerLock and then has
+   nothing to lock, so the button appeared on a phone and did nothing when
+   pressed. A coarse pointer is a finger, and a finger already draws on the
+   square directly — there is nothing for this mode to add. */
+const padSupported = () =>
+  !!document.body.requestPointerLock && !!window.MouseEvent
+  && matchMedia("(pointer: fine)").matches;
 
 /* Arm the trackpad on a writing box the learner didn't explicitly ask to arm.
 
@@ -642,7 +746,7 @@ const highlightWord = (word, char) =>
    The character card
    ============================================================ */
 
-function charCard(ch, { writerId }) {
+function charCard(ch, { writerId, topper = "" }) {
   const comps = ch.comp.length
     ? `<div class="block sheet">
         <div class="block-head"><span class="k">部件</span><span class="t">Built from</span></div>
@@ -654,8 +758,13 @@ function charCard(ch, { writerId }) {
         <span class="comp-plus">→</span><span class="comp"><em>${esc(ch.c)}</em></span></div>
       </div>` : "";
 
+  /* Two parts, wrapped, so a wide screen can put them side by side: the
+     character itself on the left and everything written about it on the
+     right. Stacked, this card is 1313px of reading in a 592px window. */
   return `
+  <div class="cardx">
   <div class="card-hero">
+    ${topper}
     ${writerBox(ch.c, writerId)}
     <div class="hero-meta">
       <div class="hero-pin">${esc(ch.p)} ${toneMark(ch.p)}</div>
@@ -664,11 +773,16 @@ function charCard(ch, { writerId }) {
     </div>
     <div class="tools">
       <button class="tool" data-act="say" data-text="${esc(ch.c)}"><span class="han">发音</span> Hear it</button>
+      ${drawable(ch.c) ? `
       <button class="tool" data-act="animate"><span class="han">笔顺</span> Stroke order</button>
-      <button class="tool" data-act="practise"><span class="han">默写</span> Try writing</button>
+      <button class="tool" data-act="practise"><span class="han">默写</span> Try writing</button>` : ""}
     </div>
+    ${drawable(ch.c) ? "" : `<p class="note no-strokes">No stroke-order data has been published for
+      <b class="han">${esc(ch.c)}</b>, so the app can't animate it or check your writing. You can read it
+      and say it as usual.</p>`}
   </div>
 
+  <div class="cardx-blocks">
   <div class="block sheet">
     <div class="block-head"><span class="k">字源</span><span class="t">Where it comes from</span></div>
     <p class="origin">${esc(ch.o)}</p>
@@ -699,6 +813,8 @@ function charCard(ch, { writerId }) {
       <div class="sen-pin">${esc(ch.sent[1])}</div>
       <div class="sen-en">${esc(ch.sent[2])}</div>
     </div>
+  </div>
+  </div>
   </div>`;
 }
 
@@ -756,7 +872,7 @@ function bindCard(root, ch, writerId) {
 
 const session = { queue: [], idx: 0, right: 0, wrong: 0, learned: 0, reviewed: 0,
                   combo: 0, bestCombo: 0, active: false, questAtStart: 0, practice: null, todo: null, got: {},
-                  qStart: 0, times: [], quick: 0, repair: null };
+                  qStart: 0, times: [], quick: 0, repair: null, menu: false };
 
 /* A question is "quick" if it lands while the bar still has some drain left.
    Running out costs nothing — the bar is there to add pace, not a penalty. */
@@ -810,7 +926,40 @@ function startPractice(mode) {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = mode;
+  session.todo = null;
+  session.repair = null;
+  session.active = true;
+  $("#session").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderStep();
+}
+
+/* ---------- one character, on its own ----------
+
+   The Menu tab's "Learn 菜" used to be a button on the dashboard with the
+   reading and the meaning printed beside it — tapping it was the lesson,
+   which was thin for the only teaching this quest does. It opens the real
+   card now, the same one the daily session shows for a new character.
+
+   With one difference: the menu's lesson is the card and NOTHING else. No
+   drill follows it, because a drill would grade it, and grading is the
+   schedule — which is exactly what this quest is being kept out of. */
+function teachOne(c, opts = {}) {
+  if (!CHAR_INDEX[c]) return;
+  const menu = !!opts.menu;
+  session.queue = menu
+    ? [{ t: "intro", c, menu }]
+    : [{ t: "intro", c }, { t: "drill", c, kind: "r", fresh: !isKnown(c) }];
+  session.idx = 0;
+  session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.combo = session.bestCombo = 0;
+  session.got = {};
+  session.times = []; session.quick = 0;
+  session.questAtStart = menuProgress().known;
+  session.menu = menu;
+  session.practice = null;
   session.todo = null;
   session.repair = null;
   session.active = true;
@@ -857,6 +1006,7 @@ function startRepair(chars) {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = null;
   session.todo = null;
   session.repair = cs;
@@ -868,7 +1018,9 @@ function startRepair(chars) {
 
 function buildSession() {
   const due = dueList();
-  const fresh = nextNew(state.goalNew);
+  /* what is still owed today — NOT dayGoal(), which is a target and counts
+     what today already taught, so a second session would deal it all again */
+  const fresh = nextNew(newLeftToday());
   const items = [];
   const reviews = due.map(c => ({ t: "drill", c, kind: drillKind(c) }));
   let r = 0;
@@ -885,6 +1037,7 @@ function buildSession() {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = null;
   session.todo = null;
   session.repair = null;
@@ -979,16 +1132,23 @@ function renderStep() {
     const wid = "w" + Math.random().toString(36).slice(2, 8);
     const st = STAGES.find(s => s.n === ch.stage);
     const onMenu = MENU_CHARS.includes(ch.c);
-    body.innerHTML = `
-      <div class="stack" style="gap:.3rem;align-items:center;text-align:center">
-        <span class="eyebrow">${isNew ? "New character" : "Revisiting"} · ${esc(st.icon)} ${esc(st.name)}</span>
+    /* This was a band across the full width above the card — 66px of header
+       for eleven words — and it is the character's own label anyway, so it
+       rides in the hero column with it. That one move is most of the
+       difference between "just overflows" and "comfortable" at 1280x720. */
+    const topper = `<div class="card-topper">
+        <span class="eyebrow">${isNew ? "New character" : "Revisiting"} · ${esc(st.icon)} ${esc(st.name)} ${hanLabel(st.zh)}</span>
         ${onMenu ? `<span class="chip" style="background:var(--seal-wash);color:var(--seal)">🍜 on the menu</span>` : ""}
-      </div>
-      ${charCard(ch, { writerId: wid })}`;
+      </div>`;
+    body.innerHTML = charCard(ch, { writerId: wid, topper });
     bindCard(body, ch, wid);
     foot.innerHTML = `<button class="btn btn-block" id="gotIt">Got it — keep going</button>`;
     $("#gotIt").onclick = () => {
-      if (!isKnown(item.c)) { introduce(item.c); tally("new"); session.learned++; }
+      /* A character met on the menu is recorded by the menu and nowhere else:
+         no review date, no day count, no place in today's rail. The
+         curriculum teaches it properly in its own time. */
+      if (item.menu) menuLearn(item.c);
+      else if (!isKnown(item.c)) { introduce(item.c); tally("new"); session.learned++; }
       next();
     };
     setTimeout(() => say(ch.c), 340);
@@ -1002,8 +1162,32 @@ function renderStep() {
    land, then move on by itself — but only when it was right; a miss is the
    one time you actually need to read what's on screen. */
 const AUTO_ADVANCE_MS = 1400;
+
+/* Read them in context plays the line back when you answer it, and the next
+   card's renderStep() calls stopPhrase() — so a flat 1400ms advance was what
+   silenced the audio. Timed in the app: 我可以问你一个问题吗？ is 4957ms of
+   clips, so 1400 cut it off after 2.8 characters of ten. The advance waits for
+   the line to finish instead, then leaves a shorter tail — not the full 1400,
+   because you have already had five seconds of sentence to take it in. */
+const PHRASE_TAIL_MS = 650;
+
 let advanceTimer = null;
-function clearAdvance() { clearTimeout(advanceTimer); advanceTimer = null; }
+/* Bumped on every clear, and checked by anything queued behind a sentence, so
+   an advance waiting on audio cannot fire after you have pressed Next
+   yourself. */
+let advanceGen = 0;
+function clearAdvance() { clearTimeout(advanceTimer); advanceTimer = null; advanceGen++; }
+
+/* Wait for a phrase in flight before starting the countdown; if nothing is
+   playing, this is the plain 1400ms it always was. */
+function armAdvance(fn, ms = AUTO_ADVANCE_MS) {
+  const gen = advanceGen;
+  const start = () => { if (gen === advanceGen) advanceTimer = setTimeout(fn, ms); };
+  if (!onPhraseEnd(() => {
+    if (gen !== advanceGen) return;
+    advanceTimer = setTimeout(fn, PHRASE_TAIL_MS);
+  })) start();
+}
 
 const next = () => { clearAdvance(); session.idx++; renderStep(); };
 
@@ -1186,7 +1370,38 @@ function renderDrill(item, ch, body, foot) {
   if (kind === "r") {
     prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
     correct = ch.m;
-    options = [ch.m, ...optionSet(ch.m, pool, x => x.m)].map(m => ({ v: m, html: esc(m) }));
+    const byMeaning = new Map(pool.map(x => [x.m, x]));
+    byMeaning.set(ch.m, ch);
+    /* A bracketed answer draws bracketed distractors, the way kind "c" draws
+       characters that share a component.
+
+       "(measure: flat things)" against "fresh", "cup" and "to return" is not
+       really a question about 张 — it is answerable by elimination without
+       knowing anything about measure words. Against 条, 件 and 位, with each
+       one's reading beside it, it asks the thing worth asking: which of these
+       is this one. Harder, and the only version that tests what the character
+       actually does. */
+    const kin = isJobGloss(ch.m) ? pool.filter(x => isJobGloss(x.m)) : pool;
+    let others = optionSet(ch.m, kin, x => x.m);
+    if (others.length < 3) {
+      others = [...others, ...optionSet(ch.m, pool.filter(x => !others.includes(x.m)),
+                                        x => x.m, 3 - others.length)];
+    }
+    /* The reading rides along, but ONLY when two or more of the four need it.
+
+       That condition is the whole point. Tagging a lone bracketed option would
+       hand the answer over: one option carrying a reading and three without is
+       a tell, and a learner would very quickly stop reading the options and
+       start looking for the pinyin. With two or more tagged there is nothing
+       to spot, and a single bracketed option among three plain ones was
+       always answerable anyway — it is the only one of its kind. */
+    const ms = [ch.m, ...others];
+    const say = ms.filter(isJobGloss).length >= 2;
+    options = ms.map(m => {
+      const o = byMeaning.get(m);
+      return { v: m, html: say && o && isJobGloss(m)
+        ? `${esc(m)} <span class="pin opt-say">${esc(o.p)}</span>` : esc(m) };
+    });
   } else if (kind === "p") {
     prompt = `<div class="drill-char han">${esc(ch.c)}</div>`;
     correct = ch.p;
@@ -1266,7 +1481,7 @@ function renderDrill(item, ch, body, foot) {
       if (b.dataset.v === correct) { b.classList.add("right"); b.insertAdjacentHTML("beforeend", `<span class="mk">✓</span>`); }
     });
     if (!ok) { btn.classList.remove("right"); btn.classList.add("wrong"); btn.querySelector(".mk")?.remove(); btn.insertAdjacentHTML("beforeend", `<span class="mk">✗</span>`); }
-    if (kind === "d") sayPhrase(spoken || ch.c);          /* the whole phrase shown */
+    if (kind === "d") { item.said = spoken || ch.c; sayPhrase(item.said); }  /* the whole phrase shown */
     else if (["p","r","l"].includes(kind)) say(ch.c);
     settle(item, ch, ok, foot);
   });
@@ -1326,16 +1541,25 @@ function settle(item, ch, ok, foot, extra, slips) {
     </div>
     <div class="split">
       ${ok || writing ? "" : `<button class="btn ${isLeech(ch.c) ? "btn-seal" : "btn-ghost"}" id="review">Study the card</button>`}
-      <button class="btn ${ok ? "btn-timed" : ""}" id="cont" style="--wait:${AUTO_ADVANCE_MS}ms">${ok ? "Next" : "Continue"}</button>
+      <button class="btn" id="cont" style="--wait:${AUTO_ADVANCE_MS}ms">${ok ? "Next" : "Continue"}</button>
     </div>`;
   /* listening again means you want to stay on this card */
   $("#replay")?.addEventListener("click", () => {
     clearAdvance();
     $("#cont")?.classList.remove("btn-timed");
-    say(ch.c, true);
+    /* what was read, not one character of it — the reading drill shows a whole
+       sentence and this used to answer it with the single character */
+    if (item.said) sayPhrase(item.said, true); else say(ch.c, true);
   });
   $("#cont").onclick = next;
-  if (ok) advanceTimer = setTimeout(next, AUTO_ADVANCE_MS);
+  /* The button's countdown is armed only for the part that is a countdown.
+     While the line is still playing it reads as a plain Next, which is true:
+     nothing is ticking, and pressing it still works. */
+  if (ok) {
+    const tick = () => $("#cont")?.classList.add("btn-timed");
+    if (phraseActive) onPhraseEnd(() => { tick(); armAdvance(next, PHRASE_TAIL_MS); });
+    else { tick(); armAdvance(next); }
+  }
   const rv = $("#review");
   if (rv) rv.onclick = () => { session.queue.splice(session.idx, 0, { t: "intro", c: ch.c }); renderStep(); };
   $("#cont").focus();
@@ -1343,6 +1567,8 @@ function settle(item, ch, ok, foot, extra, slips) {
 
 function renderDone() {
   startQuestionTimer(false);              /* nothing left to time */
+  /* after the grade has landed, not over the top of it */
+  maybeHail(700);
   const answered = session.right + session.wrong;
   const acc = answered ? Math.round((session.right / answered) * 100) : 100;
   const mark = acc >= 90 ? "甲" : acc >= 75 ? "乙" : "丙";
@@ -1352,13 +1578,18 @@ function renderDone() {
   const prac = session.practice ? PRACTICE[session.practice] : null;
   const fixing = session.repair;
   const cleared = fixing ? fixing.filter(c => rightRun(c) >= SPRINT_CLEAR) : [];
-  if (session.todo) markDone(session.todo);
+  /* A menu lesson ticks nothing off. Finishing one used to mark "Learn
+     today's characters" done — a task about the day's five, completed by
+     looking at a character from a different tab — which is the entanglement
+     this quest is being kept out of. */
+  if (session.menu) { /* the side quest keeps its own books */ }
+  else if (session.todo) markDone(session.todo);
   else if (!session.practice && !session.repair) markDone("learn");
   /* Doing the work counts wherever you did it: if every one of today's
      characters was answered correctly in a task's drill during this session,
      that task is done — even if you started it from Go deeper. */
   TODAY_TASKS.forEach(task => {
-    if (task.copy || didToday(task.id)) return;
+    if (session.menu || task.copy || didToday(task.id)) return;
     const pool = taskPool(task);
     if (!pool.length) return;
     if (pool.every(c => task.proves.some(k => session.got[k] && session.got[k].has(c)))) markDone(task.id);
@@ -1367,11 +1598,15 @@ function renderDone() {
 
   $("#sesInner").innerHTML = `
     <div class="done-wrap">
-      <div class="grade-seal">${mark}</div>
-      <span class="grade-note">${esc(gradeNote)} · ${acc}% correct</span>
+      ${session.menu ? `<div class="grade-seal">菜</div>
+      <span class="grade-note">One character, no drill</span>`
+      : `<div class="grade-seal">${mark}</div>
+      <span class="grade-note">${esc(gradeNote)} · ${acc}% correct</span>`}
       <div class="stack" style="gap:.3rem">
-        <h1>${fixing ? "Repair round done." : task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
-        <p class="muted" style="font-size:.9rem">${fixing
+        <h1>${session.menu ? "That one's on the menu." : fixing ? "Repair round done." : task ? esc(task.name) + " — done." : prac ? esc(prac.name) + " practice done." : "Today's page is filled."}</h1>
+        <p class="muted" style="font-size:.9rem">${session.menu
+          ? "Recorded by the menu and nowhere else — your reviews, your day's list and your goal are exactly where you left them."
+          : fixing
           ? (cleared.length
               ? `${cleared.length} of ${fixing.length} off the 错字本 — ${cleared.map(esc).join(" ")}.`
                 + (cleared.length < fixing.length ? ` The rest need ${SPRINT_CLEAR} right in a row.` : "")
@@ -1380,7 +1615,7 @@ function renderDone() {
           ? `${answered} rep${answered === 1 ? "" : "s"}. Your reviews are untouched — this was extra.`
           : `${liveStreak()} day${liveStreak() === 1 ? "" : "s"} in a row.`}</p>
       </div>
-      <div class="done-stats">
+      ${session.menu ? "" : `<div class="done-stats">
         ${prac || fixing ? `<div><b>${session.right}</b><small>right</small></div>
                  <div><b>${session.wrong}</b><small>missed</small></div>`
                : `<div><b>${session.learned}</b><small>learned</small></div>
@@ -1388,14 +1623,14 @@ function renderDone() {
         <div><b>${session.bestCombo}</b><small>best run</small></div>
         ${session.times.length ? `<div><b>${(session.times.reduce((a, b) => a + b, 0) / session.times.length / 1000).toFixed(1)}s</b><small>average</small></div>
         <div><b>${session.quick}</b><small><span class="han">快</span> under ${QUICK_MS / 1000}s</small></div>` : ""}
-      </div>
+      </div>`}
       ${fixing ? `<button class="btn btn-ghost" id="againFix">Take the next five</button>`
       : prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
       : `<div class="quest-bump">
-        <div class="lbl"><span>🍜 Read a Menu</span><span>${qp.known} / ${qp.total}</span></div>
-        <div class="bar ${qp.done ? "gold" : ""}"><i style="width:${(qp.pct * 100).toFixed(1)}%"></i></div>
-        <div class="lbl"><span>${gained > 0 ? `+${gained} from today` : "No menu characters today"}</span>
-          <span>${qp.done ? "Complete" : `${qp.total - qp.known} to go`}</span></div>
+        <div class="lbl"><span>🍜 Read a Menu</span><span>${Math.round(qp.pct * 100)}% legible</span></div>
+        ${menuBar(qp)}
+        <div class="lbl"><span>${gained > 0 ? `+${gained} character${gained === 1 ? "" : "s"} from today` : "No menu characters today"}</span>
+          <span>${qp.done ? "Complete" : `${qp.known} of ${qp.total} on the card`}</span></div>
       </div>`}
     </div>`;
   $("#again")?.addEventListener("click", () => startPractice(session.practice));
@@ -1411,8 +1646,82 @@ function renderDone() {
     : `<button class="btn btn-block" id="fin">Close</button>`;
   $("#fin").onclick = endSession;
   const or = $("#openReward");
-  if (or) or.onclick = () => { endSession(); openQuest("menu"); };
+  if (or) or.onclick = () => { endSession(); go("menu"); };
   $("#sesProg").style.width = "100%";
+}
+
+/* ============================================================
+   Milestones
+
+   The copy names what those characters actually bought, rather than saying
+   well done. "A hundred" means nothing on its own; "new characters now arrive
+   as parts you have already met" is the thing worth being pleased about.
+   ============================================================ */
+
+const HAIL = {
+  100: { zh: "一百", title: "A hundred",
+         note: "A hundred is where the writing system stops being a wall of shapes. New characters now arrive as parts you have already met, stuck together." },
+  200: { zh: "二百", title: "Two hundred",
+         note: "The foundation is behind you. Signs, prices, the shape of a sentence — you have the parts that everything else in the library is built from." },
+  300: { zh: "三百", title: "Three hundred",
+         note: "Messages, labels, the short text on a poster. Around here you start recognising characters in the wild before you remember learning them." },
+  400: { zh: "四百", title: "Four hundred",
+         note: "Past the halfway mark of the common list. Most of what arrives now is a part you know beside a part you know." },
+  500: { zh: "五百", title: "Five hundred",
+         note: "Enough to read without a dictionary at your elbow most of the time. The gaps are getting specific rather than constant." },
+  600: { zh: "六百", title: "Six hundred",
+         note: "The vocabulary of written prose — institutions, argument, analysis. This is the part that opens news and articles." },
+  700: { zh: "七百", title: "Seven hundred",
+         note: "Around nine characters in ten on an ordinary page. What is left is the tail, and the tail is short." },
+  763: { zh: "通读", title: "The whole library",
+         note: "Every character in Hanzi Quest. They are all in your reviews now, and the reviews are the part that keeps them." }
+};
+
+function openHail(m) {
+  const h = HAIL[m];
+  if (!h) return;
+  const rads = new Set();
+  knownChars().forEach(c => (CHAR_INDEX[c].comp || []).forEach(k => { if (RADICALS[k]) rads.add(k); }));
+  const tier = TIERS.filter(t => m >= t.to).pop();
+  $("#hailCard").innerHTML = `
+    <div class="hail-seal"><span class="han">${esc(h.zh)}</span></div>
+    <h2>${esc(h.title)}</h2>
+    <p>${esc(h.note)}</p>
+    <div class="hail-stats">
+      <div><b>${knownChars().length}</b><small>characters</small></div>
+      <div><b>${daysStudied()}</b><small>days studied</small></div>
+      <div><b>${rads.size}</b><small>radicals met</small></div>
+    </div>
+    ${tier ? `<div class="hail-tier">${tier.icon} <b>${esc(tier.name)}</b>
+      <span class="han">${esc(tier.zh)}</span> — ${esc(tier.blurb)}</div>` : ""}
+    <button class="btn btn-block" id="hailOk">${m === HQ.length ? "Close" : "Keep going"}</button>`;
+  $("#hail").hidden = false;
+  document.body.style.overflow = "hidden";
+  $("#hailOk").onclick = closeHail;
+  $("#hailOk").focus();
+}
+
+function closeHail() {
+  $("#hail").hidden = true;
+  document.body.style.overflow = "";
+}
+
+/* Placement can credit three hundred characters before the first session has
+   been sat. Those milestones are recorded as passed rather than celebrated:
+   the overlay is for work done, and congratulating someone for the test they
+   have just taken would cheapen the five they earn afterwards. */
+function hailSilently() {
+  const m = milestoneDue();
+  if (m !== null) markMilestone(m);
+}
+
+/* Called where the count can jump on the strength of actual work: the end of
+   a session. */
+function maybeHail(delay = 0) {
+  const m = milestoneDue();
+  if (m === null) return;
+  markMilestone(m);
+  setTimeout(() => openHail(m), delay);
 }
 
 /* ============================================================
@@ -1461,35 +1770,177 @@ function openChar(c) {
   if (ln) ln.onclick = () => { introduce(c); tally("new"); closeSheet(); };
 }
 
-function openQuest(id) {
-  const q = QUESTS.find(x => x.id === id);
-  if (!q || q.locked) return;
-  const p = menuProgress();
-  const pick = menuToday();
-  const target = pick.c && !isKnown(pick.c) ? pick.c : null;
+/* The bar answers "how much of this can I read", so it is drawn in ink — see
+   menuProgress(). `capped` marks a card the curriculum cannot finish: the tick
+   sits where the fill has to stop, and the line underneath says why, because a
+   bar that halts with no explanation reads as broken. This menu is taught
+   end to end, so nothing is drawn; the concept stays for the card that isn't. */
+function menuBar(p) {
+  return `<div class="bar ${p.done ? "gold" : ""}"><i style="width:${(p.pct * 100).toFixed(1)}%"></i>${
+    p.capped ? `<u class="cap" style="left:${(p.ceilingPct * 100).toFixed(1)}%"></u>` : ""}</div>`;
+}
 
-  openSheet(`🍜 Read a Menu <span class="dim" style="font-weight:400;font-size:.85rem">看菜单</span>`,
-    `<div class="wrap"><div class="section">
-      <div class="today-head">
-        <h1>${p.done ? "You can read this." : "The menu you're working towards."}</h1>
-        <p class="note">${p.done
-          ? "Every character here is one you've learned. Hover any of them for a reminder."
-          : `${p.known} of ${p.total} characters are yours so far. The rest are greyed out — hover any of them to see what you're missing.`}</p>
-      </div>
-      <div class="bar ${p.done ? "gold" : ""}"><i style="width:${(p.pct * 100).toFixed(1)}%"></i></div>
-      ${renderMenuCard(target, true)}
-      <div class="sheet block">
-        <div class="block-head"><span class="k">口语</span><span class="t">Say it out loud</span></div>
-        <div class="phrase-list">
-          ${MENU.phrases.map(ph => `<button class="phrase" data-speak="${esc(ph[0])}">
-            <span class="z">${glyphs(ph[0], target)}</span>
-            <span class="p">${esc(ph[1])}</span>
-            <span class="e">${esc(ph[2])}</span>
-          </button>`).join("")}
+/* The quest's own number, and only when it says something the one before it
+   didn't — "1 of 54, 1 of them learned here" is the same fact twice. */
+function menuOwnClause(p, own) {
+  if (!own) return "";
+  if (own === p.known) return own === 1 ? ", and you learned it right here" : ", every one learned right here";
+  return `, ${own} of them learned right here`;
+}
+
+/* One sentence, one number you can check by looking, one thing to do.
+
+   The number has to be the one in front of them. 54 is the whole card and it
+   stays the bar's denominator — a denominator that shrank and grew as levels
+   arrived would have the learner apparently losing ground on being promoted —
+   but nobody can count 54 against a menu printing 26 of them. So the level
+   line carries the countable pair. */
+function menuLevelLine(p) {
+  const t = menuTier(), top = t.n >= MENU_TIERS.length;
+  const head = `Level ${t.n} of ${MENU_TIERS.length} — ${esc(t.label.toLowerCase())}.`;
+  if (top) return `${head} This is a card you could be handed in Chengdu.`;
+  const left = p.wallTotal - p.wallKnown;
+  return `${head} That is ${p.wallTotal} of them, and you can read ${p.wallKnown}. `
+    + `Read the last ${left === 1 ? "one" : left} and level ${t.n + 1} arrives: `
+    + `<b>${esc(MENU_TIERS[t.n].label.toLowerCase())}</b>.`;
+}
+
+/* ---------- the Menu tab ----------
+
+   This lived in an overlay behind a "See the full menu" button on the Today
+   dashboard, with a squeezed summary of itself on the dashboard above it. That
+   is two renderings of one thing, and the one you could actually read was the
+   one you had to go and find. It is a page now: the quest's state, the card at
+   full size, and the phrases that teach the characters the card never prints,
+   all on the tab whose name is the thing it is about. */
+function renderQuest() {
+  const p = menuProgress();
+  const own = menuOwn();
+  const pick = menuToday();
+  const pch = pick.c ? CHAR_INDEX[pick.c] : null;
+  /* menuCanRead, not isKnown: the quest records what it teaches in its own
+     book, so asking the library whether today's character is done would always
+     say no and the page would offer to teach it again tomorrow. */
+  const learnedIt = pick.c ? menuCanRead(pick.c) : true;
+  const target = learnedIt ? null : pick.c;
+
+  const card = `<div class="sheet sq">
+    <div class="sq-top">
+      <span class="sq-icon">🍜</span>
+      <span class="sq-name"><b>Read a Menu</b><span class="zh">看菜单</span></span>
+      <span class="sq-frac" title="Characters printed on this menu, and how many of them you can read — from here or anywhere else in the app">${p.known}/${p.total}</span>
+    </div>
+    ${menuBar(p)}
+    <p class="note">${p.done
+      ? `Every one of the <b>${p.total}</b> characters printed on this menu is one you can read`
+        + `${own ? ` — ${own} of them learned right here` : ""}. `
+        + `Section heads, small print, specials board and all.`
+      : `<b>${p.known}</b> of the <b>${p.total}</b> characters printed on this menu${menuOwnClause(p, own)}. `
+        + `All of them are in the curriculum, so this card goes all the way to readable — `
+        + `the grey ones are ahead of you, not out of reach.`}<br>
+      <span class="sq-lvl">${menuLevelLine(p)}</span></p>
+
+    ${pch ? `<div class="sq-target ${learnedIt ? "done" : ""}">
+      <span class="sq-glyph">${esc(pch.c)}</span>
+      <span class="sq-info">
+        <span class="t">${learnedIt ? "Today's menu character — learned" : "Today's menu character"}</span>
+        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}`
+          : "One character a day, and it is printed on the menu as it stands — in red, below."}</span>
+        ${learnedIt
+          ? `<span class="p">Next one tomorrow. Nothing here touches your review queue.</span>`
+          : `<span class="p">${esc(pch.words[0][0])} · ${esc(pch.words[0][2])}</span>`}
+      </span>
+      ${!learnedIt ? `<button class="btn btn-seal sq-learn" id="learnMenu">Learn ${esc(pch.c)}</button>` : ""}
+    </div>` : `<div class="sq-target done">
+      <span class="sq-glyph">✓</span>
+      <span class="sq-info"><span class="t">You can read this menu</span>
+      <span class="m">Every character printed on it — all ${p.total}, specials board and small print
+        included${own ? `, ${own} of them learned right here` : ""}. Hover any of them for a reminder.</span></span>
+    </div>`}
+
+    ${(() => {
+      /* The one number you can check by looking up at a menu.
+
+         Counted in ink rather than in vocabulary: every character printed on
+         the card, repeats and all, because 面 in five dishes is five
+         characters of wall that light up when you learn it. The 54-character
+         pair above answers "how many of the list do I know"; this answers "how
+         much of this can I read", which is the question the quest is named
+         after, and it moves every session rather than only when a menu
+         character comes up.
+
+         The ceiling is drawn on the track rather than hidden. It sits at the
+         end here — this curriculum teaches all 54 — so `capped` is false and
+         no tick is drawn. On a card with dish names no curriculum this size
+         would teach, the fill would stop short, and a bar that quietly halts
+         reads as broken. */
+      const pct = Math.round(p.pct * 100), cap = Math.round(p.ceilingPct * 100);
+      return `<div class="ink-read">
+        <div class="ink-top">
+          <span class="ink-pct">${pct}<small>%</small></span>
+          <span class="ink-say"><b>of this menu is legible to you</b>
+            <small>${p.ink} of the ${p.inkTotal} characters printed on it — repeats and all, because
+              <span class="han">面</span> in five dishes is five characters of wall.</small></span>
         </div>
+        <div class="ink-bar" role="img" aria-label="${pct}% of the menu legible${p.capped ? `, out of a possible ${cap}%` : ""}">
+          <i style="width:${(p.pct * 100).toFixed(1)}%"></i>
+          ${p.capped ? `<b style="left:${(p.ceilingPct * 100).toFixed(1)}%"></b>` : ""}
+        </div>
+        <p class="ink-foot">${p.capped
+          ? `The mark at ${cap}% is where this stops: the other ${p.inkTotal - p.ceiling} characters
+             are dish names the curriculum never teaches.`
+          : `The bar runs to 100: every character printed on this card is one Hanzi Quest teaches,
+             so there is no part of this wall you are being kept from.`}</p>
+      </div>`;
+    })()}
+
+    <div class="menu-wrap full">${renderMenuCard(target, true)}</div>
+
+    <!-- The phrases belong on this tab, not in a drawer somewhere else. Six
+         characters — 这 少 给 服 务 员 — are in the quest's reach and printed
+         nowhere on the card; this row is the only place they appear, and the
+         day's character is highlighted here too when it turns up in one. -->
+    <div class="menu-say">
+      <div class="menu-say-head">
+        <span class="eyebrow">Say it out loud ${hanLabel("口语")}</span>
+        <span class="dim" style="font-size:.72rem">tap to hear</span>
       </div>
-      
-    </div></div>`);
+      <div class="phrase-list" style="--phrase-n:${Math.min(MENU.phrases.length, 6)}">
+        ${MENU.phrases.map(ph => `<button class="phrase" data-speak="${esc(ph[0])}">
+          <span class="z">${glyphs(ph[0], target)}</span>
+          <span class="p">${esc(ph[1])}</span>
+          <span class="e">${esc(ph[2])}</span>
+        </button>`).join("")}
+      </div>
+    </div>
+
+    <!-- Two inks, and two is the right number here: every character printed on
+         this card is one the curriculum teaches, so "not yet" is always true of
+         the grey ones. A menu that outgrew the library would need a third —
+         lighter again, for the ones it will never teach — because inking those
+         the same grey as a character you simply have not reached puts the wall
+         further from readable than it is. -->
+    <div class="menu-legend">
+      <span><b class="g known">读</b> you can read it</span>
+      <span><b class="g">未</b> not yet — it is in the curriculum</span>
+      ${!learnedIt ? `<span><b class="g target">红</b> today's character</span>` : ""}
+      <span class="dim">Hover any character for its meaning</span>
+    </div>
+  </div>`;
+
+  $("#viewMenu").innerHTML = `<div class="wrap">
+    <div class="today-head menu-intro">
+      <h1>The menu</h1>
+      <p class="note">A restaurant menu printed the way one is — one character a day, and the ones
+        you know ink themselves in. It grows as you do: dish names first, then the small print,
+        then the specials board. Hover any character for what it says.</p>
+    </div>
+    ${card}
+  </div>`;
+
+  /* The lesson is the card and no drill. A drill would grade it, and grading
+     is the schedule — which is exactly what this tab is being kept out of. */
+  $("#learnMenu")?.addEventListener("click", () => teachOne(pick.c, { menu: true }));
 }
 
 /* ============================================================
@@ -1506,28 +1957,35 @@ function ringSvg(pct, done) {
 
 /* ---------- the menu, rendered as print ---------- */
 
-/* Every Chinese glyph becomes hoverable. */
+/* Every Chinese glyph becomes hoverable.
+
+   The ink asks `menuCanRead`, not `isKnown` — a character the quest itself
+   taught never entered the library, and reading the wrong book here left it
+   printed in grey on the page that had just taught it. */
 function glyphs(str, target) {
   return [...str].map(c => {
     if (!/[\u4e00-\u9fff]/.test(c)) return esc(c);
-    const cls = c === target ? "target" : isKnown(c) ? "known" : "";
+    const cls = c === target ? "target" : menuCanRead(c) ? "known" : "";
     return `<span class="g ${cls}" data-ch="${esc(c)}">${esc(c)}</span>`;
   }).join("");
 }
 
-/* How grown-up a menu you can cope with right now. */
-function menuTier() {
-  const k = menuProgress().known;
-  return MENU_TIERS.filter(t => k >= t.at).pop() || MENU_TIERS[0];
-}
+/* menuTier() used to live here. It moved to srs.js, because menuToday() has to
+   know the level to pick a character that is actually printed, and srs.js
+   cannot reach into app.js. */
 
 function renderMenuCard(target, tall) {
   const m = MENU, tier = menuTier().n;
-  const row = it => `<div class="mrow">
+  /* A menu row is a thing to hear, not only a thing to look at — ordering is
+     the point of being able to read it. The pinyin rides along so the sound
+     and the spelling arrive together, which is also what makes the grey
+     characters worth hovering rather than skipping. */
+  const row = it => `<button class="mrow" data-speak="${esc(it[0])}" title="Hear 「${esc(it[0])}」 — ${esc(it[1])}">
       <span class="dish">${glyphs(it[0], target)}</span>
+      <span class="mpin">${esc(it[1])}</span>
       <span class="dots"></span>
       <span class="price">¥${it[3]}</span>
-    </div>${tier >= 2 && it[4] ? `<div class="mdesc">${glyphs(it[4][0], target)}</div>` : ""}`;
+    </button>${tier >= 2 && it[4] ? `<div class="mdesc">${glyphs(it[4][0], target)}</div>` : ""}`;
 
   return `<div class="menu-card ${tall ? "tall" : ""}">
     <div class="menu-top">
@@ -1547,6 +2005,26 @@ function renderMenuCard(target, tall) {
   </div>`;
 }
 
+/* ---------- anything marked [data-speak] says itself ----------
+
+   data-speak was on the menu's five phrases from the start and nothing ever
+   listened for it: "Say it out loud" was a row of buttons that did nothing at
+   all. One delegated listener covers those and anything marked the same way
+   later. */
+function initSpeakables() {
+  document.addEventListener("click", e => {
+    const b = e.target instanceof Element ? e.target.closest("[data-speak]") : null;
+    if (!b) return;
+    const text = b.dataset.speak;
+    if (!text) return;
+    sayPhrase(text, true);
+    /* a beat of ink so a click that makes no sound still reads as a click —
+       the clips are per character and a phrase may have one missing */
+    b.classList.add("said");
+    setTimeout(() => b.classList.remove("said"), 420);
+  });
+}
+
 /* ---------- hover cards ---------- */
 
 let tipEl = null;
@@ -1555,11 +2033,30 @@ function initTips() {
   tipEl.className = "tip";
   document.body.appendChild(tipEl);
 
+  /* `closest` is an Element method and an event target is not always one — a
+     click dispatched on `document` itself has `document` as its target, which
+     threw and took the rest of the handler chain down with it. */
+  const hit = e => (e.target instanceof Element ? e.target.closest("[data-ch]") : null);
+
   document.addEventListener("mouseover", e => {
-    const g = e.target.closest("[data-ch]");
+    const g = hit(e);
     if (!g) return;
-    const ch = CHAR_INDEX[g.dataset.ch];
-    if (!ch) return;
+    const c = g.dataset.ch;
+    const ch = CHAR_INDEX[c];
+    /* Not in the curriculum is not the same as nothing to say. A reference
+       gloss gets a reading and a sense and an honest line about why it has no
+       progress to report; bailing out here is what left the menu, the example
+       words and the headings silent. */
+    if (!ch) {
+      const [p, m] = gloss(c);
+      if (!m) return;
+      tipEl.innerHTML = `<div class="z">${esc(c)}</div>
+        <div class="p">${esc(p)}</div>
+        <div class="m">${esc(m)}</div>
+        <div class="s">Not in the curriculum — here for reference</div>`;
+      tipEl.classList.add("on");
+      return place(g);
+    }
     const known = isKnown(ch.c);
     tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
       <div class="p">${esc(ch.p)}</div>
@@ -1569,11 +2066,11 @@ function initTips() {
     place(g);
   });
   document.addEventListener("mouseout", e => {
-    if (e.target.closest("[data-ch]")) tipEl.classList.remove("on");
+    if (hit(e)) tipEl.classList.remove("on");
   });
   /* touch has no hover — open the full card instead */
   document.addEventListener("click", e => {
-    const g = e.target.closest("[data-ch]");
+    const g = hit(e);
     if (g && CHAR_INDEX[g.dataset.ch]) openChar(g.dataset.ch);
   });
 
@@ -1596,11 +2093,13 @@ function openFlash(deck, title) {
   if (!deck.length) return;
   flash.deck = shuffle([...deck]);
   flash.i = 0; flash.flipped = false; flash.title = title;
+  flashKeysReset();
   $("#flash").classList.add("on");
   document.body.style.overflow = "hidden";
   renderFlash();
 }
 function closeFlash() {
+  flashKeysReset();
   $("#flash").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
@@ -1653,25 +2152,151 @@ function renderFlash() {
       <div class="card3d-inner">
         <div class="card-face">
           <span class="big ${f.wide ? "big-wide" : ""}">${esc(f.front)}</span>
-          <span class="hint">Tap to flip</span>
         </div>
         <div class="card-face card-back">
           <span class="sm">${esc(f.front)}</span>
           <span class="pin">${esc(f.pin)}${f.tone ? " " + toneMark(f.pin) : ""}</span>
           <span class="mean">${esc(f.mean)}</span>
           <span class="word">${esc(f.foot)}</span>
-          <span class="hint">Tap to flip back</span>
         </div>
       </div>
     </button>`;
   $("#card3d").onclick = () => {
+    /* A thumb has its own three gestures below and a tap means "say it" there,
+       so a tap must not also turn the card over. A mouse keeps click-to-flip,
+       which is what a card on a desk does. */
+    if (flashTouchy()) return;
     flash.flipped = !flash.flipped;
     $("#card3d").classList.toggle("flipped", flash.flipped);
     if (flash.flipped) sayPhrase(f.speak);
   };
   $("#flashPrev").disabled = flash.i === 0;
-  $("#flashNext").textContent = flash.i === flash.deck.length - 1 ? "Done" : "Next";
+  /* The face carried "Tap to flip", which is wrong as often as it is right:
+     the card's other gesture is hear-it, and a caption on a card is a caption
+     on a card. The buttons say what the arrow keys do instead — they already
+     worked and nothing on screen said so. */
+  $("#flashPrev").innerHTML = `<span class="fk">←</span> Back`;
+  const last = flash.i === flash.deck.length - 1;
+  $("#flashNext").innerHTML = last ? "Done" : `Next <span class="fk">→</span>`;
 }
+/* ---------- the space bar, three ways ----------
+
+   One key, because a flashcard is a thing you hold in one hand: tap to hear
+   it, tap twice to move on, hold to peek at the back and let go to put it
+   down again. The arrows stay on prev/next for anyone who wants one key one
+   action.
+
+   Tap and hold cannot be told apart on keydown — you only know it was a tap
+   when the key comes back up — so keydown starts a clock and keyup decides.
+   A held key also autorepeats, which is why e.repeat is ignored rather than
+   counted as a second press. */
+const FLASH_HOLD_MS = 170;    /* past this it is a hold, and the card turns */
+const FLASH_TAP_MS = 260;     /* a second tap inside this means "next card" */
+const fkey = { down: 0, held: false, holdTimer: null, tapTimer: null };
+
+function flashFlip(to) {
+  if (flash.flipped === to) return;
+  flash.flipped = to;
+  $("#card3d")?.classList.toggle("flipped", to);
+}
+
+function flashKeyDown(e) {
+  if (e.repeat || fkey.down) return;         /* autorepeat is still one press */
+  fkey.down = Date.now();
+  fkey.held = false;
+  fkey.holdTimer = setTimeout(() => {
+    fkey.held = true;
+    /* held: the back stays up for as long as it is held, and says itself once */
+    flashFlip(true);
+    sayPhrase(flashFace(flash.deck[flash.i]).speak);
+  }, FLASH_HOLD_MS);
+}
+
+function flashKeyUp() {
+  if (!fkey.down) return;
+  clearTimeout(fkey.holdTimer);
+  fkey.down = 0;
+  if (fkey.held) { fkey.held = false; flashFlip(false); return; }   /* let go, turn it back */
+
+  /* a tap. If one is already waiting, this is the second and they mean next. */
+  if (fkey.tapTimer) {
+    clearTimeout(fkey.tapTimer); fkey.tapTimer = null;
+    stopPhrase();
+    flashStep(1);
+    return;
+  }
+  fkey.tapTimer = setTimeout(() => {
+    fkey.tapTimer = null;
+    sayPhrase(flashFace(flash.deck[flash.i]).speak, true);
+  }, FLASH_TAP_MS);
+}
+
+/* Leaving the deck with the key still down would strand the card face-up and
+   the timers armed. */
+function flashKeysReset() {
+  clearTimeout(fkey.holdTimer); clearTimeout(fkey.tapTimer);
+  fkey.down = 0; fkey.held = false; fkey.holdTimer = fkey.tapTimer = null;
+  flashTouchReset();
+}
+
+/* ---------- the same three things, with a thumb ----------
+
+   The space bar is tap, double tap, hold — because a flashcard is a thing you
+   hold in one hand. A phone has the one hand and no space bar, so the card
+   takes the gestures instead: tap to hear it, hold to peek at the back, swipe
+   across to move on. Left carries you forward, the way a page turns.
+
+   A touch hold needs longer than a keyboard one. 170ms is a deliberate press
+   on a key and an ordinary tap on glass — a thumb rests that long on the way
+   back up — so the touch threshold is its own number.
+
+   None of this runs on a mouse. A fine pointer keeps click-to-flip untouched. */
+const FLASH_HOLD_TOUCH = 320;   /* past this a press is a press, not a tap */
+const FLASH_SWIPE = 44;         /* px across before it counts as a swipe */
+const FLASH_SLOPE = 1.2;        /* and it has to be more across than down */
+const FLASH_STILL = 10;         /* a thumb never holds perfectly still */
+
+const flashTouchy = () => matchMedia("(pointer: coarse)").matches;
+const fdrag = { id: null, x: 0, y: 0, held: false, timer: null, moved: false };
+
+function flashTouchReset() {
+  clearTimeout(fdrag.timer);
+  fdrag.id = null; fdrag.held = false; fdrag.moved = false; fdrag.timer = null;
+}
+
+function flashTouchDown(e) {
+  if (!flashTouchy() || fdrag.id !== null) return;
+  fdrag.id = e.pointerId; fdrag.x = e.clientX; fdrag.y = e.clientY;
+  fdrag.held = false; fdrag.moved = false;
+  fdrag.timer = setTimeout(() => {
+    if (fdrag.moved) return;            /* it turned into a swipe on the way */
+    fdrag.held = true;
+    flashFlip(true);
+    sayPhrase(flashFace(flash.deck[flash.i]).speak);
+  }, FLASH_HOLD_TOUCH);
+}
+
+function flashTouchMove(e) {
+  if (fdrag.id !== e.pointerId) return;
+  if (Math.abs(e.clientX - fdrag.x) > FLASH_STILL
+   || Math.abs(e.clientY - fdrag.y) > FLASH_STILL) fdrag.moved = true;
+}
+
+function flashTouchUp(e) {
+  if (fdrag.id !== e.pointerId) return;
+  const dx = e.clientX - fdrag.x, dy = e.clientY - fdrag.y;
+  const held = fdrag.held, moved = fdrag.moved;
+  flashTouchReset();
+
+  if (held) return flashFlip(false);    /* let go, and the card turns back */
+
+  if (Math.abs(dx) >= FLASH_SWIPE && Math.abs(dx) > Math.abs(dy) * FLASH_SLOPE) {
+    stopPhrase();
+    return flashStep(dx < 0 ? 1 : -1);
+  }
+  if (!moved) sayPhrase(flashFace(flash.deck[flash.i]).speak, true);
+}
+
 function flashStep(d) {
   if (flash.i + d >= flash.deck.length) return closeFlash();
   flash.i = Math.max(0, flash.i + d);
@@ -1763,21 +2388,46 @@ function renderNotebook() {
   const total = nb.deck.length;
   const doneSoFar = Math.min(nb.pos + nb.done.filter(Boolean).length, total);
 
-  $("#nbTitle").innerHTML = `<span class="han">抄写</span> Writing practice
-    <span class="dim" style="font-weight:400;font-size:.82rem">${byWord && nb.word
-      ? esc(nb.word[1]) + " · " + esc(nb.word[2])
-      : `today's characters · round ${nb.round}`}</span>`;
+  /* The word and the round used to be repeated up here. The band below says
+     both, larger and with the characters themselves — this was the same line
+     twice, six millimetres apart. */
+  $("#nbTitle").innerHTML = `<span class="han">抄写</span> Writing practice`;
+
+  const words = writableWords();
+  /* The two sources are different exercises, not two settings of one: single
+     characters from today's lesson, or a real word written straight through.
+     A segmented control said that badly — it made them look like one control
+     with two positions, it left the count as a bare number with nothing to
+     say what it counted, and a solid slab of ink for "selected" was the
+     heaviest thing on a page whose whole subject is a faint grey character. */
+  const mode = (src, k, name, n, what, off) => `
+    <button role="tab" class="nb-mode ${nb.source === src ? "on" : ""}" data-nbsrc="${src}"
+      aria-selected="${nb.source === src}" ${off ? "disabled" : ""}>
+      <span class="nb-mode-k han">${k}</span>
+      <span class="nb-mode-t">${name}</span>
+      <span class="nb-mode-n">${off ? "none yet" : `${n} ${what}`}</span>
+    </button>`;
 
   $("#nbStage").innerHTML = `
-    <div class="nb-modes">
-      <button class="filt ${!byWord ? "on" : ""}" data-nbsrc="today" ${today.length ? "" : "disabled"}>今天 Today's</button>
-      <button class="filt ${byWord ? "on" : ""}" data-nbsrc="word" ${writableWords().length ? "" : "disabled"}>词语 A word</button>
-      <button class="filt" id="nbNew">${byWord ? "Another word" : "Shuffle"}</button>
-    </div>
+    <div class="nb-head">
+      <div class="nb-seg" role="tablist">
+        ${mode("today", "今日", "Today's characters", today.length, "to trace", !today.length)}
+        ${mode("word", "词语", "Whole words", words.length, "you can write", !words.length)}
+      </div>
 
-    <div class="nb-progress">
-      <span class="nb-count">${doneSoFar} / ${total}</span>
-      <span class="bar"><i style="width:${total ? (doneSoFar / total * 100).toFixed(1) : 0}%"></i></span>
+      <div class="nb-now">
+        <span class="nb-now-what">${byWord && nb.word
+          ? `<b class="han">${esc(nb.word[0])}</b>
+             <span class="p">${esc(nb.word[1])}</span>
+             <span class="m">${esc(nb.word[2])}</span>`
+          : `<span class="m">Round ${nb.round}</span>`}</span>
+        <button class="btn btn-ghost btn-sm nb-next" id="nbNew">${byWord ? "↻ Another word" : "↻ Shuffle"}</button>
+      </div>
+
+      <div class="nb-progress">
+        <span class="bar"><i style="width:${total ? (doneSoFar / total * 100).toFixed(1) : 0}%"></i></span>
+        <span class="nb-count">${doneSoFar} / ${total}</span>
+      </div>
     </div>
 
     <div class="nb-line">
@@ -1789,7 +2439,7 @@ function renderNotebook() {
     </div>
 
     <div class="nb-tools">
-      <button class="btn btn-ghost btn-sm" id="nbPad">触控 Trackpad <kbd class="opt-n">T</kbd></button>
+      ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="nbPad">触控 Trackpad <kbd class="opt-n">T</kbd></button>` : ""}
     </div>
 
     <p class="note nb-hint">Write each character in order — the strokes are checked as you go.
@@ -1797,7 +2447,7 @@ function renderNotebook() {
 
   nb.writers = [];
   nb.chars.forEach((c, i) => {
-    const w = makeWriter($("#nbw" + i), c, { width: 150, height: 150,
+    const w = makeWriter($("#nbw" + i), c, {
       showCharacter: !!nb.done[i], showOutline: i === nb.idx && !nb.done[i] });
     nb.writers[i] = w;
     if (w && i === nb.idx && !nb.done[i]) startSquare(i);
@@ -1809,7 +2459,7 @@ function renderNotebook() {
     nb.word = null; nbSetSource(b.dataset.nbsrc); renderNotebook(); nbFollow();
   });
   $("#nbNew").onclick = () => { nbSetSource(nb.source); renderNotebook(); nbFollow(); };
-  $("#nbPad").onclick = () => nbPad();
+  $("#nbPad")?.addEventListener("click", () => nbPad());
   $$("#nbStage .nb-sq").forEach(sq => sq.addEventListener("click", () => {
     const i = +sq.dataset.sq;
     if (i === nb.idx || nb.done[i]) return;
@@ -1958,12 +2608,12 @@ function renderWrite() {
 }
 
 function buildWritePage() {
-  $("#viewWrite").innerHTML = `<div class="wrap wp-wrap">
+  $("#viewWrite").innerHTML = `<div class="wrap">
     <div class="cols">
       <div class="section">
         <div class="wp-bar">
           <div class="wp-title">
-            <span class="eyebrow">练字 · Exercise book</span>
+            <h1>Exercise book ${hanLabel("练字")}</h1>
             <p class="note">A blank page. Nothing is checked here — fill it, scrawl on it, clear it and go again.</p>
           </div>
           <div class="wp-tools">
@@ -1972,7 +2622,7 @@ function buildWritePage() {
                 <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
               </select>
             </label>
-            <button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>
+            ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>` : ""}
             <button class="btn btn-ghost btn-sm" id="wpSave">Save page</button>
             <button class="btn btn-ghost btn-sm" id="wpClear">Clear page</button>
           </div>
@@ -2001,7 +2651,7 @@ function buildWritePage() {
   $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
   $("#wpClear").onclick = () => wpClear();
   $("#wpSave").onclick  = () => wpSave();
-  $("#wpPad").onclick   = () => wpPad();
+  $("#wpPad")?.addEventListener("click", () => wpPad());
   $("#wpMore").onclick  = () => { wp.rows += 4; wpSizePage(); };
   addEventListener("resize", wpSizePage);
   wpDiary();
@@ -2058,9 +2708,10 @@ function renderPicker() {
 
   host.innerHTML = `
     <div class="pick-head">
-      <span class="eyebrow">Trace a character</span>
+      <span class="eyebrow">Trace a character ${hanLabel("描红")}</span>
       ${wp.guide ? `<button class="link-btn" id="pickClear">Clear <span class="han">${esc(wp.guide)}</span></button>` : ""}
     </div>
+    <div class="pick-stage" id="pickStage"></div>
     <input class="search pick-find" id="pickFind" type="search" placeholder="Find a character…" value="${esc(wp.find)}">
     <div class="pick-sorts">
       ${WP_SORTS.map(o => `<button class="filt ${wp.sort === o.id ? "on" : ""}" data-sort="${o.id}">${esc(o.label)}</button>`).join("")}
@@ -2073,6 +2724,8 @@ function renderPicker() {
       </div>`).join("")
       : `<p class="note">${wp.find ? "Nothing matches." : "Learn a character and it'll appear here."}</p>`}
     </div>`;
+
+  renderPickStage();
 
   $$("#wpPicker [data-sort]").forEach(b => b.onclick = () => { wp.sort = b.dataset.sort; renderPicker(); });
   $$("#wpPicker [data-pick]").forEach(b => b.onclick = () => {
@@ -2087,6 +2740,66 @@ function renderPicker() {
     renderPicker();
     const n = $("#pickFind"); n.focus(); n.setSelectionRange(pos, pos);
   };
+}
+
+/* The stroke-order player, docked under the picker.
+
+   A modal is the wrong shape for this: you watch the animation *in order to*
+   write the character, and a dialog makes you dismiss the thing you are
+   copying before you can copy it. One fixed place, filled by whatever is
+   selected, still there while you write. */
+let soWriter = null;
+
+function renderPickStage() {
+  const host = $("#pickStage");
+  if (!host) return;
+  const c = wp.guide;
+  soWriter = null;
+
+  if (!c) {
+    host.innerHTML = `<div class="pick-stage-empty">
+      <span class="z han">笔</span>
+      <span>Pick a character below and its stroke order plays here.</span>
+    </div>`;
+    return;
+  }
+  const ch = CHAR_INDEX[c];
+  if (!drawable(c)) {
+    host.innerHTML = `<div class="pick-stage-empty">
+      <span class="z han">${esc(c)}</span>
+      <span>No stroke-order data has been published for this one. You can still
+        trace its outline on the page.</span>
+    </div>`;
+    return;
+  }
+  const n = (window.STROKE_DATA[c] || {}).strokes?.length || 0;
+
+  host.innerHTML = `
+    <div class="ps-top">
+      <span class="ps-id"><b class="han">${esc(c)}</b><span>${esc(ch.p)} · ${esc(ch.m)}</span></span>
+      <span class="ps-n">${n} stroke${n === 1 ? "" : "s"}</span>
+    </div>
+    <div class="ps-box"><div class="tian">${TIAN_SVG}<div class="tian-slot"><div id="psMount"></div></div></div></div>
+    <div class="ps-tools">
+      <button class="btn btn-ghost btn-sm" id="psPlay">↻ Again</button>
+      <button class="btn btn-ghost btn-sm" id="psStep">Step <span id="psAt"></span></button>
+      <button class="btn btn-ghost btn-sm" id="psShow">Show</button>
+    </div>`;
+
+  soWriter = makeWriter($("#psMount"), c, { showCharacter: false });
+  let at = 0;
+  const paint = () => { const el = $("#psAt"); if (el) el.textContent = at ? `${at}/${n}` : ""; };
+  const play = () => { at = 0; paint(); soWriter?.hideCharacter(); soWriter?.animateCharacter(); };
+  setTimeout(play, 160);
+  $("#psPlay").onclick = play;
+  /* one stroke at a time, for the ones that go past too fast to copy */
+  $("#psStep").onclick = () => {
+    if (at >= n) { at = 0; soWriter?.hideCharacter(); paint(); return; }
+    if (at === 0) soWriter?.hideCharacter();
+    soWriter?.animateStroke(at++);
+    paint();
+  };
+  $("#psShow").onclick = () => { at = n; soWriter?.showCharacter(); paint(); };
 }
 
 function wpSizePage() {
@@ -2281,7 +2994,7 @@ async function wpDiary() {
   const bytes = all.reduce((a, p) => a + p.strokes.reduce((n, s2) => n + s2.length, 0), 0) * 8;
   host.innerHTML = `
     <div class="pr-head">
-      <span class="eyebrow">Practice diary</span>
+      <span class="eyebrow">Practice diary ${hanLabel("练习簿")}</span>
       <span class="dim" style="font-size:.74rem">${all.length} page${all.length === 1 ? "" : "s"} · about ${(bytes / 1024).toFixed(0)} KB</span>
     </div>
     <div class="diary-strip">
@@ -2320,11 +3033,15 @@ function renderTracker() {
     cells.push(`<span class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></span>`);
   }
   const s = liveStreak(), total = daysStudied();
+  /* No 🔥 N in here any more: this hangs off the chip that already says it, so
+     it can spend its words on what the chip does not — the run, the days, the
+     best. */
   $("#tracker").innerHTML = `
     <span class="tracker-lbl">Last 4 weeks</span>
     <span class="tracker-row">${cells.join("")}</span>
     <span class="tracker-note" title="A missed day leaves an empty box — nothing you've done is ever cleared.">
-      ${s ? `🔥 ${s}` : "🔥 0"}<span class="sep">·</span>${total} day${total === 1 ? "" : "s"} studied</span>`;
+      ${s ? `${s} day${s === 1 ? "" : "s"} in a row` : "No streak going"}<span class="sep">·</span>${
+      total} day${total === 1 ? "" : "s"} studied · best ${state.streak.best}</span>`;
 }
 
 /* ---------- 正 as a counting mark ----------
@@ -2355,6 +3072,12 @@ function tallyMark(strokes) {
 
 /* A row of them, with the last one part-drawn. Past `max` the row would stop
    being countable, so it becomes a multiplier instead. */
+/* `max` is how many complete 正 are drawn before the row collapses to one
+   mark and a multiplier. The default of 6 was chosen for a page that could
+   scroll; in a fixed corner it fails at *particular* counts rather than large
+   ones — 50 reps came out as 正 × 10 and fitted, while 31 drew seven glyphs
+   and pushed its container. Callers with a corner to stay inside pass their
+   own. */
 function tallyRow(n, max = 6) {
   if (!n) return `<span class="tally-none">${tallyMark(0)}<span>no reps yet today</span></span>`;
   const full = Math.floor(n / 5), rest = n % 5;
@@ -2390,7 +3113,7 @@ function learnedToday() {
 const TODAY_TASKS = [
   { id: "recall", k: "认读", name: "Recognise them",       sub: "character to meaning", kind: "r", proves: ["r"] },
   { id: "read",   k: "阅读", name: "Read them in context", sub: "words and sentences",  kind: "d", proves: ["d"] },
-  { id: "say",    k: "发音", name: "Hear them and say them", sub: "sound and tone",     kinds: ["l", "p"], kind: "p", proves: ["p", "l"] },
+  { id: "say",    k: "发音", name: "Hear them",              sub: "sound and tone",     kinds: ["l", "p"], kind: "p", proves: ["p", "l"] },
   { id: "copy",   k: "抄写", name: "Write them out",       sub: "square by square",     copy: true }
 ];
 
@@ -2441,6 +3164,7 @@ function startTodayDrill(task) {
   session.got = {};
   session.times = []; session.quick = 0;
   session.questAtStart = menuProgress().known;
+  session.menu = false;
   session.practice = "read";              /* graded gently, like any practice */
   session.todo = task.id;
   session.active = true;
@@ -2449,12 +3173,28 @@ function startTodayDrill(task) {
   renderStep();
 }
 
+/* ---------- today ---------- */
+
+/* Whether the day's characters are showing in full. Deliberately not in the
+   record: it is a glance-state for this visit to the page, not a preference. */
+let todayOpen = false;
+
+/* How many fit the rail before it needs arrows. The rail scrolls either way,
+   so this only decides when the controls appear. */
+const LT_VISIBLE = 5;
+
+const charTile = c => {
+  const ch = CHAR_INDEX[c];
+  return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
+    <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
+};
+
 function renderToday() {
   const t = today();
   const due = dueCount();
   const got = learnedToday();
   const revd = reviewedToday();
-  const newLeft = Math.max(0, Math.min(state.goalNew, remainingNew()) - t.new);
+  const newLeft = newLeftToday();
   /* Characters on both sides of this fraction. `newLeft` and `due` count
      characters, so measuring what's done in answers made the ring run ahead
      of the queue beside it — a character answered four times is one character
@@ -2464,8 +3204,13 @@ function renderToday() {
   const clear = newLeft === 0 && due === 0;
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
-  const who = state.name ? `, ${state.name}` : "";
-  const headline = clear ? `You're clear for today${who}.` : done > 0 ? `Keep going${who}.` : `Ready when you are${who}.`;
+  /* The first name only. The headline is one line by design, and
+     "Ready when you are, Jen O'Brien." came out as "…, J…". */
+  const who = state.name ? `, ${state.name.split(/\s+/)[0]}` : "";
+  /* One line. "You're clear for today, Jen." wrapped to two in a dashboard
+     column, which looked unbalanced beside a ring; the phrasing is shorter and
+     the size comes down with it. */
+  const headline = clear ? `All clear${who}.` : done > 0 ? `Keep going${who}.` : `Ready when you are${who}.`;
   const sub = clear
     ? (remainingNew() ? "Nothing is due. You can study ahead whenever you like."
        : "Every character in the library is in your review rotation.")
@@ -2483,12 +3228,12 @@ function renderToday() {
   /* ---- the invitation ---- */
   const hero = `<div class="hero">
     <div class="hero-top">
+      ${ring}
       <div class="hero-head">
         <span class="hero-date">${esc(dateStr)}</span>
         <h1 class="hero-title">${esc(headline)}</h1>
         <p class="hero-sub">${esc(sub)}</p>
       </div>
-      ${ring}
     </div>
     <div class="hero-cta">
       ${newLeft + due > 0
@@ -2497,23 +3242,25 @@ function renderToday() {
             ? `<button class="btn btn-ghost btn-lg btn-block" id="aheadBtn">Study ahead — ${Math.min(5, remainingNew())} more characters</button>`
             : "")}
       <div class="queue">
-        <span class="qpill new">New <b>${newLeft}</b></span>
-        <span class="qpill due">Due <b>${due}</b></span>
-        <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Revised today <b>${revd.length}</b></span>
+        <span class="qpill new" title="Your daily goal — how many new characters are still to come today. Change it in Settings.">To learn <b>${newLeft}</b></span>
+        <span class="qpill due" title="The schedule's decision, not yours: characters whose review has come round today.">To review <b>${due}</b></span>
+        <span class="qpill" title="${revd.length} character${revd.length === 1 ? "" : "s"} revised today, over ${t.rev} card${t.rev === 1 ? "" : "s"}">Done <b>${revd.length}</b></span>
       </div>
     </div>
 
     <div class="learned">
       <div class="learned-head">
-        <span class="eyebrow">Learned today</span>
+        <span class="eyebrow">Learned today ${hanLabel("今日新字")}</span>
         <span class="dim" style="font-size:.76rem">${got.length} character${got.length === 1 ? "" : "s"}</span>
       </div>
       ${got.length
-        ? `<div class="learned-strip">${got.map(c => {
-            const ch = CHAR_INDEX[c];
-            return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
-              <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
-          }).join("")}</div>`
+        ? `<div class="learned-rail">
+             ${got.length > LT_VISIBLE ? `<button class="lt-arrow" data-lt="-1" aria-label="Earlier characters">‹</button>` : ""}
+             <div class="learned-strip" id="ltStrip">${got.map(charTile).join("")}</div>
+             ${got.length > LT_VISIBLE ? `<button class="lt-arrow" data-lt="1" aria-label="Later characters">›</button>` : ""}
+           </div>
+           ${got.length > LT_VISIBLE ? `<button class="learned-more" id="ltMore" aria-expanded="${todayOpen}">${
+             todayOpen ? "Close" : `See all ${got.length}`}</button>` : ""}`
         : `<div class="learned-empty"><span class="z">空</span>
             <span>Nothing yet today. Characters you learn will collect here.</span></div>`}
     </div>
@@ -2522,7 +3269,7 @@ function renderToday() {
   /* ---- both decks, together ---- */
   const all = knownChars();
   const oneDeck = (id, deck, title, sub, tone, face, empty) => `
-    <button class="deck deck-${tone} ${deck.length ? "" : "empty"}" id="${id}" ${deck.length ? "" : "disabled"}>
+    <button class="deck deck-${tone} ${deck.length ? "" : "deck-bare"}" id="${id}" ${deck.length ? "" : "disabled"}>
       <span class="deck-cards" aria-hidden="true">
         <span class="dc dc3"></span>
         <span class="dc dc2"></span>
@@ -2540,7 +3287,7 @@ function renderToday() {
   const wotw = (() => {
     if (!wk || !wotwEntry(wk)) {
       return `<div class="sheet wotw wotw-empty">
-        <div class="pr-head"><span class="eyebrow">Word of the week <span class="han">每周一词</span></span></div>
+        <div class="pr-head"><span class="eyebrow">Word of the week ${hanLabel("每周一词")}</span></div>
         <p class="note">Tell the app what you're interested in and it'll show you one real word a week from it —
           usually made of characters well past where you've got to.</p>
         <button class="btn btn-ghost btn-sm btn-block" id="wotwSetup">Pick your interests</button>
@@ -2564,7 +3311,7 @@ function renderToday() {
     const open = state.wotwShown === wk.week;
     return `<div class="sheet wotw">
       <div class="pr-head">
-        <span class="eyebrow">Word of the week <span class="han">每周一词</span></span>
+        <span class="eyebrow">Word of the week ${hanLabel("每周一词")}</span>
         <span class="dim" style="font-size:.72rem">${esc(cat.icon)} ${esc(cat.name)}${
           entry.festival ? ` <span class="han">${esc(cat.zh)}</span>` : ""}</span>
       </div>
@@ -2590,14 +3337,16 @@ function renderToday() {
      parts, because seeing that 大人 is big + person is what makes it stick. */
   const combos = knownWords();
   const decks = `<div class="sheet decks">
-    <span class="eyebrow">Flashcards</span>
+    <span class="eyebrow">Flashcards ${hanLabel("生字卡")}</span>
     ${oneDeck("deckToday", got, "Today's characters",
       `${got.length} card${got.length === 1 ? "" : "s"} — tap to flip`, "today", got[got.length - 1])}
     ${oneDeck("deckAll", all, "All characters",
       `${all.length} card${all.length === 1 ? "" : "s"} you've learned`, "all", all[all.length - 1])}
+    ${/* The face used to be combos[0][0] — the deck sampling its own contents,
+          so it read as a card about that one word rather than a deck of them. */""}
     ${oneDeck("deckWords", combos, "Words you can read",
       `${combos.length} combination${combos.length === 1 ? "" : "s"} of characters you know`, "words",
-      combos.length ? combos[0][0] : "", "Learn two characters that go together and this fills up")}
+      combos.length ? "生字" : "", "Learn two characters that go together and this fills up")}
   </div>`;
 
   /* ---- the to-do list ----
@@ -2645,7 +3394,7 @@ function renderToday() {
 
   const todoBlock = `<div class="sheet todo-block">
     <div class="pr-head">
-      <span class="eyebrow">Today's practice</span>
+      <span class="eyebrow">Today's practice ${hanLabel("今日练习")}</span>
       <span class="dim" style="font-size:.76rem"
         title="${waiting ? `${waiting} more step${waiting === 1 ? "" : "s"} unlock as your library grows` : "Every step on today's list can be done now"}">
         ${stepsDone} of ${ready.length} done${waiting ? ` · ${waiting} locked` : ""}</span>
@@ -2673,16 +3422,27 @@ function renderToday() {
     const chars = practiceChars(id);
     return chars.length > 0 && skillStanding(cfg.skill, chars).pct >= 1;
   });
+  /* The foot line is gone. It was a full-width straggler at the bottom of the
+     band carrying two unrelated facts — what "solid" means, and the lifetime
+     rep count — both of which belong beside the thing they are about. The
+     definition rides under the subtitle where the word is used; the lifetime
+     count rides in the corner with today's. That is one row fewer, and the
+     band closes up under the tiles instead of trailing off. */
   const deeper = `<section class="deeper">
     <div class="deeper-head">
       <span class="deeper-title">
-        <span class="eyebrow">Go deeper <span class="han">加练</span></span>
-        <p class="deeper-sub">Reps past today's list. None of it is required and none of it can be finished —
-          that's what makes it the part that compounds.</p>
+        <span class="eyebrow">Go deeper ${hanLabel("加练")}</span>
+        <p class="deeper-sub">Reps past today's list — never required, never finished.
+          <span class="solid-def" title="A character counts as solid in a mode once you have answered it correctly ${PASSES_FOR_SOLID} times in that mode. The three modes are counted separately: solid at reading says nothing about writing.">
+            <b>Solid</b> = ${PASSES_FOR_SOLID} correct in that mode, shakiest first.</span></p>
       </span>
-      <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark">
-        ${tallyRow(exToday)}
-        <span class="deeper-n"><b>${exToday}</b> rep${exToday === 1 ? "" : "s"} today</span>
+      <span class="deeper-count" title="${exToday} rep${exToday === 1 ? "" : "s"} today · one stroke of 正 each, five to a mark${
+        exAll ? ` · ${exAll.toLocaleString()} all told${exBest > 4 ? `, best day ${exBest}` : ""}` : ""}">
+        ${exToday ? tallyRow(exToday, 3) : ""}
+        <span class="deeper-n">${exToday
+          ? `<b>${exToday}</b> today`
+          : `<b class="dim">—</b> none today`}</span>
+        ${exAll ? `<span class="deeper-life">${exAll.toLocaleString()} all told</span>` : ""}
       </span>
     </div>
     <div class="pr-grid pr-grid-3">
@@ -2716,64 +3476,31 @@ function renderToday() {
         </button>`;
       }).join("")}
     </div>
-    <div class="deeper-foot">
-      <span>${PASSES_FOR_SOLID} clean passes makes a character solid · shakiest first</span>
-      <span class="deeper-life">${exAll
-        ? `${exAll.toLocaleString()} rep${exAll === 1 ? "" : "s"} all told${exBest > 4 ? ` · best day ${exBest}` : ""}`
-        : "Your first rep starts the count"}</span>
-    </div>
   </section>`;
 
-  /* ---- the side quest ---- */
-  const mp = menuProgress();
-  const pick2 = menuToday();
-  const pch = pick2.c ? CHAR_INDEX[pick2.c] : null;
-  const learnedIt = pick2.c ? isKnown(pick2.c) : true;
-
-  const sideQuest = `<div class="sheet sq">
-    <div class="sq-top">
-      <span class="sq-icon">🍜</span>
-      <span class="sq-name"><b>Read a Menu</b><span class="zh">看菜单</span></span>
-      <span class="sq-frac">${mp.known}/${mp.total}</span>
-    </div>
-    <div class="bar ${mp.done ? "gold" : ""}"><i style="width:${(mp.pct * 100).toFixed(1)}%"></i></div>
-    <p class="note">Menu level ${menuTier().n} of ${MENU_TIERS.length} — ${esc(menuTier().label.toLowerCase())}.${
-      menuTier().n < MENU_TIERS.length
-        ? ` ${MENU_TIERS[menuTier().n].at - mp.known} more character${MENU_TIERS[menuTier().n].at - mp.known === 1 ? "" : "s"} and it gets harder.`
-        : " This is a menu you could be handed in Chengdu."}</p>
-
-    ${pch ? `<div class="sq-target ${learnedIt ? "done" : ""}">
-      <span class="sq-glyph">${esc(pch.c)}</span>
-      <span class="sq-info">
-        <span class="t">${learnedIt ? "Today's menu character — learned" : "Today's menu character"}</span>
-        <span class="m">${learnedIt ? `${esc(pch.p)} · ${esc(pch.m)}` : "One character a day. Find it on the menu below."}</span>
-        ${learnedIt ? `<span class="p">Next one tomorrow.</span>` : `<span class="p">${esc(pch.words[0][0])} · ${esc(pch.words[0][2])}</span>`}
-      </span>
-    </div>` : `<div class="sq-target done">
-      <span class="sq-glyph">✓</span>
-      <span class="sq-info"><span class="t">Quest complete</span>
-      <span class="m">You can read every character on this menu.</span></span>
-    </div>`}
-
-    <div class="sq-actions">
-      ${!learnedIt ? `<button class="btn btn-block" id="learnMenu">Learn ${esc(pch.c)}</button>` : ""}
-      <button class="btn btn-ghost" id="openMenuFull">See the full menu</button>
-    </div>
-
-    <div class="menu-wrap">${renderMenuCard(learnedIt ? null : pick2.c)}</div>
-
-    <div class="menu-legend">
-      <span><b style="color:var(--ink)">黑</b> you can read</span>
-      <span><b style="color:var(--ink-3)">灰</b> not yet</span>
-      ${!learnedIt ? `<span><b style="color:var(--seal)">红</b> today's character</span>` : ""}
-      <span class="dim">Hover any character for its meaning</span>
-    </div>
-  </div>`;
+  /* The side quest is not on this page at all. It had a block here, then a
+     one-line pointer at the tab that replaced it, and the pointer was still
+     the menu turning up on a page that is about the day's five characters.
+     The tab is in the nav; that is the pointer. */
 
   $("#viewToday").innerHTML = `<div class="wrap">
-    <div class="cols">
-      <div class="section">${hero}${todoBlock}${deeper}${sideQuest}</div>
-      <div class="col-side">${decks}${wotw}</div>
+    <div class="dash">
+      <!-- The day's characters and the day's practice are the same subject —
+           what you learned and what to do with it — so they share an enclosure
+           rather than sitting as two cards that happen to be adjacent. -->
+      <div class="dash-today">
+        <div class="dash-col">${hero}</div>
+        <div class="dash-col">${todoBlock}</div>
+        ${todayOpen && got.length ? `<div class="today-all">
+          <div class="learned-head">
+            <span class="eyebrow">Everything you learned today ${hanLabel("今日新字")}</span>
+            <span class="dim" style="font-size:.76rem">${got.length} character${got.length === 1 ? "" : "s"}</span>
+          </div>
+          <div class="today-all-grid">${got.map(charTile).join("")}</div>
+        </div>` : ""}
+      </div>
+      <div class="dash-col dash-side">${wotw}${decks}</div>
+      <div class="dash-wide">${deeper}</div>
     </div>
   </div>`;
 
@@ -2792,13 +3519,16 @@ function renderToday() {
     if (e) sayPhrase(e.word[0], true);
     renderToday();
   });
-  $("#startBtn")?.addEventListener("click", startSession);
-  $("#aheadBtn")?.addEventListener("click", () => { state.goalNew += 5; save(); startSession(); });
+  $("#startBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) startSession(); });
+  $("#aheadBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) { studyAhead(5); startSession(); } });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
   $("#deckWords")?.addEventListener("click", () => openFlash(combos, "Words you can read"));
-  $("#openMenuFull")?.addEventListener("click", () => openQuest("menu"));
-  $("#learnMenu")?.addEventListener("click", () => openMenuLesson(pick2.c));
+  $("#ltMore")?.addEventListener("click", () => { todayOpen = !todayOpen; renderToday(); });
+  $$("#viewToday .lt-arrow").forEach(b => b.onclick = () => {
+    const rail = $("#ltStrip");
+    if (rail) rail.scrollBy({ left: +b.dataset.lt * rail.clientWidth * 0.8, behavior: "smooth" });
+  });
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
   $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
   $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
@@ -2849,20 +3579,31 @@ function tierGateNote(t) {
 }
 
 function renderLibrary() {
+  /* The stage chips are "s" + the stage number, and this used to read the
+     number as `libFilter[1]` behind a `length === 2` guard — so it only ever
+     worked for the single-digit stages. There are thirteen now: s10 to s13
+     failed the guard, the clause never ran, and four chips lit up while
+     showing the whole library. Match the number however many digits it has. */
+  const stageOnly = /^s(\d+)$/.exec(libFilter);
   const chars = HQ.filter(ch => {
     const st = strength(ch.c);
     if (libFilter === "due" && st !== "due") return false;
     if (libFilter === "learning" && st !== "learning") return false;
     if (libFilter === "strong" && st !== "strong") return false;
     if (libFilter === "new" && isKnown(ch.c)) return false;
-    if (libFilter[0] === "s" && libFilter.length === 2 && ch.stage !== +libFilter[1]) return false;
+    if (stageOnly && ch.stage !== +stageOnly[1]) return false;
     if (libSearch && !(matches(ch, libSearch)
         || ch.words.some(w => w[0].includes(libSearch) || bare(w[2]).includes(bare(libSearch))))) return false;
     return true;
   });
 
-  const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"],
-    ...STAGES.map(s => ["s" + s.n, `${s.icon} ${s.name}`])];
+  /* A horizontally scrolling row is fine for five things and a trap for
+     eighteen: five state chips plus thirteen stages came to 1641px inside a
+     1136px row, so five of them sat off the right-hand edge with nothing on
+     screen saying so. It scrolled, so nothing looked broken. The five states
+     stay as chips; the stages become one control that can hold all of them. */
+  const filters = [["all","All"],["due","Due"],["learning","Learning"],["strong","Strong"],["new","Not started"]];
+  const stagePick = /^s\d+$/.test(libFilter) ? libFilter : "";
 
   /* Grouped by tier rather than laid out in one sheet of 348. A beginner
      scrolling past three hundred characters they can't start on is the
@@ -2927,7 +3668,11 @@ function renderLibrary() {
     </div>
     <input class="search" id="libQ" type="search" placeholder="Search a character, pinyin or meaning…" value="${esc(libSearch)}">
     <div class="filters">${filters.map(([k, l]) =>
-      `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}</div>
+      `<button class="filt ${libFilter === k ? "on" : ""}" data-f="${k}">${esc(l)}</button>`).join("")}
+      <select class="filt filt-sel ${stagePick ? "on" : ""}" id="libStage" aria-label="Filter by stage">
+        <option value="">All stages</option>
+        ${STAGES.map(st => `<option value="s${st.n}" ${stagePick === "s" + st.n ? "selected" : ""}>${st.n}. ${esc(st.icon)} ${esc(st.name)} ${esc(st.zh)}</option>`).join("")}
+      </select></div>
     ${chars.length ? sections
       : `<div class="empty"><span class="z">空</span><p>Nothing here yet. Try another filter.</p></div>`}
     <div class="legend">
@@ -2938,7 +3683,8 @@ function renderLibrary() {
     </div>
   </div>`;
 
-  $$("#viewLibrary .filt").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $$("#viewLibrary .filt[data-f]").forEach(b => b.onclick = () => { libFilter = b.dataset.f; renderLibrary(); });
+  $("#libStage").onchange = e => { libFilter = e.target.value || "all"; renderLibrary(); };
   $$("#viewLibrary .tier-toggle").forEach(b => b.onclick = () => {
     const n = +b.dataset.tier;
     const cur = b.getAttribute("aria-expanded") === "true";
@@ -2957,57 +3703,165 @@ function renderLibrary() {
 
 /* ---------- radicals ---------- */
 
+/* Which family of ideas each radical belongs to. Hand-grouped on purpose: the
+   traditional 214-radical ordering is by stroke count, which is useful for
+   looking a character up in a paper dictionary and useless for learning what
+   the parts mean. Anything not placed here lands in a catch-all rather than
+   vanishing off the page — so a radical added to the data shows up untidily
+   instead of not at all. */
+const RAD_THEMES = [
+  { k: "body",   zh: "身体", name: "The body",
+    blurb: "Parts of a person. These turn up in what people do with them.",
+    keys: ["口", "目", "心", "手", "又", "力", "足"] },
+  { k: "people", zh: "人物", name: "People",
+    blurb: "Who someone is, and who they are to each other.",
+    keys: ["人", "女", "立"] },
+  { k: "world",  zh: "自然", name: "The natural world",
+    blurb: "What things are made of and where they come from.",
+    keys: ["水", "火", "木", "日", "月", "土", "石", "钅", "虫", "鸟", "田", "王"] },
+  { k: "made",   zh: "事物", name: "Made and done",
+    blurb: "Things people built, and the actions they built them for.",
+    keys: ["讠", "食", "门", "贝", "辶", "纟", "刀", "衣"] }
+];
+
+/* The worked example, chosen because it is unusually clean: a meaning part and
+   a sound part, both of which the learner will already have met. Built from
+   the curriculum's own comp data rather than hand-written, so it cannot drift
+   out of step with the character it describes. */
+const RAD_DEMO = "妈";
+
+function radDemo() {
+  const ch = CHAR_INDEX[RAD_DEMO];
+  if (!ch || ch.comp.length < 2) return "";
+  const [mean, sound] = ch.comp;
+  const [mp, mm] = gloss(mean);
+  const [sp] = gloss(sound);
+  const part = (c, pin, label, role) => `<span class="rx-part ${role}">
+      <span class="rx-z han" data-ch="${esc(c)}">${esc(c)}</span>
+      <span class="rx-p">${esc(pin)}</span>
+      <span class="rx-role">${esc(label)}</span>
+    </span>`;
+  return `<div class="sheet rx">
+    <div class="rx-head">
+      <span class="eyebrow">Start here ${hanLabel("怎么看一个字")}</span>
+      <p class="rx-lede">A character is not a picture to memorise whole. Nearly all of them are
+        <b>two parts</b>: one hinting at the meaning, one at the sound.</p>
+    </div>
+    <div class="rx-sum">
+      ${part(mean, mp || "", mm ? `means: ${shortMeaning(mm)}` : "the meaning", "mean")}
+      <span class="rx-op">+</span>
+      ${part(sound, sp || "", `sounds like: ${sp || "?"}`, "sound")}
+      <span class="rx-op">=</span>
+      <span class="rx-part rx-out">
+        <span class="rx-z han" data-ch="${esc(ch.c)}">${esc(ch.c)}</span>
+        <span class="rx-p">${esc(ch.p)}</span>
+        <span class="rx-role">${esc(ch.m)}</span>
+      </span>
+    </div>
+    <p class="rx-foot">The left half is the <b>radical</b> — ${esc(mm || "the meaning part")}. Learn it once and you
+      have a running start on every other character carrying it. That is what this page is a list of.</p>
+  </div>`;
+}
+
 function renderRadicals() {
-  const documented = Object.keys(RADICALS)
-    .filter(k => FAMILIES[k] && FAMILIES[k].length)
-    .sort((a, b) => FAMILIES[b].length - FAMILIES[a].length);
+  const documented = Object.keys(RADICALS).filter(k => FAMILIES[k] && FAMILIES[k].length);
   const others = Object.entries(FAMILIES)
     .filter(([k, v]) => v.length > 1 && !RADICALS[k])
     .sort((a, b) => b[1].length - a[1].length);
 
-  $("#viewRadicals").innerHTML = `<div class="wrap">
-    <div class="today-head">
-      <h1>Characters come in families</h1>
-      <p class="note">Chinese isn't a few thousand unrelated symbols. Almost every character is built from a small set of parts called radicals: one part hints at the meaning, another at the sound. Learn a radical and you get a discount on everything containing it.</p>
+  /* anything hand-grouped goes in its theme; anything new in the data lands in
+     a catch-all rather than silently disappearing off the page */
+  const placed = new Set(RAD_THEMES.flatMap(t => t.keys));
+  const strays = documented.filter(k => !placed.has(k));
+  const themes = RAD_THEMES.map(t => ({ ...t, keys: t.keys.filter(k => documented.includes(k)) }))
+    .concat(strays.length ? [{ k: "more", zh: "其他", name: "Others", blurb: "", keys: strays }] : [])
+    .filter(t => t.keys.length);
+
+  const tally = k => {
+    const kids = FAMILIES[k];
+    return { kids, known: kids.filter(isKnown).length };
+  };
+
+  /* ---- the map: every radical, how far through, one click to its card ---- */
+  const map = `<div class="sheet rad-map">
+    <div class="rad-map-head">
+      <span class="eyebrow">All of them ${hanLabel("部首表")}</span>
+      <span class="dim" style="font-size:.74rem">${documented.length} of 214 ·
+        ${documented.reduce((a, k) => a + tally(k).known, 0)} of
+        ${documented.reduce((a, k) => a + tally(k).kids.length, 0)} characters</span>
     </div>
-    <div class="rad-grid">
-      ${documented.map(k => {
-        const r = RADICALS[k], kids = FAMILIES[k];
-        const known = kids.filter(isKnown).length;
-        return `<div class="sheet rad">
-          <div class="rad-top">
-            <span class="rad-glyph">${esc(r.form)}</span>
-            <span class="rad-id">
-              <b>${esc(r.name)}</b>
-              <small>${esc(r.pin)} · ${r.strokes} strokes${r.variants ? ` · written ${esc(r.variants)}` : ""}</small>
-            </span>
-            <span class="quest-frac">${known}/${kids.length}</span>
-          </div>
-          <p class="rad-does">${esc(r.does)}</p>
-          <div class="rad-kids">${kids.map(c => `<button class="rad-kid ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
-            <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
-        </div>`;
-      }).join("")}
+    <p class="note rad-scope">No, this isn't all of them — the full traditional set is <b>214</b>, and a big
+      dictionary indexes every character under one of them. These ${documented.length} are the ones that
+      actually earn their keep in this library: each has at least one character you are being taught. The
+      other ${214 - documented.length} are real, but you would be learning them for characters that
+      aren't here yet.</p>
+    <div class="rad-map-grid">
+      ${themes.map(t => t.keys.map(k => {
+        const r = RADICALS[k], { kids, known } = tally(k);
+        const pct = Math.round(known / kids.length * 100);
+        return `<a class="rad-chip ${known === kids.length ? "full" : known ? "part" : ""}" href="#rad-${esc(k)}"
+            title="${esc(r.name)} — ${known} of ${kids.length} learned">
+            <span class="rc-z han">${esc(r.form)}</span>
+            <span class="rc-n">${esc(r.name)}</span>
+            <span class="rc-bar"><i style="width:${pct}%"></i></span>
+          </a>`;
+      }).join("")).join("")}
+    </div>
+  </div>`;
+
+  const card = k => {
+    const r = RADICALS[k], { kids, known } = tally(k);
+    return `<div class="sheet rad ${kids.length === 1 ? "solo" : ""} ${kids.length > 8 ? "wide" : ""}" id="rad-${esc(k)}">
+      <div class="rad-top">
+        <span class="rad-glyph">${esc(r.form)}</span>
+        <span class="rad-id">
+          <b>${esc(r.name)}</b>
+          <small>${esc(r.pin)} · ${r.strokes} strokes${r.variants ? ` · written ${esc(r.variants)}` : ""}</small>
+        </span>
+        <span class="quest-frac">${known}/${kids.length}</span>
+      </div>
+      <p class="rad-does">${esc(r.does)}</p>
+      <div class="rad-kids">${kids.map(c => `<button class="rad-kid ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
+        <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
+    </div>`;
+  };
+
+  $("#viewRadicals").innerHTML = `<div class="wrap">
+    <div class="today-head rad-intro">
+      <h1>Characters come in families</h1>
+      <p class="note">Chinese isn't a few thousand unrelated symbols. Learn a part once and you get a
+        discount on everything containing it.</p>
     </div>
 
-    ${others.length ? `<div class="sec-head" style="margin:1.4rem 0 .7rem">
-      <h2>Other shared parts</h2>
-      <span class="dim" style="font-size:.78rem">${others.length} groups</span>
-    </div>
-    <div class="section">
-      ${others.map(([root, kids]) => {
-        const [p, m] = gloss(root);
-        return `<div class="sheet tree">
-          <div class="tree-root">
-            <span class="z han">${esc(root)}</span>
-            <span class="m"><b>${esc(p)}</b><small>${esc(m)}</small></span>
-            <span class="n">${kids.filter(isKnown).length}/${kids.length}</span>
-          </div>
-          <div class="branches">${kids.map(c => `<button class="branch ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
-            <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
-        </div>`;
-      }).join("")}
-    </div>` : ""}
+    ${radDemo()}
+    ${map}
+
+    ${themes.map(t => `<section class="rad-theme">
+      <div class="rad-theme-head">
+        <h2>${esc(t.name)} ${hanLabel(t.zh)}</h2>
+        ${t.blurb ? `<p class="note">${esc(t.blurb)}</p>` : ""}
+      </div>
+      <div class="rad-grid">${[...t.keys].sort((a, b) => FAMILIES[b].length - FAMILIES[a].length).map(card).join("")}</div>
+    </section>`).join("")}
+
+    ${others.length ? `<details class="rad-more">
+      <summary>Other shared parts — ${others.length} more groups<span class="dim">
+        parts that repeat across the library without being radicals in their own right</span></summary>
+      <div class="section">
+        ${others.map(([root, kids]) => {
+          const [p, m] = gloss(root);
+          return `<div class="sheet tree">
+            <div class="tree-root">
+              <span class="z han">${esc(root)}</span>
+              <span class="m"><b>${esc(p)}</b><small>${esc(m)}</small></span>
+              <span class="n">${kids.filter(isKnown).length}/${kids.length}</span>
+            </div>
+            <div class="branches">${kids.map(c => `<button class="branch ${isKnown(c) ? "known" : "locked"}" data-c="${esc(c)}">
+              <span class="z">${esc(c)}</span><span>${isKnown(c) ? esc(CHAR_INDEX[c].p) : "?"}</span></button>`).join("")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </details>` : ""}
   </div>`;
 
   $$("#viewRadicals [data-c]").forEach(b => b.onclick = () => openChar(b.dataset.c));
@@ -3038,7 +3892,7 @@ function renderRecord() {
 
         <div class="sheet" style="padding:1rem">
           <div class="stack" style="gap:.6rem">
-            <span class="eyebrow">Every day since you started</span>
+            <span class="eyebrow">Every day since you started ${hanLabel("学习记录")}</span>
             <div class="cal-wrap">${calendar(182)}</div>
             <div class="cal-legend">Less <span class="day"></span><span class="day f1"></span><span class="day f2"></span><span class="day f3"></span><span class="day f4"></span> More</div>
             <p class="note">${activeDays} day${activeDays === 1 ? "" : "s"} studied · best run ${state.streak.best}</p>
@@ -3088,7 +3942,7 @@ function renderRecord() {
           if (!stuck.length) return "";
           return `<div class="sheet" style="padding:1rem">
             <div class="stack" style="gap:.6rem">
-              <span class="eyebrow">Sticking points</span>
+              <span class="eyebrow">Sticking points ${hanLabel("难字")}</span>
               <p class="note">You've missed these more often than you've got them. Repeating the same drill won't shift them —
                 open one and look at where it comes from and what it's built out of.</p>
               <div class="leech-list">${stuck.slice(0, 18).map(c => `<button class="leech" data-c="${esc(c)}">
@@ -3105,7 +3959,7 @@ function renderRecord() {
       <div class="col-side">
         <div class="sheet" style="padding:1rem">
           <div class="stack" style="gap:.8rem">
-            <span class="eyebrow">Skills</span>
+            <span class="eyebrow">Skills ${hanLabel("能力")}</span>
             <div class="skills">
               ${skills.map(([k, label, key]) => {
                 /* Measured against the characters you know, not the whole
@@ -3148,11 +4002,30 @@ function renderRecord() {
    anywhere instead.
    ============================================================ */
 
+/* What the sync row says, which is a different sentence in each of five
+   states — and the two failure states have to name the fix, because the person
+   reading them is the one who set the project up. */
+function syncRowNote() {
+  if (sync.status === "in") {
+    const who = sync.user && (sync.user.email || sync.user.name);
+    return `Signed in${who ? ` as ${esc(who)}` : ""}. This record is kept in step with your other `
+         + "devices — sign in there with the same account and both read the same one. "
+         + "Nothing is shared with anyone else.";
+  }
+  if (sync.status === "error") {
+    return `<b>Sync is off:</b> ${esc(sync.msg)}`;
+  }
+  if (sync.status === "loading") return "Checking…";
+  return "Sign in once on each device and your characters, streak and diary follow you "
+       + "between them. Everything keeps working offline and keeps working if you never do — "
+       + "this only adds a copy somewhere you can reach from a phone.";
+}
+
 function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
-        <span class="eyebrow" style="margin-bottom:.5rem">Studying</span>
+        <span class="eyebrow" style="margin-bottom:.5rem">Studying ${hanLabel("学习")}</span>
         <div class="settings-row">
           <label>New characters a day<small>More isn't better — reviews compound.</small></label>
           <span class="stepper" id="goalStep">
@@ -3170,6 +4043,16 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
         </div>
         <div class="settings-row">
+          <label>Answer buttons<small>One row matches the keyboard, where 1-2-3-4 runs left to right.
+            Two by two sits low on the screen, where a thumb reaches. ${(state.optCols || "auto") === "auto"
+              ? `Auto, so this window decides: <b>${optColsEffective() === "row" ? "one row" : "two by two"}</b> at this size.`
+              : "Set by hand, so the window doesn't get a vote."}</small></label>
+          <span class="pick-row" id="optColsPick">
+            ${[["auto", "Auto"], ["row", "1 × 4"], ["grid", "2 × 2"]].map(([v, l]) =>
+              `<button class="filt ${(state.optCols || "auto") === v ? "on" : ""}" data-oc="${v}">${l}</button>`).join("")}
+          </span>
+        </div>
+        <div class="settings-row">
           <label>Start the trackpad automatically<small>${padSupported()
             ? "Every writing box arms itself for trackpad writing, instead of waiting for the 触控 button or <kbd class=\"opt-n\">T</kbd>. Esc drops out of it. Some browsers only allow this straight after a click — where one refuses, the button is still there."
             : "This browser has no pointer lock, so trackpad writing isn't available here."}</small></label>
@@ -3180,7 +4063,7 @@ function openSettings() {
 
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
-        <span class="eyebrow" style="margin-bottom:.5rem">Sound</span>
+        <span class="eyebrow" style="margin-bottom:.5rem">Sound ${hanLabel("声音")}</span>
         <div class="settings-row">
           <label>Speak characters aloud<small>${clipCount()
             ? `Characters play one of ${clipCount()} recorded clips.`
@@ -3211,7 +4094,14 @@ function openSettings() {
 
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
-        <span class="eyebrow" style="margin-bottom:.5rem">Your data</span>
+        <span class="eyebrow" style="margin-bottom:.5rem">Your data ${hanLabel("你的记录")}</span>
+        ${syncConfigured() ? `<div class="settings-row" id="syncRow">
+          <label>Progress on your other devices<small>${syncRowNote()}</small></label>
+          ${sync.status === "in"
+            ? `<button class="btn btn-ghost btn-sm" id="syncOut">Sign out</button>`
+            : `<button class="btn btn-ghost btn-sm" id="syncIn" ${sync.status === "loading" ? "disabled" : ""}>${
+                sync.status === "loading" ? "…" : "Sign in"}</button>`}
+        </div>` : ""}
         <div class="settings-row">
           <label>Save your progress to a file<small>Writes one .json file — progress, streak and diary — that you can load back in later.
             ${state.lastBackup ? `Last saved ${esc(new Date(state.lastBackup).toLocaleDateString())}.` : "You haven't saved a copy yet."}</small></label>
@@ -3247,13 +4137,18 @@ function openSettings() {
   </div></div>`);
 
   $$("#goalStep button").forEach(b => b.onclick = () => {
-    state.goalNew = Math.max(1, Math.min(30, state.goalNew + (+b.dataset.d)));
+    state.goalNew = Math.max(GOAL_MIN, Math.min(GOAL_MAX, state.goalNew + (+b.dataset.d)));
     save(); openSettings();
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $$("#optColsPick button").forEach(b => b.onclick = () => {
+    state.optCols = b.dataset.oc; save(); applyOptCols(); openSettings();
+  });
   $("#padTgl").onclick = () => { state.padAuto = !state.padAuto; save(); openSettings(); };
   $("#audioTgl").onclick = () => { state.audio = !state.audio; save(); openSettings(); };
+  $("#syncIn")?.addEventListener("click", syncSignIn);
+  $("#syncOut")?.addEventListener("click", syncSignOut);
   $("#backupBtn").onclick = openBackup;
   $("#profileBtn").onclick = () => openProfile(false);
   $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
@@ -3497,9 +4392,13 @@ function onKey(e) {
     return;
   }
 
-  /* flashcards */
+  /* Flashcards: the space bar does three things, told apart by how it is
+     pressed — see flashKeyDown/Up, where the decision is made on release
+     because a tap and a hold are the same keydown. Enter and the arrows keep
+     working as they did. */
   if ($("#flash").classList.contains("on")) {
-    if (e.key === " " || e.key === "Enter") { e.preventDefault(); $("#card3d")?.click(); }
+    if (e.key === " ") { e.preventDefault(); flashKeyDown(e); return; }
+    if (e.key === "Enter") { e.preventDefault(); $("#card3d")?.click(); }
     else if (e.key === "ArrowRight") { e.preventDefault(); flashStep(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); flashStep(-1); }
     return;
@@ -3541,8 +4440,19 @@ function onKey(e) {
   }
 
   if (e.key === " " || e.key === "Enter") {
-    const go2 = $("#cont") || $("#gotIt") || $("#fin") || $("#again") || $("#skipW");
+    /* Space moves you on. It does not answer for you.
+
+       #skipW was in this list, which meant that on a writing drill — the one
+       that comes straight after meeting a character — two taps of space gave
+       up on the quiz without a stroke being written: the first tap dismissed
+       the card, the second hit "Show me the strokes". That reads as the space
+       bar skipping the quiz, because it is. The skip button keeps its own key
+       (S), where pressing it is a decision rather than a reflex. */
+    const go2 = $("#cont") || $("#gotIt") || $("#fin") || $("#again");
     if (go2) { e.preventDefault(); go2.click(); }
+    /* nothing to advance to means the question is still open: swallow it, so
+       a held key cannot run ahead into whatever renders next */
+    else if (session.queue[session.idx]?.t === "drill") e.preventDefault();
     return;
   }
   if (/^[1-9]$/.test(e.key)) {
@@ -3707,7 +4617,7 @@ function openProfile(firstRun) {
   });
   $("#pfSkip").onclick = () => { state.profiled = true; save(); closeSheet(); };
   $("#pfSave").onclick = () => {
-    state.name = $("#pfName").value.trim().slice(0, 40);
+    state.name = capName($("#pfName").value).slice(0, 40);
     const next = [...chosen];
     /* a changed interest set invalidates a pick that may no longer be in it */
     if ((state.interests || []).join() !== next.join()) state.wotw = null;
@@ -3732,6 +4642,10 @@ const place = { idx: 0, asked: 0, misses: 0, done: false, got: new Set(), result
 
 const MIN_BEFORE_STOP = 12;   /* questions before "that's enough" is offered */
 
+/* Set by maybeAskLevel() when the check was opened from "Start today's
+   session", so the end of the check knows to carry on into it. */
+let placeThenStart = false;
+
 function openPlacement() {
   place.idx = 0; place.asked = 0; place.misses = 0; place.done = false;
   place.got = new Set(); place.result = 0; place.locked = false;
@@ -3740,11 +4654,19 @@ function openPlacement() {
   renderPlacement();
 }
 
-function closePlacement() {
+/* `andStart` is set when the placement was reached from the session button,
+   which is the only way into it on a first run. Finishing the check there and
+   being dropped back on the dashboard to press the same button again is a
+   dead end: the whole point of answering it was to find out where today's
+   five characters begin, and the answer is "here they are". Closing it any
+   other way — the ✕, or a re-place from Settings — just closes it. */
+function closePlacement(andStart) {
   $("#place").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
-  maybeOfferProfile();
+  /* The two questions were asked in the introduction, before any of this. */
+  if (andStart && placeThenStart) setTimeout(startSession, 260);
+  placeThenStart = false;
 }
 
 function placementOptions(c) {
@@ -3774,8 +4696,9 @@ function renderPlacement() {
 
   $("#placeBody").innerHTML = `<div class="place-inner">
     <span class="place-where">${esc(stage.icon)} ${esc(stage.name)} · #${ch.i + 1} of ${HQ.length}</span>
-    <span class="eyebrow">Which character means</span>
-    <h1 class="place-q">${esc(ch.m)}</h1>
+    <span class="eyebrow">Which character ${isJobGloss(ch.m) ? "is" : "means"} ${hanLabel("选字")}</span>
+    <h1 class="place-q">${esc(ch.m)}${isJobGloss(ch.m)
+      ? ` <span class="pin opt-say">${esc(ch.p)}</span>` : ""}</h1>
     <div class="place-opts">
       ${opts.map((o, i) => `<button class="place-opt" data-c="${esc(o.c)}">
         <kbd class="opt-n">${i + 1}</kbd><span class="han">${esc(o.c)}</span></button>`).join("")}
@@ -3860,11 +4783,12 @@ function renderPlacementDone() {
     </div>
     <p class="note dim">You can re-place from Settings at any time. It only ever adds.</p>
   </div>`;
-  $("#placeRedo").onclick = openPlacement;
+  $("#placeRedo").onclick = openPlacement;   /* placeThenStart survives a retake */
   $("#placeGo").onclick = () => {
     if (n) placeKnown(place.got);
     else { state.placed = { on: dayKey(), at: 0, known: 0 }; save(); }
-    closePlacement();
+    hailSilently();
+    closePlacement(true);
   };
 }
 
@@ -3916,6 +4840,281 @@ const asking = () => !!askDone;
    A short walk round, the first time only
    ============================================================ */
 
+
+/* ============================================================
+   The first run: four stages, and none of them a form
+
+   This used to be seven prose cards, then a dialog asking about placement,
+   then a dialog asking two questions — a gauntlet you clicked through to
+   reach the app, and the prose got clicked through unread, which is worse
+   than not showing it.
+
+   Four stages now, more picture than paragraph:
+
+     1. hello       — 你好, written by the app's own animator
+     2. about you   — the two questions, straight after the greeting
+     3. a character — 妈 is 女 + 马, the whole writing system in one line
+     4. how it goes — learn, practise, go deeper, and the two extras
+
+   Stages 3 and 4 wait for Next and have nothing else to click; that is the
+   gate. Afterwards the wordmark reopens them, because "what was that about
+   the parts" is a day-three question, and the seven-card tab tour stays in
+   Settings for anyone who wants it.
+   ============================================================ */
+
+let introStep = 0, introTimer = null, introWriters = [];
+
+/* Stage 1 needs to finish. It used to cut away on a flat timeout, which
+   clipped the second character; the wait is taken from the real strokes
+   instead — hanzi-writer runs about 330ms a stroke plus its own gap — and
+   then there are two seconds to look at what it drew. A click skips. */
+const STROKE_MS = 330, STROKE_GAP = 180, LOOK_MS = 2000;
+const helloMs = word => [...word].reduce((a, c) =>
+  a + ((window.STROKE_DATA[c] || {}).strokes || []).length * (STROKE_MS + STROKE_GAP), 0) + LOOK_MS;
+
+const HELLO = "你好";
+
+function startIntro(force) {
+  if (!force && state.intro) return;
+  introStep = 0;
+  $("#intro").hidden = false;
+  document.body.style.overflow = "hidden";
+  renderIntro();
+}
+
+/* The wordmark reopens the two explanatory stages — not the greeting, which
+   is a one-off, and not the questions, which live in Settings. */
+function replayIntro() {
+  introStep = 2;
+  $("#intro").hidden = false;
+  document.body.style.overflow = "hidden";
+  renderIntro();
+}
+
+function closeIntro() {
+  clearTimeout(introTimer); introTimer = null;
+  introWriters = [];
+  const first = !state.intro;
+  state.intro = true; save();
+  $("#intro").hidden = true;
+  document.body.style.overflow = "";
+  renderAll();
+  /* The fourth stage is the page itself, with its parts named. It is locked,
+     because it is still the introduction; the one from the ? is not. */
+  if (first) setTimeout(() => openCoach("today", true), 300);
+}
+
+const introNext = () => { clearTimeout(introTimer); introTimer = null; introStep++; renderIntro(); };
+
+function renderIntro() {
+  const host = $("#introCard");
+  if (introStep > 3) return closeIntro();
+  host.className = "intro-card stage-" + introStep;
+  [renderIntroHello, renderIntroAbout, renderIntroChar, renderIntroHow][introStep](host);
+}
+
+/* ---- 1. hello ---- */
+function renderIntroHello(host) {
+  host.innerHTML = `
+    <div class="intro-hello">
+      <span class="intro-seal han">汉</span>
+      <div class="intro-boxes">
+        ${[...HELLO].map((c, i) => `<div class="tian">${TIAN_SVG}
+          <div class="tian-slot"><div id="hi${i}"></div></div></div>`).join("")}
+      </div>
+      <div class="intro-say">
+        <span class="p">nǐ hǎo</span>
+        <span class="m">hello</span>
+      </div>
+      <p class="intro-skip">Click to skip</p>
+    </div>`;
+  introWriters = [...HELLO].map((c, i) => {
+    const w = makeWriter($("#hi" + i), c, { showCharacter: false });
+    return w;
+  });
+  /* one after the other, so it reads as a word being written rather than two
+     characters racing */
+  let at = 0;
+  const draw = () => {
+    const w = introWriters[at];
+    if (!w) return;
+    w.animateCharacter({ onComplete: () => { at++; if (at < introWriters.length) draw(); } });
+  };
+  setTimeout(draw, 260);
+  introTimer = setTimeout(introNext, helloMs(HELLO));
+  host.onclick = introNext;
+}
+
+/* ---- 2. the two questions, and the gauge ---- */
+const LEVELS = [
+  { k: "none",  zh: "从零",  label: "None at all",   note: "Start at the first character." },
+  { k: "few",   zh: "几个",  label: "A few words",   note: "Hello, thank you, a number or two." },
+  { k: "some",  zh: "日常",  label: "I can get by",  note: "Signs, a menu, the gist of a message." },
+  { k: "read",  zh: "会读",  label: "I read some",   note: "Whole sentences, with gaps." }
+];
+
+function renderIntroAbout(host) {
+  const chosen = new Set(fillInterests());
+  let level = state.level || null;
+  host.onclick = null;
+  host.innerHTML = `
+    <div class="intro-head">
+      <span class="eyebrow">About you ${hanLabel("关于你")}</span>
+      <h2>Two quick questions${state.name ? ", " + esc(state.name.split(/\\s+/)[0]) : ""}.</h2>
+      <p>Both optional. Your name is only ever used to address you; the rest picks the word of
+        the week and where to start.</p>
+    </div>
+    <label class="intro-field">What should we call you?
+      <input type="text" id="inName" class="search" maxlength="40" placeholder="Your name"
+        value="${esc(state.name || "")}" autocomplete="given-name">
+    </label>
+    <div class="intro-field">How much Chinese can you read already?
+      <div class="intro-levels">
+        ${LEVELS.map(l => `<button class="intro-level ${level === l.k ? "on" : ""}" data-lvl="${l.k}"
+          aria-pressed="${level === l.k}">
+          <span class="han">${l.zh}</span><b>${esc(l.label)}</b><small>${esc(l.note)}</small></button>`).join("")}
+      </div>
+    </div>
+    <div class="intro-field">What are you into?
+      <p class="intro-hint">One real word a week from whatever you pick — usually made of characters
+        well past where you have got to. It changes nothing else.</p>
+      <div class="int-grid">
+        ${INTEREST_KEYS.map(k => {
+          const it = INTERESTS[k];
+          return `<button class="int ${chosen.has(k) ? "on" : ""}" data-int="${esc(k)}" aria-pressed="${chosen.has(k)}">
+            <span class="int-icon">${esc(it.icon)}</span>
+            <span class="int-body"><b>${esc(it.name)}</b><span class="han">${esc(it.zh)}</span></span>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+    <button class="btn btn-seal btn-block" id="introOn">That's me — keep going</button>`;
+
+  $$("#introCard .int").forEach(b => b.onclick = () => {
+    const k = b.dataset.int;
+    if (chosen.has(k)) chosen.delete(k); else chosen.add(k);
+    b.classList.toggle("on", chosen.has(k));
+    b.setAttribute("aria-pressed", chosen.has(k));
+  });
+  $$("#introCard .intro-level").forEach(b => b.onclick = () => {
+    level = b.dataset.lvl;
+    $$("#introCard .intro-level").forEach(x => {
+      x.classList.toggle("on", x === b);
+      x.setAttribute("aria-pressed", x === b);
+    });
+  });
+  $("#introOn").onclick = () => {
+    state.name = capName($("#inName").value).slice(0, 40);
+    const next = [...chosen];
+    if ((state.interests || []).join() !== next.join()) state.wotw = null;
+    state.interests = next;
+    fillInterests();                 /* nothing chosen means everything */
+    state.level = level;
+    state.profiled = true;
+    save();
+    introNext();
+  };
+}
+
+/* ---- 3. what a character is ---- */
+function renderIntroChar(host) {
+  const ch = CHAR_INDEX["妈"];
+  host.onclick = null;
+  const [mp, mm] = gloss("女"), [sp] = gloss("马");
+  host.innerHTML = `
+    <div class="intro-head">
+      <span class="eyebrow">A character, taken apart ${hanLabel("怎么看一个字")}</span>
+      <h2>Almost none of them are pictures.</h2>
+      <p>Nearly every character is two parts: one hinting at the <b>meaning</b>, one at the
+        <b>sound</b>. Learn the parts and each new character is mostly things you already know.</p>
+    </div>
+    <div class="rx-sum">
+      <span class="rx-part mean">
+        <span class="rx-z han">女</span><span class="rx-p">${esc(mp)}</span>
+        <span class="rx-role">means: ${esc(shortMeaning(mm))}</span>
+      </span>
+      <span class="rx-op">+</span>
+      <span class="rx-part sound">
+        <span class="rx-z han">马</span><span class="rx-p">${esc(sp)}</span>
+        <span class="rx-role">sounds like: ${esc(sp)}</span>
+      </span>
+      <span class="rx-op">=</span>
+      <span class="rx-part rx-out">
+        <span class="rx-z han">${esc(ch.c)}</span><span class="rx-p">${esc(ch.p)}</span>
+        <span class="rx-role">${esc(ch.m)}</span>
+      </span>
+    </div>
+    <p class="intro-foot">That left-hand part is called a <b>radical</b>, and there are only about
+      thirty worth knowing. The 部首 tab is the list.</p>
+    <div class="intro-foot-row">
+      <div class="intro-dots">${[0,1,2,3].map(i =>
+        `<span class="${i === introStep ? "on" : ""}"></span>`).join("")}</div>
+      <button class="btn btn-seal" id="introOn">Next</button>
+    </div>`;
+  $("#introOn").onclick = introNext;
+}
+
+/* ---- 4. how the app goes about it ---- */
+function renderIntroHow(host) {
+  host.onclick = null;
+  host.innerHTML = `
+    <div class="intro-head">
+      <span class="eyebrow">How this goes ${hanLabel("怎么学")}</span>
+      <h2>A short list, every day.</h2>
+      <p>${HQ.length} characters in an order where each one makes the next easier — you meet 马
+        just before 妈 and 吗, so by then you already own both halves.</p>
+    </div>
+    <div class="intro-flow">
+      <div class="intro-step"><span class="k han">学习</span><b>Learn</b>
+        <small>Meet the day's characters, one card each.</small></div>
+      <span class="intro-arrow">→</span>
+      <div class="intro-step"><span class="k han">今日练习</span><b>Practise</b>
+        <small>Recognise, read, say and write what you just met.</small></div>
+      <span class="intro-arrow">→</span>
+      <div class="intro-step"><span class="k han">加练</span><b>Go deeper</b>
+        <small>Unbounded reps over everything you know. Never finishable.</small></div>
+    </div>
+    <div class="intro-extras">
+      <div class="intro-extra"><span class="k">🍜</span><b>Read a menu</b>
+        <small>One character a day from a real restaurant menu, until you can read the whole thing.</small></div>
+      <div class="intro-extra"><span class="k han">速练</span><b>A minute, timed</b>
+        <small>A sheet against the clock. Whatever you keep missing goes in a 错字本.</small></div>
+    </div>
+    <div class="intro-foot-row">
+      <div class="intro-dots">${[0,1,2,3].map(i =>
+        `<span class="${i === introStep ? "on" : ""}"></span>`).join("")}</div>
+      <button class="btn btn-seal" id="introOn">Start</button>
+    </div>`;
+  $("#introOn").onclick = introNext;
+}
+
+/* ---- placement, asked where it is finally relevant ----
+
+   It used to be a stranger's opening question, and for a complete beginner a
+   quiz whose only possible result was "you know nothing". The introduction
+   asks what they can read; the FIRST press of the session button is where
+   that answer is finally worth acting on. After that it is an ordinary
+   button for good. */
+async function maybeAskLevel() {
+  if (state.levelAsked || wasPlaced() || Object.keys(state.chars).length) return true;
+  state.levelAsked = true; save();
+  if (!state.level || state.level === "none") return true;
+  const said = { few: "a few words", some: "you can get by", read: "you read some" }[state.level];
+  const yes = await askConfirm({
+    k: "定位",
+    title: "Shall we find where to start?",
+    body: `You said ${said}. A quick check walks the ${HQ.length} characters in order and finds where `
+        + "your recognition gives out, so you don't spend a fortnight on characters you have known "
+        + "for years. Under two minutes — or start from the beginning anyway.",
+    yes: "Find my level", no: "Start from the beginning"
+  });
+  if (yes) { placeThenStart = true; openPlacement(); return false; }
+  state.placed = { at: 0, on: dayKey() }; save();
+  return true;
+}
+
+/* The seven-card tab tour. Dropped from the first run — it said the same
+   things less well and made four stages into five — and kept in Settings. */
 const TOUR = [
   { k: "汉", title: "Welcome",
     body: `${HQ.length} characters, taught in an order where each one makes the next easier —
@@ -3962,30 +5161,13 @@ function endTour() {
   state.tour = true; save();
   $("#tour").classList.remove("on");
   document.body.style.overflow = "";
-  maybeOfferPlacement();
 }
 
-/* Offered once, at the end of the tour, and only to a genuinely empty record —
-   asking someone mid-streak where they'd like to start would be alarming. */
-async function maybeOfferPlacement() {
-  if (wasPlaced() || Object.keys(state.chars).length) return;
-  const yes = await askConfirm({
-    k: "定位",
-    title: "Do you already read some Chinese?",
-    body: `A quick check walks the ${HQ.length} characters in order and finds where your recognition starts to give out, `
-        + "so you don't spend a fortnight on characters you have known for years. Under two minutes.",
-    yes: "Find my level", no: "Start from scratch"
-  });
-  if (yes) openPlacement();
-  else { state.placed = { at: 0, on: dayKey() }; save(); maybeOfferProfile(); }
-}
-
-/* Asked once, after placement is settled, so the first run is two short
-   questions rather than a gauntlet of dialogs. */
-function maybeOfferProfile() {
-  if (state.profiled) return;
-  setTimeout(() => { if (!state.profiled) openProfile(true); }, 400);
-}
+/* maybeOfferPlacement() and maybeOfferProfile() used to live here and fire
+   one after the other at the end of the tour. Both questions are inside the
+   introduction now — the two about you straight after the greeting, and the
+   placement one at the first press of the session button, where it is finally
+   relevant. See maybeAskLevel(). */
 
 function renderTour() {
   const t = TOUR[tourStep], last = tourStep === TOUR.length - 1;
@@ -4004,7 +5186,229 @@ function renderTour() {
    ============================================================ */
 
 let view = "today";
-const RENDER = { today: renderToday, sprint: renderSprint, library: renderLibrary,
+
+/* ============================================================
+   The ? belongs to the page it is standing on
+
+   One overlay explaining the Today page is a tutorial. Six overlays, one per
+   tab, each explaining the page you are actually looking at, is a manual you
+   never have to go and find.
+
+   Two rules held the whole time this was written:
+
+   A step whose target is not on screen is SKIPPED rather than pointed at
+   nothing. The side rail stacks away on a narrow layout, and the mistake
+   notebook does not exist until you have made mistakes.
+
+   And point at selectors that actually exist. Two different failures look
+   identical from inside the overlay — a ring around nothing. One is a class
+   invented outright that is in no file; the other is a real class that simply
+   is not rendered on the tab the step points at. Smoke catches the first by
+   reading the source; coachSteps() catches the second by asking the DOM, and
+   the browser loop over every tab is what proved it.
+   ============================================================ */
+
+const COACH = {
+  today: { label: "Today", steps: [
+    { sel: ".dash-today", k: "今天", title: "The day's work, in one place",
+      body: "What you learned today on the left, what to do with it on the right. The list is scoped to today, so it is always finishable." },
+    { sel: ".hero-cta", k: "开始", title: "One button starts everything",
+      body: "New characters and any reviews that have come round, in one sitting. When there is nothing due it offers to teach you more instead." },
+    { sel: ".dash-side", k: "生字卡", title: "A word a week, and the decks",
+      body: "The word of the week comes from what you said you were interested in. Below it, every character you know as flashcards." },
+    { sel: ".deeper", k: "加练", title: "The part that compounds",
+      body: "Reps past today's list, weakest first. None of it is required and none of it can be finished — that is what makes it the part that compounds." }
+  ]},
+  menu: { label: "the Menu", steps: [
+    { sel: ".sq-target", k: "今日一字", title: "One character a day",
+      body: "Picked off the menu as it is printed for you right now, so it is always something you can go and find. Learning it here records it here — nothing on this tab enters your review queue or counts against the day." },
+    { sel: ".ink-read", k: "读得懂", title: "How much of the wall you can read",
+      body: "Counted in ink rather than in vocabulary: every character printed on the card, repeats and all, because one character in five dishes is five characters of wall that light up at once." },
+    { sel: ".menu-card", k: "菜单", title: "The menu itself",
+      body: "Black is a character you can read, grey is one you have not reached yet, red is today's. It grows in three levels — dish names, then the small print, then the specials board — and you get the next one when you can read this one." },
+    { sel: ".menu-say", k: "口语", title: "What you say to the waiter",
+      body: "Tap any of them to hear it. Six of the characters in these phrases are printed nowhere on the card, so this row is the only place they turn up." }
+  ]},
+  sprint: { label: "Sprint", steps: [
+    { sel: ".sp-panels", k: "速练", title: "A sheet against the clock",
+      body: "So many questions, so many minutes. Reading, writing and listening each keep their own board." },
+    { sel: ".sp-panel-best", k: "记录", title: "Your best, per sheet",
+      body: "Nothing is marked until you hand the sheet in, so the clock is the only pressure." },
+    { sel: ".sp-book", k: "错字本", title: "The mistake notebook",
+      body: "Whatever you keep missing collects here to be worked on properly, rather than waiting to come round again." }
+  ]},
+  library: { label: "the Library", steps: [
+    { sel: ".search", k: "查找", title: "Find any character",
+      body: "Search by the character, its pinyin or its meaning. Tone marks are optional — type shui for 水." },
+    { sel: ".filters", k: "筛选", title: "Narrow it down",
+      body: "By how well you know it, or by the stage it is taught in. The stages are one picker because there are thirteen of them." },
+    { sel: ".tier", k: "三关", title: "Three doors, not one wall",
+      body: "The library opens a tier at a time. A tier you have not reached collapses to a single card, so the road ahead stays visible without being in the way." },
+    { sel: ".grid-chars", k: "字", title: "Every character is a card",
+      body: "Colour says how solid it is. Tap any of them for the full card — where it comes from, what it is built from, the words it turns up in." }
+  ]},
+  write: { label: "Write", steps: [
+    { sel: ".wp-page", k: "练字", title: "A blank page",
+      body: "Nothing is checked here. Fill it, scrawl on it, clear it and go again — it is an exercise book, not a test." },
+    { sel: ".wp-tools", k: "笔", title: "Nib, trackpad, save",
+      body: "Press T for the trackpad, where the browser allows it. Save a page and it is kept by date." },
+    { sel: ".pick-stage", k: "笔顺", title: "Stroke order, while you write",
+      body: "Pick a character below and its strokes play here — again, one at a time, or all at once. It stays while you copy it." },
+    { sel: ".wp-picker", k: "描红", title: "Something to trace",
+      body: "Choosing a character prints it faintly across the page to write over, the way a 字帖 copybook works." }
+  ]},
+  radicals: { label: "Radicals", steps: [
+    { sel: ".rx", k: "部件", title: "Start here",
+      body: "Nearly every character is two parts: one for the meaning, one for the sound. This is that idea in one line." },
+    { sel: ".rad-map", k: "部首表", title: "The whole set, and where you are",
+      body: "Every radical worth knowing, with how far through each one you are. Click any of them to jump to its card." },
+    { sel: ".rad-theme", k: "分类", title: "Grouped by what they mean",
+      body: "The body, people, the natural world, things made and done — rather than by stroke count, which is for paper dictionaries." }
+  ]},
+  record: { label: "Record", steps: [
+    { sel: ".stats", k: "总计", title: "Everything, counted",
+      body: "Characters, days, reps. The numbers that only go up." },
+    { sel: ".cal-wrap", k: "日历", title: "Every day since you started",
+      body: "One square a day, darker for a bigger day. A missed day leaves an empty box — nothing you have done is ever cleared." },
+    { sel: ".skills", k: "能力", title: "Which skills are ahead",
+      body: "Recognising, reading, saying and writing are counted separately, because they come on at different speeds." },
+    { sel: ".ladder", k: "阶段", title: "The stages, end to end",
+      body: "Where you are in the curriculum, and what each stage was for." }
+  ]}
+};
+
+let coach = { view: null, step: 0, steps: [], locked: false };
+
+/* A guide step is about the page it is standing on, so its selector is
+   resolved INSIDE that page's section rather than against the whole document.
+
+   `.search` is why. The Write tab has a `.search.pick-find` box and the
+   Library has a `.search`; the Write one comes first in index.html, so
+   document.querySelector(".search") returned it on every tab. On a tab where
+   it is not rendered it measures 0x0 at 0,0 — so the Library's first step
+   drew a 12px ring in the top-left corner, and the "is it on screen?" filter
+   below happily kept the step because it had found *an* element.
+
+   Two classes sharing a name across two tabs is not a mistake anyone would
+   see reading either file. Scoping the lookup makes it impossible. */
+function coachTarget(v, sel) {
+  const host = $("#view" + v[0].toUpperCase() + v.slice(1));
+  const el = host ? host.querySelector(sel) : null;
+  /* a target outside the view's own section — none today, but the ? itself
+     lives in the top bar and a future step may point at it */
+  return el || $(sel);
+}
+
+/* Only the steps whose target is actually rendered. A ring around nothing is
+   worse than one step fewer, and an element with no box is nothing. */
+const coachSteps = v => (COACH[v] || { steps: [] }).steps
+  .filter(s => { const el = coachTarget(v, s.sel); return el && el.getBoundingClientRect().width > 0; });
+
+/* The ? names the page it is standing on, and is hidden on a tab with no
+   guide rather than opening an empty overlay. */
+function syncHelp() {
+  const b = $("#helpBtn");
+  if (!b) return;
+  const has = coachSteps(view).length > 0;
+  b.hidden = !has;
+  if (has) {
+    const label = `How ${COACH[view].label} works`;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+  }
+}
+
+function openCoach(v = view, locked = false) {
+  const steps = coachSteps(v);
+  if (!steps.length) return;
+  coach = { view: v, step: 0, steps, locked };
+  $("#coach").hidden = false;
+  /* The body is deliberately NOT locked here. renderCoach scrolls each target
+     into view, and body { overflow: hidden } makes that a no-op — so every
+     step drew its ring wherever the element already happened to be and the
+     coach behaved as though the whole page were on screen. On a desktop the
+     dashboard mostly is, which is why this never showed up there. The veil
+     already stops the page being touched; it does not need to stop it moving. */
+  renderCoach();
+}
+
+/* The first run's coach is locked — no ✕, and the veil does not dismiss —
+   because it is the last stage of the introduction. The one opened from the ?
+   closes normally: somebody checking one thing should not have to walk the
+   set. */
+function closeCoach(force) {
+  if (coach.locked && !force) return;
+  $("#coach").hidden = true;
+  $("#coachRing").hidden = true;
+  $$(".coach-lit").forEach(e => e.classList.remove("coach-lit"));
+  coach = { view: null, step: 0, steps: [], locked: false };
+}
+
+/* The ring sits on top of the thing it is pointing at, in viewport
+   coordinates, padded so the target is not touching it. An element taller
+   than the window is pinned to the top of the viewport instead of being
+   centred on a midpoint that is off screen in both directions. */
+function placeCoachRing(el, ring) {
+  const r = el.getBoundingClientRect(), pad = 6;
+  const top = Math.max(pad, r.top - pad);
+  const height = Math.min(r.height + pad * 2, innerHeight - top - pad);
+  ring.hidden = false;
+  ring.style.cssText = `top:${top}px;left:${Math.max(pad, r.left - pad)}px;`
+    + `width:${Math.min(r.width + pad * 2, innerWidth - pad * 2)}px;height:${height}px`;
+}
+
+function renderCoach() {
+  const s = coach.steps[coach.step];
+  if (!s) return closeCoach(true);
+  const last = coach.step === coach.steps.length - 1;
+  const el = coachTarget(coach.view, s.sel);
+
+  $$(".coach-lit").forEach(e => e.classList.remove("coach-lit"));
+  const ring = $("#coachRing");
+  if (el) {
+    el.classList.add("coach-lit");
+    /* The ring is positioned in viewport coordinates, so it has to be measured
+       AFTER the scroll has happened. It used to ask for a smooth scroll and
+       then read getBoundingClientRect() on the very next line — the rect it
+       got was the one from before the page moved, so every step whose target
+       was not already centred drew its ring somewhere else entirely. "Go
+       deeper" sits at the foot of the dashboard and was the worst of them.
+
+       An instant scroll settles synchronously, so the measurement below is
+       taken against where the element actually ended up. */
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    placeCoachRing(el, ring);
+    /* Belt and braces: a late image or a web font can reflow under us between
+       that scroll and the paint. One more measurement on the next frame costs
+       nothing and catches it. */
+    requestAnimationFrame(() => { if (coach.steps[coach.step] === s) placeCoachRing(el, ring); });
+  } else ring.hidden = true;
+
+  $("#coachCard").innerHTML = `
+    <div class="coach-top">
+      <span class="coach-k han">${esc(s.k)}</span>
+      <b>${esc(s.title)}</b>
+      ${coach.locked ? "" : `<button class="coach-x" id="coachX" aria-label="Close">✕</button>`}
+    </div>
+    <p>${esc(s.body)}</p>
+    <div class="coach-foot">
+      <div class="coach-dots">${coach.steps.map((_, i) =>
+        `<span class="${i === coach.step ? "on" : ""}"></span>`).join("")}</div>
+      <div class="coach-nav">
+        ${coach.step ? `<button class="btn btn-ghost btn-sm" id="coachBack">Back</button>` : ""}
+        <button class="btn btn-seal btn-sm" id="coachNext">${last ? "Got it" : "Next"}</button>
+      </div>
+    </div>`;
+  $("#coachX")?.addEventListener("click", () => closeCoach());
+  $("#coachBack")?.addEventListener("click", () => { coach.step--; renderCoach(); });
+  $("#coachNext").onclick = () => {
+    if (last) return closeCoach(true);
+    coach.step++; renderCoach();
+  };
+  $("#coachNext").focus();
+}
+
+const RENDER = { today: renderToday, menu: renderQuest, sprint: renderSprint, library: renderLibrary,
                  write: renderWrite, radicals: renderRadicals, record: renderRecord };
 
 function go(v) {
@@ -4013,8 +5417,54 @@ function go(v) {
   $$(".view").forEach(el => el.classList.toggle("on", el.id === id));
   $$("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === v));
   RENDER[v]();
+  syncHelp();
+  closeDrawer();
   window.scrollTo(0, 0);
 }
+/* ---------- four across, or two-up ----------
+
+   A phone held in one hand wants a 2x2 block low on the screen, where a thumb
+   reaches without regripping. A desktop wants one row, because 1-2-3-4 on the
+   keyboard runs left to right and the options should run the same way.
+
+   Those are good defaults and bad rules, so the window only decides when the
+   setting says to. The answer is resolved here rather than in a media query
+   because it depends on two things — the setting and the width — and CSS can
+   only ask about one of them at a time. The stylesheet reads the result off
+   data-opt-cols and never has to know how it was arrived at. */
+const OPT_ROW_MIN = 820;        /* the width four options need to stay legible */
+const optColsMQ = matchMedia(`(min-width: ${OPT_ROW_MIN}px)`);
+
+function optColsEffective() {
+  const pick = state.optCols || "auto";
+  return pick === "auto" ? (optColsMQ.matches ? "row" : "grid") : pick;
+}
+function applyOptCols() {
+  document.documentElement.dataset.optCols = optColsEffective();
+}
+
+/* ---------- the sections sheet ----------
+
+   A phone has no room for the tab row, so the tabs live in a sheet behind the
+   burger. The buttons inside it carry data-nav like every other tab button,
+   which means go() lights the right one and the single [data-nav] handler in
+   boot() wires them — this code only has to open and shut the thing. */
+function openDrawer() {
+  const d = $("#drawer");
+  d.hidden = false;
+  d.classList.add("on");
+  document.body.style.overflow = "hidden";
+  $("#burgerBtn").setAttribute("aria-expanded", "true");
+}
+function closeDrawer() {
+  const d = $("#drawer");
+  if (!d.classList.contains("on")) return;
+  d.classList.remove("on");
+  d.hidden = true;
+  document.body.style.overflow = "";
+  $("#burgerBtn").setAttribute("aria-expanded", "false");
+}
+
 function renderAll() {
   /* renderWrite() deliberately no-ops once built — rebuilding it would wipe
      whatever is on the page. */
@@ -4092,10 +5542,21 @@ function boot() {
   /* clicking the dim backdrop is a cancel, like Escape */
   $("#ask").addEventListener("pointerdown", e => { if (e.target === $("#ask")) closeAsk(false); });
   document.addEventListener("keydown", onKey);
+  /* the flashcard space bar is decided on release, so it needs the other half */
+  document.addEventListener("keyup", e => {
+    if (e.key !== " ") return;
+    if (!$("#flash").classList.contains("on")) return flashKeysReset();
+    e.preventDefault();
+    flashKeyUp();
+  });
+  /* a key still down when the window goes away would strand the card face-up */
+  window.addEventListener("blur", flashKeysReset);
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
     if ($("#sprintRun").classList.contains("on")) { e.preventDefault(); $("#spClose").click(); return; }
+    if (!$("#coach").hidden) { closeCoach(); return; }
+    if (!$("#hail").hidden) { closeHail(); return; }
     if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();
@@ -4103,12 +5564,70 @@ function boot() {
     else if (session.active) $("#sesClose").click();
   });
   initTips();
+  initSpeakables();
   $("#flashClose").onclick = closeFlash;
-  $("#placeClose").onclick = closePlacement;
+  $("#placeClose").onclick = () => closePlacement(false);
   $("#nbClose").onclick = closeNotebook;
   /* #nbPad lives inside the notebook stage now, and is bound when it renders */
+  {
+    /* #flashStage survives every renderFlash — only its contents are replaced —
+       so these are bound once. pointercancel matters: the browser takes the
+       pointer away when it decides a drag is a scroll, and without it the hold
+       timer would fire onto a card the thumb has already left. */
+    const stage = $("#flashStage");
+    stage.addEventListener("pointerdown", flashTouchDown);
+    stage.addEventListener("pointermove", flashTouchMove);
+    stage.addEventListener("pointerup", flashTouchUp);
+    stage.addEventListener("pointercancel", () => {
+      const held = fdrag.held;
+      flashTouchReset();
+      if (held) flashFlip(false);
+    });
+  }
   $("#flashPrev").onclick = () => flashStep(-1);
   $("#flashNext").onclick = () => flashStep(1);
+  /* Hover and focus open it in CSS; a tap needs a class, and a tap anywhere
+     else needs to put it away again.
+
+     `shut` is the awkward one. Clicking the chip a second time removed `on`
+     and nothing happened, because the pointer was still on the chip and
+     `.streak-pop:hover` was holding it open on its own — so the control looked
+     broken precisely when you used it the obvious way. `shut` overrides hover
+     until the pointer leaves, at which point hover is welcome to work again. */
+  const closePop = p => {
+    p.classList.remove("on");
+    $(".streak-chip", p)?.setAttribute("aria-expanded", "false");
+  };
+  $$(".streak-chip").forEach(chip => {
+    const pop = chip.closest(".streak-pop");
+    if (!pop) return;
+    chip.addEventListener("click", e => {
+      e.stopPropagation();
+      const opening = !pop.classList.contains("on");
+      pop.classList.toggle("on", opening);
+      pop.classList.toggle("shut", !opening);
+      chip.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+    pop.addEventListener("mouseleave", () => pop.classList.remove("shut"));
+  });
+  document.addEventListener("click", () => $$(".streak-pop.on").forEach(closePop));
+  $("#brandBtn")?.addEventListener("click", replayIntro);
+  $("#helpBtn")?.addEventListener("click", () => openCoach());
+  /* the veil dismisses the ? version and not the locked one */
+  $("#coachVeil")?.addEventListener("click", () => closeCoach());
+  applyOptCols();
+  /* The window only gets a vote while the setting is on auto, but the listeners
+     are cheap and applyOptCols asks the setting first. Both, because the media
+     query is the right question and resize is the one that always gets asked:
+     a viewport that changes without a matchMedia change event — an emulated
+     one, a desktop browser entering full screen — would otherwise leave a
+     drill laid out for the window before it. */
+  optColsMQ.addEventListener("change", applyOptCols);
+  addEventListener("resize", applyOptCols);
+  $("#burgerBtn").onclick = () =>
+    ($("#drawer").classList.contains("on") ? closeDrawer() : openDrawer());
+  $("#drawerVeil").onclick = closeDrawer;
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
   $$(".settings-btn").forEach(b => b.onclick = openSettings);
   $$(".save-btn").forEach(b => b.onclick = openBackup);
   $("#tourNext").onclick = () => { if (tourStep === TOUR.length - 1) endTour(); else { tourStep++; renderTour(); } };
@@ -4121,8 +5640,16 @@ function boot() {
      the first render triggered by something else. */
   renderStreakChip();
   renderTracker();
-  startTour();
+  syncHelp();
+  startIntro();
+  /* Two ways the record can arrive from somewhere else, and one thing to do
+     about it either way. srs.js calls onRemoteChange after a pull has merged
+     something in; sync.js calls onSyncChange when the signed-in state moves,
+     which only Settings is showing. */
+  onRemoteChange = renderAll;
+  onSyncChange = () => { if ($("#syncRow")) openSettings(); };
   connectRemote().then(changed => { if (changed) renderAll(); });
+  syncInit();
 }
 
 document.addEventListener("DOMContentLoaded", boot);

@@ -56,20 +56,45 @@ const blank = () => ({
   timer: true,
   tour: false,
   writeDrills: true,
+  /* how the four answers are laid out: "auto" lets the window decide, "row"
+     and "grid" overrule it — see optColsEffective in app.js */
+  optCols: "auto",
   padAuto: false,
+  hailed: [],           /* milestones already celebrated — see MILESTONES */
+  menuTaught: [],       /* the side quest's own book — see menuCanRead() */
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
   name: "",
   interests: [],
   profiled: false,
+  intro: false,         /* the four-stage introduction has been through once */
+  level: null,          /* what they said they could already read, in the introduction */
+  levelAsked: false,    /* the one-off "take the check?" on the first session */
   updated: Date.now()
 });
 
 let state = blank();
 
+/* Names are capitalised: each word, and after a hyphen or an apostrophe, so
+   mary-jane becomes Mary-Jane and o'brien becomes O'Brien. The REST of each
+   word is left exactly as typed — otherwise McRae and van der Berg get broken
+   in the name of tidiness.
+
+   Declared here in srs.js rather than in app.js because load() needs it too:
+   records written before this existed carry whatever was typed, and the
+   greeting says it back every morning. One rule, both paths. */
+const capName = s => String(s || "").trim()
+  .replace(/(^|[\s\-'\u2019])(\p{L})/gu, (m, sep, first) => sep + first.toLocaleUpperCase());
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) state = Object.assign(blank(), JSON.parse(raw));
+    if (!(state.goalNew >= GOAL_MIN && state.goalNew <= GOAL_MAX)) state.goalNew = blank().goalNew;
+    /* An imported backup is whatever was in the file; the quest reads this on
+       every render and a non-array would take the dashboard down with it. */
+    if (!Array.isArray(state.menuTaught)) state.menuTaught = [];
+    if (state.name) state.name = capName(state.name);
+    fillInterests();
   } catch { /* private mode, cleared storage — carry on with a fresh record */ }
   return state;
 }
@@ -97,9 +122,182 @@ function resetProgress() {
   return state;
 }
 
-/* ---------- optional cross-device sync ---------- */
+/* ---------- merging two records of the same person ----------
+
+   Last write wins is the right rule for a setting and the wrong rule for work.
+   A morning on the phone and an afternoon on the laptop are both real; whichever
+   pushed second would erase the other, and the thing erased would be the thing
+   the person actually did. So preferences follow the clock and anything earned
+   is unioned.
+
+   What makes the union safe is that everything counted here only ever goes up.
+   `seen`, `right`, `wrong`, `skills` and `shown` are incremented in grade() and
+   reset nowhere, so max() of two counts of the same monotonic thing is the true
+   count — the only way to overcount would be to record one session twice, and a
+   session happens on one device.
+
+   `lvl` and `due` are the exception, and are not counts: they are a position in
+   a review queue. Maxing them would invent a schedule neither device had, so
+   they come as a pair from whichever record was written later. */
+
+const day = d => String(d || "");
+const laterDay = (a, b) => (day(a) >= day(b) ? day(a) : day(b)) || null;
+const earlierDay = (a, b) => (!a ? b : !b ? a : (day(a) <= day(b) ? a : b)) || null;
+const bigger = (a, b) => Math.max(a || 0, b || 0);
+
+const CH_COUNTS = ["seen", "right", "wrong"];
+const CH_SKILLS = ["r", "p", "c", "w"];
+
+function mergeChar(x, y) {
+  if (!x) return y;
+  if (!y) return x;
+  /* the later sighting carries the schedule: the other device's queue has
+     since moved on, and its lvl/due are a snapshot of a queue that no longer
+     exists */
+  const lead = day(y.last) >= day(x.last) ? y : x;
+  const out = Object.assign({}, lead);
+  CH_COUNTS.forEach(k => out[k] = bigger(x[k], y[k]));
+  out.skills = {}; out.shown = {};
+  CH_SKILLS.forEach(k => {
+    out.skills[k] = bigger(x.skills && x.skills[k], y.skills && y.skills[k]);
+    out.shown[k] = bigger(x.shown && x.shown[k], y.shown && y.shown[k]);
+  });
+  out.first = earlierDay(x.first, y.first);
+  out.last = laterDay(x.last, y.last);
+  return out;
+}
+
+/* A day's tally is counts and a set of characters revised. Both union. */
+function mergeDay(x, y) {
+  if (!x) return y;
+  if (!y) return x;
+  const out = Object.assign({}, x, y);
+  ["new", "rev", "ahead", "extra"].forEach(k => {
+    if (x[k] !== undefined || y[k] !== undefined) out[k] = bigger(x[k], y[k]);
+  });
+  if (x.revC || y.revC) out.revC = unionKeys(x.revC, y.revC);
+  return out;
+}
+
+/* Every key from both sides, in a fixed order.
+
+   Sorted, and not for tidiness: the merged record is serialised to compare it
+   against the local one and again to write it to the remote. Keys arriving in
+   whichever order the arguments happened to be in would make two identical
+   records compare as different — a repaint on every pull, and a write on every
+   load. Dates sort chronologically as a bonus. */
+const mergeBy = (x = {}, y = {}, f) => {
+  const out = {};
+  for (const k of [...new Set([...Object.keys(x), ...Object.keys(y)])].sort()) out[k] = f(x[k], y[k]);
+  return out;
+};
+/* a plain union of two flag objects, in the same fixed order — Object.assign
+   would keep whichever order the arguments arrived in */
+const unionKeys = (x, y) => mergeBy(x, y, (a, b) => (b === undefined ? a : b));
+
+/* x is the older record and y the newer, so the preferences in here resolve by
+   the clock rather than by which way round the caller happened to pass them */
+function mergeSprint(x = {}, y = {}) {
+  const out = {};
+  /* a mark is [right, wrong] per mode plus `s`, a rolling window of the last
+     few results — the window is a recent history, so it comes from one device
+     whole rather than being interleaved into a sequence that never happened */
+  out.marks = mergeBy(x.marks, y.marks, (a, b) => {
+    if (!a) return b;
+    if (!b) return a;
+    const total = m => ["l", "r", "w"].reduce((n, k) => n + ((m[k] || [0, 0])[0] + (m[k] || [0, 0])[1]), 0);
+    const lead = total(b) >= total(a) ? b : a;
+    const m = Object.assign({}, lead);
+    ["l", "r", "w"].forEach(k => {
+      if (a[k] || b[k]) m[k] = [bigger((a[k] || [])[0], (b[k] || [])[0]),
+                                bigger((a[k] || [])[1], (b[k] || [])[1])];
+    });
+    return m;
+  });
+  out.best = mergeBy(x.best, y.best, (a, b) => (!b ? a : !a ? b : (beats(a, b) ? a : b)));
+  out.cleared = unionKeys(x.cleared, y.cleared);
+  /* every finished sheet from both devices, newest first, deduped on the
+     millisecond it was recorded */
+  const seen = new Set();
+  out.runs = [...(x.runs || []), ...(y.runs || [])]
+    .filter(r => r && !seen.has(r.at) && seen.add(r.at))
+    .sort((a, b) => (b.at || 0) - (a.at || 0))
+    .slice(0, SPRINT_RUNS_KEPT);
+  /* the sheet settings last chosen — a preference, so the later device's copy
+     wins, which is why mergeState hands these over in clock order */
+  out.pick = unionKeys(x.pick, y.pick);
+  return out;
+}
+
+function mergeState(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const newer = (b.updated || 0) >= (a.updated || 0) ? b : a;
+  const older = newer === a ? b : a;
+
+  /* settings, name, interests, the day's menu pick: answers rather than
+     accumulations, so the clock decides */
+  const out = Object.assign(blank(), older, newer);
+
+  out.chars = mergeBy(a.chars, b.chars, mergeChar);
+  out.days = mergeBy(a.days, b.days, mergeDay);
+  out.sprint = mergeSprint(older.sprint, newer.sprint);
+  out.menuTaught = unionKeys(a.menuTaught, b.menuTaught);
+  out.hailed = [...new Set([...(a.hailed || []), ...(b.hailed || [])])].sort((x, y) => x - y);
+  out.streak = {
+    /* a best is a claim about the past and cannot be undone by the other
+       device not knowing about it */
+    best: bigger(a.streak && a.streak.best, b.streak && b.streak.best),
+    cur: (newer.streak || {}).cur || 0,
+    last: laterDay(a.streak && a.streak.last, b.streak && b.streak.last)
+  };
+  out.started = earlierDay(a.started, b.started);
+  out.lastBackup = bigger(a.lastBackup, b.lastBackup) || null;
+  out.placed = (a.placed && b.placed)
+    ? (bigger(a.placed.known, b.placed.known) === (a.placed.known || 0) ? a.placed : b.placed)
+    : (a.placed || b.placed || null);
+  out.updated = Math.max(a.updated || 0, b.updated || 0);
+  return out;
+}
+
+/* ---------- optional cross-device sync ----------
+
+   One document per person, holding the whole record. Two providers can supply
+   it and neither is required: `window.claude` when this app runs inside a
+   Claude artifact, and js/sync.js when a Firebase project has been configured.
+   Both hand over the same tiny shape — an object with get() and set() — so
+   everything below is written once.
+
+   With no provider at all, remoteDoc stays null, pushRemote is a no-op and the
+   app is exactly the localStorage-only app it was. */
 
 let remoteDoc = null;
+let onRemoteChange = null;             /* set by app.js, so a pull can repaint */
+
+/* Hand the record a document to sync against. Returns whether the local state
+   changed as a result, so the caller knows whether to re-render. */
+async function useRemote(doc) {
+  remoteDoc = doc;
+  if (!doc) return false;
+  try {
+    const snap = await doc.get();
+    const remote = snap && snap.exists ? snap.data() : null;
+    if (remote) {
+      const merged = mergeState(state, remote);
+      const changed = JSON.stringify(merged) !== JSON.stringify(state);
+      state = merged;
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+      /* push unconditionally: even when nothing changed locally, the remote is
+         missing whatever this device knew that it didn't */
+      pushRemote();
+      return changed;
+    }
+    pushRemote();
+  } catch { remoteDoc = null; }
+  return false;
+}
+
+function dropRemote() { remoteDoc = null; }
 
 async function connectRemote() {
   if (!window.claude?.use) return false;
@@ -107,18 +305,7 @@ async function connectRemote() {
     const [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
     if (!db) return false;
     const uid = user ? await user.id() : null;
-    remoteDoc = db.doc(`data/users/${uid || "me"}/progress`);
-    const snap = await remoteDoc.get();
-    if (snap.exists) {
-      const remote = snap.data();
-      /* Last write wins — the record is one person's, not a shared document. */
-      if (remote && remote.updated > (state.updated || 0)) {
-        state = Object.assign(blank(), remote);
-        try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
-        return true;
-      }
-    }
-    pushRemote();
+    return await useRemote(db.doc(`data/users/${uid || "me"}/progress`));
   } catch { remoteDoc = null; }
   return false;
 }
@@ -260,6 +447,44 @@ const extraTotal = () => Object.values(state.days).reduce((a, d) => a + (d.extra
 const extraBestDay = () => Object.values(state.days).reduce((a, d) => Math.max(a, d.extra || 0), 0);
 const extraDays = () => Object.values(state.days).filter(d => d.extra > 0).length;
 
+/* ---------- studying ahead ----------
+
+   "Study ahead — 5 more characters" used to do `state.goalNew += 5`, which is
+   the setting, not the day. So one click on a Tuesday quietly rewrote "new
+   characters a day" from 5 to 10 and left it there: Wednesday dealt ten, the
+   settings stepper read 10, and clicking again made it 15. What the button
+   means is "give me more today", so the extra is kept on the day and is gone
+   with it. */
+const aheadToday = () => (state.days[dayKey()] || {}).ahead || 0;
+function studyAhead(n) {
+  const t = today();
+  t.ahead = (t.ahead || 0) + n;
+  save();
+}
+
+/* Today's target: the standing setting, plus anything asked for on top of it
+   today. This is a *target*, not a batch size — see newLeftToday(). */
+const dayGoal = () => state.goalNew + aheadToday();
+
+/* How many new characters are still owed today, and the only number allowed to
+   decide how many a session deals.
+
+   Getting this wrong is what made "Study ahead" run away even after the extra
+   stopped touching the setting. nextNew(n) returns the next n characters you
+   have *never seen*, so it has no idea what today already taught you: dealing
+   nextNew(dayGoal()) on a finished day of five handed out ten more, not five.
+   Click, finish, click, finish and the day went 5 → 15 → 30 → 50, with the
+   hero counting down a different number from the one the session dealt. One
+   function now answers both. */
+const newLeftToday = () =>
+  Math.max(0, Math.min(dayGoal(), remainingNew()) - today().new);
+
+/* The stepper's own range. A stored goalNew outside it cannot have come from a
+   person — it is wreckage from the version that did `goalNew += 5` — so it
+   goes back to the default on load rather than sitting at a number nobody
+   chose and the stepper cannot walk back down to. */
+const GOAL_MIN = 1, GOAL_MAX = 30;
+
 function touchStreak() {
   const k = dayKey();
   const s = state.streak;
@@ -286,6 +511,9 @@ function liveStreak() {
   return gap <= 1 ? s.cur : 0;
 }
 
+/* Deliberately the standing goal and not dayGoal(): asking for five more
+   characters is extra credit, and extra credit cannot take back a day you had
+   already finished — or the streak that came with it. */
 function goalMet() {
   const t = state.days[dayKey()];
   if (!t) return false;
@@ -317,6 +545,48 @@ function nextNew(n) {
 /* What is left that you're actually allowed to start on. Counting the whole
    library here would promise "study ahead" sessions the gate then refuses. */
 const remainingNew = () => HQ.slice(0, unlockedCeiling()).filter(ch => !state.chars[ch.c]).length;
+
+/* Nothing chosen means everything.
+
+   The word of the week is purely a reward — it never changes what is taught or
+   when — so an empty interest list has no upside at all: it just means the card
+   sits there explaining why it is empty. Nobody should ever meet that card. On
+   save, on skip, and here on load for the records that already exist. */
+function fillInterests() {
+  if (!(state.interests || []).filter(k => INTERESTS[k]).length)
+    state.interests = [...INTEREST_KEYS];
+  return state.interests;
+}
+
+/* ---------- milestones ----------
+
+   Every hundredth character, and the last one, get a moment. The list is
+   deliberately coarse: a library of 763 gives eight of these, which is often
+   enough to look forward to and rare enough that one still means something.
+   Every fifty would give fifteen and each would mean half as much.
+
+   `hailed` records what has been celebrated rather than deriving it from the
+   count, because the count goes down as well as up — a reset, or a character
+   removed from the curriculum — and nobody should be congratulated twice for
+   the same hundred. */
+const MILESTONES = [100, 200, 300, 400, 500, 600, 700, HQ.length];
+const hailed = () => (state.hailed = state.hailed || []);
+
+/* The HIGHEST milestone reached and not yet celebrated, not the lowest. The
+   placement test can credit three hundred characters in one go, and a queue
+   of overlays to click through would turn the moment into a chore. */
+function milestoneDue() {
+  const n = knownChars().length;
+  const due = MILESTONES.filter(m => n >= m && !hailed().includes(m));
+  return due.length ? due[due.length - 1] : null;
+}
+
+/* Marking one marks everything below it, so the ones jumped over do not queue
+   up and surface one at a time over the next eight sessions. */
+function markMilestone(m) {
+  MILESTONES.forEach(x => { if (x <= m && !hailed().includes(x)) hailed().push(x); });
+  save();
+}
 
 /* ---------- word of the week ----------
 
@@ -627,37 +897,138 @@ const dayReps = d => d ? (d.new || 0) + (d.rev || 0) + (d.extra || 0) + (d.sp ||
 /* Days you actually studied — this never resets, unlike the streak. */
 const daysStudied = () => Object.values(state.days).filter(d => dayReps(d) > 0).length;
 
-/* ---------- the menu side quest: one character a day ---------- */
+/* ---------- the menu side quest: one character a day ----------
+
+   The quest keeps its own books. It used to run entirely on the main library:
+   what you could read was `isKnown`, the daily character was the next unknown
+   in curriculum order, and learning one called `introduce`. Three things were
+   wrong with that, and they were all the same thing — the side quest was not
+   on the side.
+
+   It marched in step with Today, so a placement check could tell somebody who
+   had never opened the quest that they could read the whole menu. Learning a
+   character here fed the same schedule as everything else, so an aside became
+   another obligation. And finishing a menu lesson ticked off "learn today's
+   characters" — a task about the day's five, completed from another page.
+
+   So: cross-reference in, progression out. `state.menuTaught` is what the menu
+   itself has taught. `menuCanRead` asks both books, because a character
+   learned anywhere still inks in, which is the whole point of the page.
+   `menuLearn` records and nothing else.
+
+   The trade-off, stated plainly: a character met on the menu is not scheduled
+   for review. It is recognition and immersion, not retention. That is fine
+   here because every character on this card is in the curriculum and will come
+   round properly in its own time.
+
+   It also means nothing has to be kept out of the day's list — a menu
+   character never enters the library, so `learnedToday` has nothing to exclude
+   and the ring cannot move behind your back. */
 
 function menuQuest() { return QUESTS.find(q => q.id === "menu"); }
 
-function menuProgress() {
-  const known = MENU_CHARS.filter(isKnown).length;
-  return { known, total: MENU_CHARS.length, pct: known / MENU_CHARS.length,
-           done: known === MENU_CHARS.length };
+/* What the quest taught you, as opposed to what the curriculum did. */
+const taughtHere = c => (state.menuTaught || []).includes(c);
+const menuCanRead = c => isKnown(c) || taughtHere(c);
+
+/* How grown-up a menu you can cope with right now: you get the next one when
+   you can read this one. Nothing on another tab can spring this gate, and
+   nothing on another tab is required to pass it.
+
+   It cannot strand anybody either. MENU_READ holds only characters the library
+   teaches, and the quest offers one a day from the level you are standing on,
+   so the worst case is 26 days to clear level 1 and every one of those days
+   moves you a character closer. Which is also why "this level is exhausted but
+   the card is not finished" does not exist: clearing the wall promotes you on
+   the spot. */
+function menuTier() {
+  let n = 1;
+  while (n < MENU_TIERS.length && MENU_READ[n].every(menuCanRead)) n++;
+  return MENU_TIERS[n - 1];
 }
 
-/* Today's menu character, fixed once chosen so it can't shift underfoot. */
+/* What is actually on the wall in front of you, at the level you are on. */
+const menuOnWall = () => MENU_READ[menuTier().n];
+
+/* Count the ink, not the vocabulary.
+
+   The bar used to answer "how many of a list of 54 do I know". Nobody standing
+   in a restaurant asks that. The question the quest is named after is how much
+   of this can I read, and the denominator for it is the card with repeats: 面
+   appears in five dishes, and learning it lights up five characters of wall.
+   That weights common characters the way the wall does, and it moves every
+   session rather than only when a menu character comes up, which is most of
+   why it is worth looking at.
+
+   `known` / `total` stay alongside it as the countable pair — the number you
+   can check by looking at the card — and the wall pair is the one the level
+   copy needs. */
+function menuProgress() {
+  const known = MENU_PRINTED.filter(menuCanRead).length;
+  const ink   = MENU_INK.filter(menuCanRead).length;
+  const wall  = menuOnWall();
+  const wallKnown = wall.filter(menuCanRead).length;
+  return {
+    known, total: MENU_PRINTED.length,
+    ink, inkTotal: MENU_INK.length,
+    pct: ink / MENU_INK.length,
+    /* The tick on the track, and whether there is anything for it to mark.
+       Every printed character here is taught, so `capped` is false and the bar
+       runs to the end — but a card that outgrew the curriculum would stop
+       short, and a bar that quietly halts reads as broken. */
+    ceiling: MENU_INK_CEILING,
+    ceilingPct: MENU_INK_CEILING / MENU_INK.length,
+    capped: MENU_INK_CEILING < MENU_INK.length,
+    wallKnown, wallTotal: wall.length,
+    done: known === MENU_PRINTED.length
+  };
+}
+
+/* "N of 54 learned right here" — the only number the quest itself controls. */
+const menuOwn = () => MENU_PRINTED.filter(taughtHere).length;
+
+/* Today's menu character, picked off the wall you can actually see.
+
+   Fixed once chosen so it can't shift underfoot — but a pick the wall no
+   longer shows is a repair rather than a shift. Anyone holding a character
+   from a level they have since dropped below would otherwise spend the rest of
+   the day hunting for something that is not printed. */
 function menuToday() {
   const k = dayKey();
-  if (state.menuPick && state.menuPick.d === k) return state.menuPick;
-  const next = MENU_CHARS.find(c => !isKnown(c)) || null;
+  const wall = menuOnWall();
+  const p = state.menuPick;
+  const stillThere = p && p.d === k &&
+    (p.c ? wall.includes(p.c) : !wall.some(c => !menuCanRead(c)));
+  if (stillThere) return p;
+  const next = wall.find(c => !menuCanRead(c)) || null;
   state.menuPick = { d: k, c: next, done: !next };
   save();
   return state.menuPick;
 }
 
+/* Records it in the quest's own book and nothing else: no `introduce`, no
+   review date, no day count, no tally. */
+function menuLearn(c) {
+  if (!c || !CHAR_INDEX[c]) return;
+  if (!Array.isArray(state.menuTaught)) state.menuTaught = [];
+  if (!state.menuTaught.includes(c)) state.menuTaught.push(c);
+  save();
+}
+
 function menuLearned() {
   const p = menuToday();
   if (!p.c) return;
-  introduce(p.c);
-  tally("new");
+  menuLearn(p.c);
   p.done = true;
   save();
 }
 
-/* The menu characters you can already read — the flashcard deck. */
-const menuKnown = () => MENU_CHARS.filter(isKnown);
+/* The menu characters you can already read — the flashcard deck. Reads
+   `menuCanRead`, not `isKnown`: when you decouple a store, every reader of the
+   old one has to be found. This one and `glyphs()` in app.js were the two that
+   were missed the first time, and the second left a character the quest had
+   just taught still printed in grey. */
+const menuKnown = () => MENU_PRINTED.filter(menuCanRead);
 
 function stageProgress(stageNo) {
   const inStage = HQ.filter(c => c.stage === stageNo);
@@ -668,10 +1039,15 @@ function stageProgress(stageNo) {
 /* ---------- tiers ----------
 
    `to` is the milestone the tier stands for, not how many characters are
-   written yet: tier 2 runs to 500 but the library currently stops at 348, so
-   `tierChars` returns what actually exists and `tierPlanned` says what it is
-   aiming at. Keeping those apart is what lets the Library show an honest
-   "148 of 300 written" instead of pretending the rest are missing. */
+   written yet: a tier can run past the end of the library, so `tierChars`
+   returns what actually exists and `tierPlanned` says what it is aiming at.
+   Keeping those apart is what lets the Library show an honest "n of m
+   written" instead of pretending the rest are missing.
+
+   No sizes in this comment on purpose. It used to say "tier 2 runs to 500 but
+   the library currently stops at 348", which was true when it was written and
+   a lie by the time the library reached 763. Prose that states a count is
+   prose that goes stale. */
 
 const tierFrom = t => t.n === 1 ? 0 : TIERS[t.n - 2].to;
 const tierChars = t => HQ.slice(tierFrom(t), t.to);
