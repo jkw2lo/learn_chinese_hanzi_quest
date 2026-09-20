@@ -2580,7 +2580,12 @@ console.log('\nthe black box, and the report built from it');
      && /state\.spTell !== false/.test(read('js/sprint.js'))
      && /spTell: true/.test(read('js/srs.js')));
   ok('  and the switch is only offered where the wash can happen',
-     /PHONE_MQ\.matches \? `<div class="sp-row">/.test(read('js/sprint.js')));
+     /PHONE_MQ\.matches \? `<div class="sp-row sp-row-wide">/.test(read('js/sprint.js')));
+  /* The stepper stands in for chips on a phone, so the rule that hides them
+     has to ask whether there is a stepper to stand in — the Marking switch
+     has none, and rendered as a heading explaining a display: none button. */
+  ok('  and a row with no stepper keeps its buttons on a phone',
+     /\.sp-row:has\(\.sp-step\) \.sp-chips \{ display: none; \}/.test(read('css/app.css')));
   {
     const g = app.slice(app.indexOf('function grades('));
     ok('  and a wrong one still gets the bar, because it has something to say',
