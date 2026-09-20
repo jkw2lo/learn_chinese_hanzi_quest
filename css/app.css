@@ -3276,12 +3276,63 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .drill, .sp-q { flex: 1 0 auto; }
   .drill .opts, .sp-q .sp-opts { margin-top: auto; }
 
+  /* Go deeper answered a drill the way a sprint already answers one. .sp-q
+     centred its prompt in the space above the options; .drill did not, so the
+     same question read at the top of an 812px screen and was answered at the
+     bottom of it, with a hand's worth of nothing in between. The auto margin
+     above the prompt meets the one below it and the pair settle in the middle.
+
+     Scoped with :has, because a handwriting card has no options to push away
+     from: pushing its prompt down would take the box with it. Where :has is
+     not understood the prompt simply stays at the top, which is where it was. */
+  .drill:has(> .opts) > .drill-prompt { margin-top: auto; }
+
+  /* ---------- two sizes, and only two ----------
+
+     A single sitting showed a character at 5.5rem, the same character in a
+     sprint at 6rem, a reading at 1.25rem and a sentence at 1.5rem — four
+     sizes for two kinds of question, none of them chosen, and all of them
+     read as the app being unable to make up its mind.
+
+     So there are two. What you are being shown is either characters, which
+     are a picture and want to be big, or words, which are a line of text.
+     Both are stated once here and used everywhere a question is asked. */
+  :root { --q-char: 5rem; --q-text: 1.5rem; }
+  .drill-char, .sp-char { font-size: var(--q-char); }
+  .drill-q, .drill-sen { font-size: var(--q-text); }
+  /* two or three characters are a picture, not a line of text — renderDrill
+     marks them, because CSS cannot count what is inside a box */
+  .drill-sen.short { font-size: var(--q-char); line-height: 1.15; }
+  .drill-q .pin { font-size: inherit; }
+  .drill-hint { font-size: .86rem; }
+
   /* Big enough to hit without aiming, and far enough apart that hitting the
-     wrong one is a decision rather than an accident. */
-  .opts, .sp-opts { gap: .7rem; }
-  .opts .opt, .sp-opts .sp-opt { min-height: 4rem; }
-  .opts.grid2 .opt, .sp-opts.grid2 .sp-opt { min-height: 5.6rem; font-size: 1.15rem; }
-  .opts.grid2 .opt .big, .sp-opts.grid2 .sp-opt .big { font-size: 3.4rem; }
+     wrong one is a decision rather than an accident. A thumb is about 9mm
+     across and lands short of where it is aimed, so the rows are taller than
+     the text needs and the gap between them is wider than it looks like it
+     should be — the gap is the part that stops a miss becoming a wrong
+     answer, and a wrong answer here costs a review. */
+  .opts, .sp-opts { gap: .8rem; }
+  .opts .opt, .sp-opts .sp-opt { min-height: 4.6rem; }
+  .opts.grid2 .opt, .sp-opts.grid2 .sp-opt { min-height: 6rem; font-size: 1.25rem; }
+  .opts.grid2 .opt .big, .sp-opts.grid2 .sp-opt .big { font-size: 3.6rem; }
+  /* a reading is the answer itself, not an annotation of it */
+  .opts .opt .pin, .sp-opts .sp-opt .pin { font-size: 1.45rem; }
+
+  /* ---------- the writing box ----------
+
+     268px is a desktop measurement and it was being used on a phone, where it
+     came out at half the width of the screen: a box you draw in with one
+     finger, sized for a trackpad. It takes the width now.
+
+     Three limits, smallest wins. The column it sits in, so it never pushes
+     the page sideways. 24rem, so it does not become absurd on a tablet. And
+     48dvh, which is the one that matters: .tian is square, so width is also
+     height, and a box that took the full width of a short phone would put the
+     prompt above it off the top of the screen. Every drill writes one
+     character — see makeWriter in renderDrill — so there is no two-character
+     case to fit. */
+  .writer-box { width: min(100%, 24rem, 48dvh); }
 
   /* One shape for the whole session.
 
@@ -3293,7 +3344,7 @@ button.tier-head:hover { border-color: var(--ink-3); }
   :root[data-opt-cols="grid"] .opts { grid-template-columns: 1fr 1fr; }
   :root[data-opt-cols="row"] .opts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .opts .opt { position: relative; justify-content: center; text-align: center; }
-  .opts:not(.grid2) .opt { font-size: .95rem; line-height: 1.32; padding: .8rem .6rem; }
+  .opts:not(.grid2) .opt { font-size: 1.05rem; line-height: 1.3; padding: .85rem .6rem; }
   .opts .opt-n { position: absolute; top: .4rem; left: .4rem; }
   .opts .opt .mk { position: absolute; top: .4rem; right: .5rem; margin-left: 0; }
   .sp-opts.grid3 .sp-opt { min-height: 4.6rem; }
