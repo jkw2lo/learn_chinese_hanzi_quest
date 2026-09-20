@@ -2584,6 +2584,13 @@ console.log('\nthe black box, and the report built from it');
   /* The stepper stands in for chips on a phone, so the rule that hides them
      has to ask whether there is a stepper to stand in — the Marking switch
      has none, and rendered as a heading explaining a display: none button. */
+  /* The reset takes a button's background away, which is what made the
+     browser's default 2px outset border visible on the one button in the app
+     that does not declare its own. */
+  ok('the button reset takes the default border with the default background',
+     /^button \{[^}]*border: 0;[^}]*\}/m.test(read('css/app.css')));
+  ok('  and every row label is the same width, so the rows line up',
+     !/\.sp-row-wide \.sp-row-lbl \{ width: auto/.test(read('css/app.css')));
   ok('  and a row with no stepper keeps its buttons on a phone',
      /\.sp-row:has\(\.sp-step\) \.sp-chips \{ display: none; \}/.test(read('css/app.css')));
   {
