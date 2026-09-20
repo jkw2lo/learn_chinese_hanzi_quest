@@ -1562,6 +1562,48 @@ function renderDrill(item, ch, body, foot) {
   });
 }
 
+/* ---------- the answer you feel, rather than the one you read ----------
+
+   On a phone the verdict was a bar that appeared in the footer after every
+   answer. The footer is outside the scrolling body, so it growing shoved the
+   options up the screen, and it shrinking on the next card dropped them back
+   down. Answer twenty questions quickly and the thing you are aiming at moves
+   twenty times — and it moves *between* you deciding and you tapping.
+
+   So on a phone a right answer no longer writes anything into the footer at
+   all. Nothing enters or leaves the layout; the option you chose turns green
+   where it already sits, the screen takes a wash of the same colour, and the
+   card advances on exactly the timing it always did.
+
+   The wash is the whole feedback, so it is bright briefly and gone: up in a
+   fifth of a second, out over the rest. Fixed and pointer-events: none, so it
+   tints a sprint mid-answer without ever being in the way of the next tap.
+
+   Matched to the CSS breakpoint by hand — 859.98px is where the mobile block
+   in css/app.css starts, and the two have to agree or a laptop gets the wash
+   and keeps the bar as well. */
+const PHONE_MQ = matchMedia("(max-width: 859.98px)");
+const FLASH_MS = 520;
+
+let flashEl = null, flashTimer = null;
+function flashVerdict(ok) {
+  if (!PHONE_MQ.matches) return;
+  if (!flashEl) {
+    flashEl = document.createElement("div");
+    flashEl.className = "vflash";
+    flashEl.setAttribute("aria-hidden", "true");   /* decoration; the option already says it */
+    document.body.appendChild(flashEl);
+  }
+  flashEl.className = "vflash";
+  /* Reading offsetWidth between removing the class and adding it restarts the
+     animation. Without it a sprint answered faster than the wash lasts gets
+     no wash at all — which is precisely the run where you want one. */
+  void flashEl.offsetWidth;
+  flashEl.className = "vflash on" + (ok ? "" : " no");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { flashEl.className = "vflash"; }, FLASH_MS);
+}
+
 /* Grade, show the verdict, offer the way forward.
 
    Guarded for the same reason renderStep is: the options are already
@@ -1628,6 +1670,20 @@ function grades(item, ch, ok, foot, extra, slips) {
                   : " — you'll see it again shortly."}`;
   }
   const audible = ["p", "l", "r", "d"].includes(item.kind);
+  flashVerdict(ok);
+
+  /* Right, on a phone, with nothing on the footer worth reading: say so with
+     the wash and leave the layout alone. Two kinds keep their bar even when
+     right, because on those the bar carries something you might want —
+     handwriting, which reports how clean the strokes were, and reading in
+     context, where the replay button is answering a whole sentence rather
+     than one syllable and five seconds is a long time to have no control. */
+  if (ok && PHONE_MQ.matches && !writing && item.kind !== "d") {
+    foot.innerHTML = "";
+    armAdvance(next);
+    return;
+  }
+
   foot.innerHTML = `
     <div class="verdict ${ok ? "ok" : "no"}">
       <span class="han">${ok ? "答对" : "再来"}</span>

@@ -391,6 +391,12 @@ function sprintAnswer(value) {
   q.ms = Date.now() - sp.qStart;
   grade(q.c, q.ok, SPRINT[sp.mode].skill, { speed: true });
   sprintMark(q.c, sp.mode, q.ok);
+  /* A sheet never stopped to say whether you were right — it moves to the next
+     question and the answer is a dot in the bar at the top, which is the wrong
+     end of the screen to be reading at this speed. The wash says it where you
+     are already looking, and costs nothing: it does not pause the sheet, it
+     does not move anything, and on a laptop it does not happen. */
+  flashVerdict(q.ok);
   sp.idx++;
   if (sp.idx >= sp.queue.length) return sprintFinish(true);
   sprintRenderQ();

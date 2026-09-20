@@ -545,6 +545,18 @@ code {
 .opt.right .big, .opt.wrong .big { color: inherit; }
 .opt .mk { margin-left: auto; font-size: 1rem; }
 
+/* The wash that stands in for the verdict bar on a phone — see flashVerdict
+   in js/app.js, which is also the only thing that ever turns it on, and only
+   below the mobile breakpoint. Inert everywhere else: no class, no paint. */
+.vflash { position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: 0; background: var(--jade); }
+.vflash.no { background: var(--seal); }
+.vflash.on { animation: vflash .52s ease both; }
+/* Peaks at a fifth of the way in and fades over the rest: a wash you notice
+   without having to look at it, rather than a light being switched on. .22
+   at the peak because this covers the whole screen, text included. */
+@keyframes vflash { 0% { opacity: 0 } 18% { opacity: .22 } 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .vflash.on { animation: none; } }
+
 .verdict { display: flex; align-items: center; gap: .6rem; padding: .7rem .9rem; border-radius: 8px; font-size: .88rem; }
 .verdict.ok { background: var(--jade-wash); color: var(--jade); }
 .verdict.no { background: var(--seal-wash); color: var(--seal); }
