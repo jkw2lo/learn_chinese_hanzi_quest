@@ -2415,7 +2415,42 @@ console.log('\ntwo devices, one record');
     ok('milestones already celebrated are never re-celebrated',
        m.hailed.length === 2 && m.hailed[0] === 50 && m.hailed[1] === 100);
     ok('a setting follows the clock, not the union', m.goalNew === 9);
-    ok('and merging is the same either way round',
+    /* menuTaught is a list of characters and was merged with unionKeys, which is
+     for keyed flags and hands back a plain object. One sign-in turned ["菜"]
+     into {"0":"菜"} and [] into {}, and the next `.includes` threw — inside
+     taughtHere, inside menuCanRead, inside menuProgress, which is every row
+     of today's list, Go deeper, and the screen at the end of a session. The
+     app could not heal itself either: load() normalises on load, and the
+     merge runs after it. */
+  {
+    const m = mergeState(Object.assign(blank(), { menuTaught: ['菜'], updated: 1 }),
+                           Object.assign(blank(), { menuTaught: ['单'], updated: 2 }));
+    ok('a list in the record comes back from a merge as a list',
+       Array.isArray(m.menuTaught) && typeof m.menuTaught.includes === 'function',
+       JSON.stringify(m.menuTaught));
+    ok('  with both sides in it, once each',
+       m.menuTaught.slice().sort().join('') === '单菜', JSON.stringify(m.menuTaught));
+    /* Two empty lists were enough: unionKeys({}, {}) is {}. */
+    ok('  and two empty lists merge to an empty list, not an empty object',
+       Array.isArray(mergeState(blank(), blank()).menuTaught));
+    /* The wreckage is already in people's records and in the remote document,
+       so the fix has to heal what it finds, and keep the characters. */
+    const healed = mergeState(Object.assign(blank(), { menuTaught: { 0: '菜' }, updated: 1 }),
+                                Object.assign(blank(), { updated: 2 }));
+    ok('  and a record already broken by the old merge is repaired, not emptied',
+       Array.isArray(healed.menuTaught) && healed.menuTaught.join('') === '菜',
+       JSON.stringify(healed.menuTaught));
+  }
+  /* The general form of it: every list in a blank record has to survive a
+     merge as a list, so the next field added to blank() is covered too. */
+  {
+    const fresh = blank(), merged = mergeState(blank(), blank());
+    const lists = Object.keys(fresh).filter(k => Array.isArray(fresh[k]));
+    const broke = lists.filter(k => !Array.isArray(merged[k]));
+    ok(`every list in the record survives a merge as a list (${lists.length} checked)`,
+       broke.length === 0, broke.join(' '));
+  }
+  ok('and merging is the same either way round',
        JSON.stringify(mergeState(afternoon, morning)) === JSON.stringify(m));
   }
 

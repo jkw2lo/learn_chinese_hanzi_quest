@@ -90,9 +90,12 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) state = Object.assign(blank(), JSON.parse(raw));
     if (!(state.goalNew >= GOAL_MIN && state.goalNew <= GOAL_MAX)) state.goalNew = blank().goalNew;
-    /* An imported backup is whatever was in the file; the quest reads this on
-       every render and a non-array would take the dashboard down with it. */
-    if (!Array.isArray(state.menuTaught)) state.menuTaught = [];
+    /* An imported backup is whatever was in the file, and a record synced by a
+       version with the unionKeys bug in it holds an object here. The quest
+       reads this on every render and a non-array takes the dashboard down
+       with it. Repaired rather than emptied — see asList. */
+    state.menuTaught = asList(state.menuTaught);
+    state.hailed = asList(state.hailed);
     if (state.name) state.name = capName(state.name);
     fillInterests();
   } catch { /* private mode, cleared storage — carry on with a fresh record */ }
@@ -195,6 +198,23 @@ const mergeBy = (x = {}, y = {}, f) => {
    would keep whichever order the arguments arrived in */
 const unionKeys = (x, y) => mergeBy(x, y, (a, b) => (b === undefined ? a : b));
 
+/* A list that has been through unionKeys, read back as a list.
+
+   `menuTaught` is a list of characters and was being merged with unionKeys,
+   which is for keyed flags: it walks Object.keys and hands back a plain
+   object. So ["菜"] came out of a sync as {"0":"菜"}, [] came out as {}, and
+   the next thing to call `.includes` on it threw — which on this record is
+   taughtHere, which is menuCanRead, which is menuProgress, which is every
+   row of today's list, Go deeper, and the screen at the end of a session.
+   One sign-in was enough to do it, and nothing in the app could recover
+   because load() normalises on load and the merge runs after.
+
+   Fixed at the merge below. This stays because the wreckage is already
+   written to people's records and to the remote document, and it keeps the
+   characters rather than resetting the list: somebody who learnt 菜 from the
+   menu before signing in still learnt it. */
+const asList = v => Array.isArray(v) ? v : (v && typeof v === "object" ? Object.values(v) : []);
+
 /* x is the older record and y the newer, so the preferences in here resolve by
    the clock rather than by which way round the caller happened to pass them */
 function mergeSprint(x = {}, y = {}) {
@@ -242,8 +262,9 @@ function mergeState(a, b) {
   out.chars = mergeBy(a.chars, b.chars, mergeChar);
   out.days = mergeBy(a.days, b.days, mergeDay);
   out.sprint = mergeSprint(older.sprint, newer.sprint);
-  out.menuTaught = unionKeys(a.menuTaught, b.menuTaught);
-  out.hailed = [...new Set([...(a.hailed || []), ...(b.hailed || [])])].sort((x, y) => x - y);
+  /* by value, like `hailed` below it — both are lists, not flag objects */
+  out.menuTaught = [...new Set([...asList(a.menuTaught), ...asList(b.menuTaught)])];
+  out.hailed = [...new Set([...asList(a.hailed), ...asList(b.hailed)])].sort((x, y) => x - y);
   out.streak = {
     /* a best is a claim about the past and cannot be undone by the other
        device not knowing about it */
@@ -573,7 +594,7 @@ function fillInterests() {
    removed from the curriculum — and nobody should be congratulated twice for
    the same hundred. */
 const MILESTONES = [100, 200, 300, 400, 500, 600, 700, HQ.length];
-const hailed = () => (state.hailed = state.hailed || []);
+const hailed = () => (state.hailed = asList(state.hailed));
 
 /* The HIGHEST milestone reached and not yet celebrated, not the lowest. The
    placement test can credit three hundred characters in one go, and a queue
@@ -931,7 +952,7 @@ const daysStudied = () => Object.values(state.days).filter(d => dayReps(d) > 0).
 function menuQuest() { return QUESTS.find(q => q.id === "menu"); }
 
 /* What the quest taught you, as opposed to what the curriculum did. */
-const taughtHere = c => (state.menuTaught || []).includes(c);
+const taughtHere = c => asList(state.menuTaught).includes(c);
 const menuCanRead = c => isKnown(c) || taughtHere(c);
 
 /* How grown-up a menu you can cope with right now: you get the next one when
@@ -1013,7 +1034,7 @@ function menuToday() {
    review date, no day count, no tally. */
 function menuLearn(c) {
   if (!c || !CHAR_INDEX[c]) return;
-  if (!Array.isArray(state.menuTaught)) state.menuTaught = [];
+  state.menuTaught = asList(state.menuTaught);
   if (!state.menuTaught.includes(c)) state.menuTaught.push(c);
   save();
 }
