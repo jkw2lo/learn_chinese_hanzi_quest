@@ -30,7 +30,11 @@
           rules_version = '2';
           service cloud.firestore {
             match /databases/{database}/documents {
-              match /progress/{uid} {
+              match /progress-hanzi/{uid} {
+                allow read, write: if request.auth != null
+                                   && request.auth.uid == uid;
+              }
+              match /progress-cantonese/{uid} {
                 allow read, write: if request.auth != null
                                    && request.auth.uid == uid;
               }
@@ -38,7 +42,9 @@
           }
 
       That rule is the whole security model: a signed-in person can read and
-      write the one document named after their own account, and nothing else.
+      write the one document named after their own account, in either app's
+      store, and nothing else. Both apps are listed so one project serves both;
+      the app you are not using simply never writes to its own line.
    4. Project settings (the gear) → Your apps → Web (</>) → register.
       Copy the `firebaseConfig` object it shows you into SYNC_CONFIG below.
    5. node tools/version.mjs patch, commit, push.
@@ -62,6 +68,13 @@ const SYNC_CONFIG = {
    they are fetched when they are wanted and never on a cold first paint. */
 const SYNC_SDK = "https://cdn.jsdelivr.net/npm/firebase@10.14.1/";
 const SYNC_PARTS = ["firebase-app-compat.js", "firebase-auth-compat.js", "firebase-firestore-compat.js"];
+/* The collection this app's records live in.
+
+   Named per app, not "progress", so ONE Firebase project can serve both Hanzi
+   Quest and Cantonese Quest. They are two curricula and two records, and under
+   a shared name the same Google account signing into both would have each one
+   overwrite the other on every save. */
+const SYNC_STORE = "progress-hanzi";
 const SYNC_SEEN = "hq-signed-in";      /* has this browser ever signed in */
 
 const syncConfigured = () => !!SYNC_CONFIG.apiKey;
@@ -108,7 +121,7 @@ async function syncSdk() {
    snapshot is close enough that this is mostly a rename, which is the point —
    the record does not know what is storing it. */
 function syncDoc(uid) {
-  const ref = firebase.firestore().collection("progress").doc(uid);
+  const ref = firebase.firestore().collection(SYNC_STORE).doc(uid);
   return {
     get: async () => {
       const snap = await ref.get();
