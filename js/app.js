@@ -2928,8 +2928,21 @@ function renderNotebookPadState() {
    trace like a 字帖 copybook.
    ============================================================ */
 
-const wp = { built: false, rows: 6, guide: null, pen: 8, cell: 84, strokes: [], cur: null,
+const wp = { built: false, rows: 6, guide: null, pen: 8, penStyle: "pen", cell: 84, strokes: [], cur: null,
              sort: "day", find: "" };
+
+/* Nib picks the base width (fine/medium/broad, in px); style is what draws
+   with it. widthMul scales the nib rather than replacing it, so "broad
+   brush" and "fine brush" both still mean something — a fixed brush width
+   would make the nib control lie for three of the four styles. cap "square"
+   on the marker is what actually reads as a flat chisel tip rather than a
+   thick pen; everything else keeps the round cap ink already draws with. */
+const PEN_STYLES = {
+  pen:    { zh: "钢笔",  name: "Pen",    alpha: 1,   widthMul: 1,    cap: "round" },
+  brush:  { zh: "毛笔",  name: "Brush",  alpha: .92, widthMul: 1.7,  cap: "round" },
+  pencil: { zh: "铅笔",  name: "Pencil", alpha: .62, widthMul: .65,  cap: "round" },
+  marker: { zh: "马克笔", name: "Marker", alpha: .4,  widthMul: 2.4,  cap: "square" }
+};
 
 /* ---------- the practice diary ----------
    Pages are stored as stroke vectors, not pictures: a densely filled page is
@@ -3019,6 +3032,11 @@ function buildWritePage() {
                 <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
               </select>
             </label>
+            <label class="wp-field">Pen
+              <select id="wpStyle">
+                ${Object.entries(PEN_STYLES).map(([id, s]) => `<option value="${id}" ${id === wp.penStyle ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+              </select>
+            </label>
             ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>` : ""}
             <button class="btn btn-ghost btn-sm" id="wpSave">Save page</button>
             <button class="btn btn-ghost btn-sm" id="wpClear">Clear page</button>
@@ -3037,6 +3055,18 @@ function buildWritePage() {
              need a trackpad to fill a square at a time. Add to page does the
              page-finding and square-placing that a free canvas never needed. -->
         <div class="wp-mobile">
+          <div class="wp-mobile-tools">
+            <label class="wp-field">Nib
+              <select id="wpmPen">
+                <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
+              </select>
+            </label>
+            <label class="wp-field">Pen
+              <select id="wpmStyle">
+                ${Object.entries(PEN_STYLES).map(([id, s]) => `<option value="${id}" ${id === wp.penStyle ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
           <div class="writer-box"><div class="tian">${TIAN_SVG}<canvas id="wpmInk"></canvas></div></div>
           <div class="wp-mobile-actions">
             <button class="btn btn-seal" id="wpmAdd">Add to page</button>
@@ -3058,7 +3088,8 @@ function buildWritePage() {
   wpBindInk();
   wpAutoPad();
 
-  $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
+  $("#wpPen").onchange   = e => { wp.pen = +e.target.value; applyPenSettings(); };
+  $("#wpStyle").onchange = e => { wp.penStyle = e.target.value; applyPenSettings(); };
   $("#wpClear").onclick = () => wpClear();
   $("#wpSave").onclick  = () => wpSave();
   $("#wpPad")?.addEventListener("click", () => wpPad());
@@ -3067,6 +3098,8 @@ function buildWritePage() {
 
   wpmSizeInk();
   wpmBindInk();
+  $("#wpmPen").onchange   = e => { wp.pen = +e.target.value; applyPenSettings(); };
+  $("#wpmStyle").onchange = e => { wp.penStyle = e.target.value; applyPenSettings(); };
   $("#wpmAdd").onclick   = () => wpmAdd();
   $("#wpmClear").onclick = () => wpmClear();
   $("#wpmPad")?.addEventListener("click", () => wpmPad());
@@ -3297,15 +3330,43 @@ function wpSizeInk() {
   const ctx = c.getContext("2d");
   ctx.scale(dpr, dpr);
   wpSetPen();
-  if (keep) ctx.drawImage(keep, 0, 0, keep.width / dpr, keep.height / dpr);
+  /* keep is an already-rendered snapshot, not a new stroke — blitting it
+     under whatever globalAlpha the current pen style just set (a marker's
+     0.4, say) would fade the page a little more on every resize, purely
+     from being copied. Full alpha for the copy, then back to the pen's. */
+  if (keep) {
+    const a = ctx.globalAlpha;
+    ctx.globalAlpha = 1;
+    ctx.drawImage(keep, 0, 0, keep.width / dpr, keep.height / dpr);
+    ctx.globalAlpha = a;
+  }
 }
 
 function wpSetPen() {
   const c = $("#wpInk");
   if (!c) return;
-  const ctx = c.getContext("2d");
-  ctx.lineWidth = wp.pen; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  applyPenTo(c.getContext("2d"));
+}
+
+/* Shared by the desktop canvas and the mobile box, so nib and style read
+   the same on whichever one happens to be open — see wp.pen/wp.penStyle. */
+function applyPenTo(ctx) {
+  const s = PEN_STYLES[wp.penStyle] || PEN_STYLES.pen;
+  ctx.lineWidth = wp.pen * s.widthMul;
+  ctx.lineCap = s.cap; ctx.lineJoin = s.cap === "square" ? "miter" : "round";
+  ctx.globalAlpha = s.alpha;
   ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+}
+
+/* Both selects (desktop and mobile) and both canvases move together, so
+   whichever one you weren't just looking at is still correct when it next
+   shows — see the phone-layer swap that hides one and shows the other. */
+function applyPenSettings() {
+  wpSetPen();
+  wpmSetPen();
+  const pen = String(wp.pen), style = wp.penStyle;
+  [$("#wpPen"), $("#wpmPen")].forEach(el => { if (el) el.value = pen; });
+  [$("#wpStyle"), $("#wpmStyle")].forEach(el => { if (el) el.value = style; });
 }
 
 function wpDraw(type, x, y) {
@@ -3324,10 +3385,15 @@ function wpDraw(type, x, y) {
   }
 }
 
-/* Repaint a page from its vectors — used when loading from the diary. */
+/* Repaint a page from its vectors — used when loading from the diary.
+   lineCap/lineJoin are the caller's to set (or not): wpLoad repaints onto
+   the live canvas, where applyPenTo has already set them for the current
+   pen style, and overriding that here would mean a page loaded back in
+   never showed a marker's square cap even though drawing on it live would.
+   The diary thumbnails, which have no live pen state of their own, set
+   their own round default before calling this. */
 function wpPaint(strokes, ctx, scale) {
   ctx.save();
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
   strokes.forEach(pts => {
     if (!pts.length) return;
     ctx.beginPath();
@@ -3410,9 +3476,7 @@ function wpmSizeInk() {
 function wpmSetPen() {
   const c = $("#wpmInk");
   if (!c) return;
-  const ctx = c.getContext("2d");
-  ctx.lineWidth = wp.pen; ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+  applyPenTo(c.getContext("2d"));
 }
 
 function wpmDraw(type, x, y) {
@@ -3545,7 +3609,7 @@ async function wpDiary() {
   const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
   $$("#wpDiary .diary-thumb").forEach((b, i) => {
     const cv = b.querySelector("canvas"), ctx = cv.getContext("2d");
-    ctx.strokeStyle = ink; ctx.lineWidth = 1.6;
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.6; ctx.lineCap = "round"; ctx.lineJoin = "round";
     wpPaint(all[i].strokes, ctx, cv.width / (all[i].w || 1));
     b.onclick = () => wpLoad(all[i].id);
   });
@@ -3742,6 +3806,80 @@ const charTile = c => {
   return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
     <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
 };
+
+function deepTileHtml(id, cfg, chars) {
+  const n = chars.length;
+  const st = skillStanding(cfg.skill, chars);
+  const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
+  const seg = (cls, count) => count
+    ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
+  const line = !chars.length
+    ? (id === "write" ? "No character you know has stroke data yet"
+       : id === "build" ? "No two-character word you can read yet"
+       : "Learn a character first")
+    : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
+  return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
+    title="${chars.length
+      ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
+      : "Nothing to practise in this mode yet"}">
+    <span class="pr-ring">
+      <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
+        ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
+      <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
+    </span>
+    <span class="pr-deep-body">
+      <b>${esc(cfg.name)}</b>
+      <span class="pr-meter" aria-hidden="true">
+        ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
+      </span>
+      <small>${esc(line)}</small>
+    </span>
+  </button>`;
+}
+
+/* Reading, Build the word and Pronunciation each have exactly one thing to
+   practise; writing has two — one character, or a compound word — and used
+   to sit as two separate tiles for it, which is also what made the grid an
+   odd five instead of a clean four. Folded into one tile here: the toggle
+   picks which of PRACTICE.write / .write2 the ring, meter and tap-to-start
+   below it describe. state.writeVariant remembers the choice. */
+function deepWriteTileHtml() {
+  const variant = state.writeVariant === "write2" ? "write2" : "write";
+  const cfg = PRACTICE[variant];
+  const chars = practiceChars(variant);
+  const n = chars.length;
+  const st = skillStanding(cfg.skill, chars);
+  const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
+  const seg = (cls, count) => count
+    ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
+  const line = !chars.length
+    ? (variant === "write" ? "No character you know has stroke data yet"
+       : "No two-character word you can read yet has stroke data for both characters")
+    : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
+  return `<div class="pr pr-deep pr-write">
+    <div class="pr-write-pick" role="group" aria-label="Write one character, or two">
+      <button class="pr-write-opt ${variant === "write" ? "on" : ""}" data-write-variant="write">1 char</button>
+      <button class="pr-write-opt ${variant === "write2" ? "on" : ""}" data-write-variant="write2">2 chars</button>
+    </div>
+    <button class="pr-write-hit" data-practice="${variant}" ${n ? "" : "disabled"}
+      title="${chars.length
+        ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
+        : "Nothing to practise in this mode yet"}">
+      <span class="pr-ring">
+        <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
+          ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
+        <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
+      </span>
+      <span class="pr-deep-body">
+        <b>${esc(cfg.name)}</b>
+        <span class="pr-meter" aria-hidden="true">
+          ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
+        </span>
+        <small>${esc(line)}</small>
+      </span>
+    </button>
+  </div>`;
+}
 
 function renderToday() {
   const t = today();
@@ -3999,38 +4137,13 @@ function renderToday() {
         ${exAll ? `<span class="deeper-life">${exAll.toLocaleString()} all told</span>` : ""}
       </span>
     </div>
-    <div class="pr-grid pr-grid-5">
+    <div class="pr-grid pr-grid-4">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
+        if (id === "write2") return "";              /* folded into the "write" tile below */
         const chars = practiceChars(id);
         deepEligible = deepEligible || chars.length > 0;
-        const n = chars.length;
-        const st = skillStanding(cfg.skill, chars);
-        const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
-        const seg = (cls, count) => count
-          ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
-        const line = !chars.length
-          ? (id === "write" ? "No character you know has stroke data yet"
-             : id === "write2" ? "No two-character word you can read yet has stroke data for both characters"
-             : id === "build" ? "No two-character word you can read yet"
-             : "Learn a character first")
-          : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
-        return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
-          title="${chars.length
-            ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
-            : "Nothing to practise in this mode yet"}">
-          <span class="pr-ring">
-            <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
-              ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
-            <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
-          </span>
-          <span class="pr-deep-body">
-            <b>${esc(cfg.name)}</b>
-            <span class="pr-meter" aria-hidden="true">
-              ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
-            </span>
-            <small>${esc(line)}</small>
-          </span>
-        </button>`;
+        if (id === "write") deepEligible = deepEligible || practiceChars("write2").length > 0;
+        return id === "write" ? deepWriteTileHtml() : deepTileHtml(id, cfg, chars);
       }).join("")}
     </div>
   </section>`;
@@ -4088,6 +4201,11 @@ function renderToday() {
   });
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
   $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
+  $$("#viewToday [data-write-variant]").forEach(b => b.onclick = () => {
+    state.writeVariant = b.dataset.writeVariant;
+    save();
+    renderToday();
+  });
   $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
     const id = b.dataset.todo;
     if (id === "learn") return startSession();
@@ -6022,8 +6140,8 @@ const COACH = {
   write: { label: "Write", steps: [
     { sel: ".wp-page", k: "练字", title: "A blank page",
       body: "Nothing is checked here. Fill it, scrawl on it, clear it and go again — it is an exercise book, not a test." },
-    { sel: ".wp-tools", k: "笔", title: "Nib, trackpad, save",
-      body: "Press T for the trackpad, where the browser allows it. Save a page and it is kept by date." },
+    { sel: ".wp-tools", k: "笔", title: "Nib, pen, trackpad, save",
+      body: "Nib is thickness, pen is what draws with it — a marker's flat tip is as different from a pencil's thin one as broad is from fine. Press T for the trackpad, where the browser allows it. Save a page and it is kept by date." },
     { sel: ".pick-stage", k: "笔顺", title: "Stroke order, while you write",
       body: "Pick a character below and its strokes play here — again, one at a time, or all at once. It stays while you copy it." },
     { sel: ".wp-picker", k: "描红", title: "Something to trace",

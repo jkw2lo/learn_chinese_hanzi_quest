@@ -1726,17 +1726,10 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .solid-def b { color: var(--ink-2); font-weight: 600; }
 
 
+/* Four modes: Reading, the merged Writing tile (see .pr-write), Build the
+   word and Pronunciation. */
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
 @media (min-width: 620px) { .pr-grid-4 { grid-template-columns: repeat(4, 1fr); } }
-
-/* Five modes, once "build the word" and the two-character write joined
-   reading, writing and pronunciation — two columns until there is room for
-   more than three, the same staged widening .pr-grid-3 and .pr-grid-4 already
-   use, so a fifth tile never has to fight the first four for space at a
-   width that could not hold it. */
-.pr-grid-5 { grid-template-columns: 1fr 1fr; }
-@media (min-width: 620px) { .pr-grid-5 { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 900px) { .pr-grid-5 { grid-template-columns: repeat(5, 1fr); } }
 
 /* Three modes, three columns. This was never defined, so the row inherited
    .pr-grid's four and left a quarter of the sheet empty beside it — and the
@@ -1768,6 +1761,29 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .pr-meter .s2 { background: color-mix(in srgb, var(--jade) 58%, var(--rule-2)); }
 .pr-meter .s1 { background: color-mix(in srgb, var(--jade) 28%, var(--rule-2)); }
 .pr-meter .s0 { background: var(--rule-2); }
+
+/* The merged writing tile: a toggle row on top (1 char / 2 chars), the same
+   ring-and-meter row every other Go-deeper tile has underneath. .pr-write
+   overrides .pr-deep's row layout back to a column for that stacking; the
+   hover-lift that .pr normally gives a whole tile moves to the hit button,
+   since lifting the toggle along with it read as though the toggle itself
+   were about to do something when tapped. */
+.pr-write { flex-direction: column; align-items: stretch; gap: .5rem; cursor: default; }
+.pr-write:hover { transform: none; border-color: var(--rule); box-shadow: none; }
+.pr-write-pick { display: flex; gap: .3rem; }
+.pr-write-opt {
+  flex: 1; padding: .3rem .4rem; border-radius: 7px; border: 1px solid var(--rule);
+  background: var(--paper); color: var(--ink-3); font-size: .68rem; font-weight: 600;
+  text-align: center; cursor: pointer;
+}
+.pr-write-opt.on { background: var(--sunken); color: var(--ink); border-color: var(--ink-3); }
+.pr-write-hit {
+  display: flex; flex-direction: row; align-items: center; gap: .65rem;
+  border: 0; background: none; padding: 0; width: 100%; text-align: left;
+  color: inherit; font: inherit; cursor: pointer; border-radius: 6px;
+}
+.pr-write-hit:hover:not(:disabled) { background: var(--sunken); }
+.pr-write-hit:disabled { opacity: .45; cursor: default; }
 
 /* ---------- practice diary ---------- */
 
@@ -3504,6 +3520,9 @@ button.tier-head:hover { border-color: var(--ink-3); }
      grows the page, which leaves more room to scroll next time. One swipe
      that leaks becomes a page that is visibly longer by the next one. */
   .wp-mobile .writer-box .tian { touch-action: none; }
+  .wp-mobile-tools { display: flex; width: 100%; max-width: 24rem; gap: .5rem; }
+  .wp-mobile-tools .wp-field { flex: 1; justify-content: center; }
+  .wp-mobile-tools .wp-field select { flex: 1; min-width: 0; }
   .wp-mobile-actions { display: flex; width: 100%; max-width: 24rem; gap: .5rem; }
   .wp-mobile-actions .btn { flex: 1; }
   .wp-mobile-actions .btn#wpmAdd { flex: 2; }

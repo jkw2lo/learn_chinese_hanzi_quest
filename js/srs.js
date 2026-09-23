@@ -56,6 +56,10 @@ const blank = () => ({
   timer: true,
   tour: false,
   writeDrills: true,
+  /* Which of the two Go-deeper writing tiles the merged card currently
+     shows — "write" (one character) or "write2" (a compound word). See the
+     toggle in renderToday, js/app.js. */
+  writeVariant: "write",
   /* how the four answers are laid out: "auto" lets the window decide, "row"
      and "grid" overrule it — see optColsEffective in app.js */
   optCols: "auto",
