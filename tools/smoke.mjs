@@ -25,6 +25,7 @@ const CONTRACT = [
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay', 'dayReps',
   'tallyTime', 'timeToday', 'timeTotal', 'tallySession', 'sessionsToday',
+  'tallyCharWeek', 'charWeekTrend', 'weaknessReport',
   'studyAhead', 'aheadToday', 'dayGoal', 'newLeftToday', 'GOAL_MIN', 'GOAL_MAX',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle', 'fillInterests',
@@ -2396,7 +2397,8 @@ console.log('\ntwo devices, one record');
       songs: { s1: { id: 's1', title: 'Morning only', added: 500, lines: ['一'] },
                shared: { id: 'shared', title: 'Older copy', added: 100, lines: ['一'] },
                /* same `added` on both sides — only an edit tells them apart */
-               tie: { id: 'tie', title: 'Edited on morning', added: 200, edited: 999, lines: ['一'] } }
+               tie: { id: 'tie', title: 'Edited on morning', added: 200, edited: 999, lines: ['一'] } },
+      charWeeks: { '2026-W01': { 一: { seen: 5, right: 4, wrong: 1 }, 二: { seen: 2, right: 2, wrong: 0 } } }
     });
     const afternoon = Object.assign(blank(), {
       updated: 2000,
@@ -2407,7 +2409,12 @@ console.log('\ntwo devices, one record');
       goalNew: 9,
       songs: { s2: { id: 's2', title: 'Afternoon only', added: 600, lines: ['三'] },
                shared: { id: 'shared', title: 'Newer copy', added: 700, lines: ['一', '三'] },
-               tie: { id: 'tie', title: 'Untouched on afternoon', added: 200, lines: ['一'] } }
+               tie: { id: 'tie', title: 'Untouched on afternoon', added: 200, lines: ['一'] } },
+      /* 一 counted on both sides (afternoon's is bigger on seen, smaller on
+         right — neither side should just win outright), 三 only afternoon,
+         and a whole second week (W02) only afternoon knows about. */
+      charWeeks: { '2026-W01': { 一: { seen: 7, right: 3, wrong: 4 }, 三: { seen: 1, right: 1, wrong: 0 } },
+                   '2026-W02': { 一: { seen: 2, right: 2, wrong: 0 } } }
     });
     const m = mergeState(morning, afternoon);
 
@@ -2446,6 +2453,18 @@ console.log('\ntwo devices, one record');
        the very next sync from the other. */
     ok('an edited copy beats an untouched one with the same `added`, regardless of which side it is on',
        m.songs.tie.title === 'Edited on morning');
+    /* charWeeks is two levels of mergeBy — a week is a keyed bag of
+       characters, each a bag of counts that only go up. A character counted
+       on both sides of the same week must not just take one side's numbers
+       wholesale (afternoon has the bigger `seen` for 一 but the smaller
+       `right` — a plain "newer wins" here would understate accuracy). */
+    ok('a character counted in the same week on both devices keeps the bigger of each count',
+       m.charWeeks['2026-W01'].一.seen === 7 && m.charWeeks['2026-W01'].一.right === 4
+       && m.charWeeks['2026-W01'].一.wrong === 4);
+    ok('  a character only one device saw that week survives',
+       m.charWeeks['2026-W01'].二.seen === 2 && m.charWeeks['2026-W01'].三.seen === 1);
+    ok('  and a whole week only one device knows about survives',
+       m.charWeeks['2026-W02'].一.seen === 2);
     /* menuTaught is a list of characters and was merged with unionKeys, which is
      for keyed flags and hands back a plain object. One sign-in turned ["菜"]
      into {"0":"菜"} and [] into {}, and the next `.includes` threw — inside

@@ -840,7 +840,7 @@ function bindCard(root, ch, writerId) {
     writer.cancelQuiz();
     writer.hideCharacter();
     writer.quiz({
-      showHintAfterMisses: 2,
+      showHintAfterMisses: 2, leniency: state.writeLeniency,
       /* finishing releases the trackpad and gives the cursor back, so a
          completed character doesn't leave you pressing Escape */
       onComplete: () => { padStop(); say(ch.c, true); }
@@ -1410,7 +1410,7 @@ function renderDrill(item, ch, body, foot) {
       if (skip) skip.onclick = showStrokes;
       autoPad();
       w.quiz({
-        showHintAfterMisses: 2,
+        showHintAfterMisses: 2, leniency: state.writeLeniency,
         onMistake: () => missed++,
         onComplete: () => {
           padStop();
@@ -1515,7 +1515,7 @@ function renderDrill(item, ch, body, foot) {
         if (skip) skip.onclick = showStrokes;
         autoPad();
         w2.quiz({
-          showHintAfterMisses: 2,
+          showHintAfterMisses: 2, leniency: state.writeLeniency,
           onMistake: () => charMissed++,
           onComplete: () => { padStop(); say(target[i]); finishChar(); }
         });
@@ -2847,7 +2847,7 @@ function startSquare(i) {
   if (!w) return;
   w.cancelQuiz();
   w.quiz({
-    showHintAfterMisses: 2,
+    showHintAfterMisses: 2, leniency: state.writeLeniency,
     onComplete: () => {
       nb.done[i] = true;
       say(nb.chars[i]);
@@ -3814,10 +3814,8 @@ function deepTileHtml(id, cfg, chars) {
   const seg = (cls, count) => count
     ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
   const line = !chars.length
-    ? (id === "write" ? "No character you know has stroke data yet"
-       : id === "build" ? "No two-character word you can read yet"
-       : "Learn a character first")
-    : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
+    ? (id === "build" ? "No two-character word you can read yet" : "Learn a character first")
+    : `${st.solid}/${st.total} solid`;
   return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
     title="${chars.length
       ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
@@ -3855,12 +3853,8 @@ function deepWriteTileHtml() {
   const line = !chars.length
     ? (variant === "write" ? "No character you know has stroke data yet"
        : "No two-character word you can read yet has stroke data for both characters")
-    : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
+    : `${st.solid}/${st.total} solid`;
   return `<div class="pr pr-deep pr-write">
-    <div class="pr-write-pick" role="group" aria-label="Write one character, or two">
-      <button class="pr-write-opt ${variant === "write" ? "on" : ""}" data-write-variant="write">1 char</button>
-      <button class="pr-write-opt ${variant === "write2" ? "on" : ""}" data-write-variant="write2">2 chars</button>
-    </div>
     <button class="pr-write-hit" data-practice="${variant}" ${n ? "" : "disabled"}
       title="${chars.length
         ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
@@ -3871,13 +3865,17 @@ function deepWriteTileHtml() {
         <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
       </span>
       <span class="pr-deep-body">
-        <b>${esc(cfg.name)}</b>
+        <b>Writing</b>
         <span class="pr-meter" aria-hidden="true">
           ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
         </span>
         <small>${esc(line)}</small>
       </span>
     </button>
+    <div class="pr-write-pick" role="group" aria-label="Write one character, or two">
+      <button class="pr-write-opt ${variant === "write" ? "on" : ""}" data-write-variant="write">1 char</button>
+      <button class="pr-write-opt ${variant === "write2" ? "on" : ""}" data-write-variant="write2">2 chars</button>
+    </div>
   </div>`;
 }
 
@@ -4544,6 +4542,62 @@ function renderRadicals() {
 
 /* ---------- record ---------- */
 
+/* Reps a week, going back eight weeks — the one chart charWeekTrend exists
+   to draw. Bars, not a line: eight points is few enough that a line implies
+   a continuity between them that isn't really there, where a missed week
+   is a missed week and the bar for it is just short. */
+function weeklyRepsChartHtml() {
+  const weeks = charWeekTrend(8);
+  const max = Math.max(1, ...weeks.map(w => w.seen));
+  const W = 240, H = 84, BASE = H - 16, BW = W / weeks.length;
+  const bars = weeks.map((w, i) => {
+    const h = Math.max(w.seen ? 2 : 0, (w.seen / max) * (BASE - 6));
+    const x = i * BW + BW * 0.2, bw = BW * 0.6;
+    const acc = w.seen ? Math.round((w.right / w.seen) * 100) : null;
+    return `<rect class="wk-bar" x="${x.toFixed(1)}" y="${(BASE - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2">
+      <title>${esc(w.week)} — ${w.seen} rep${w.seen === 1 ? "" : "s"}${acc !== null ? ` · ${acc}% right` : ""}</title>
+    </rect>`;
+  }).join("");
+  const labels = weeks.map((w, i) => `<text class="wk-label" x="${(i * BW + BW / 2).toFixed(1)}" y="${H - 3}"
+    text-anchor="middle">${esc(w.week.split("W")[1])}</text>`).join("");
+  return `<svg class="wk-chart" viewBox="0 0 ${W} ${H}">
+    <line class="wk-base" x1="0" y1="${BASE}" x2="${W}" y2="${BASE}"/>${bars}${labels}
+  </svg>`;
+}
+
+function weeklyActivityHtml() {
+  const weeks = charWeekTrend(8);
+  const totalReps = weeks.reduce((a, w) => a + w.seen, 0);
+  return `<div class="sheet" style="padding:1rem">
+    <div class="stack" style="gap:.6rem">
+      <span class="eyebrow">Weekly activity ${hanLabel("每周")}</span>
+      ${totalReps ? weeklyRepsChartHtml()
+        : `<p class="note">Nothing yet — this fills in week by week as you go, oldest on the left.</p>`}
+      <p class="note">${timeTotal() ? `${fmtStudyTime(timeTotal())} studied all told, ${fmtStudyTime(timeToday())} today.`
+        : "Time studied adds up here as you go."}</p>
+    </div>
+  </div>`;
+}
+
+/* "I can read it, I can't write it": weaknessReport's per-character skill
+   gap, as a list. Reuses the .leech row look from Sticking points below —
+   same idea, a different measure of stuck. */
+function weaknessesHtml() {
+  const gaps = weaknessReport(12);
+  if (!gaps.length) return "";
+  return `<div class="sheet" style="padding:1rem">
+    <div class="stack" style="gap:.6rem">
+      <span class="eyebrow">Uneven skills ${hanLabel("差距")}</span>
+      <p class="note">Characters where one skill lags well behind another — practised enough in both to tell,
+        not just an unlucky guess.</p>
+      <div class="leech-list">${gaps.map(g => `<button class="leech" data-c="${esc(g.c)}"
+        title="${esc(SKILL_NAME[g.best.skill])} ${Math.round(g.best.acc * 100)}% · ${esc(SKILL_NAME[g.worst.skill])} ${Math.round(g.worst.acc * 100)}%">
+        <span class="z">${esc(g.c)}</span><span class="n">${esc(SKILL_NAME[g.worst.skill])}</span> lags</button>`).join("")}</div>
+    </div>
+  </div>`;
+}
+const SKILL_NAME = { r: "reading", p: "sound", c: "recall", w: "writing" };
+
 function renderRecord() {
   const known = Object.keys(state.chars).length;
   const strong = Object.keys(state.chars).filter(c => strength(c) === "strong").length;
@@ -4563,6 +4617,7 @@ function renderRecord() {
           <div class="sheet stat"><b>${known}</b><small>Characters</small></div>
           <div class="sheet stat"><b>${liveStreak()}</b><small>Day streak</small></div>
           <div class="sheet stat"><b>${totalCards}</b><small>Cards done</small></div>
+          <div class="sheet stat"><b>${fmtStudyTime(timeTotal())}</b><small>Time studied</small></div>
         </div>
 
         <div class="sheet" style="padding:1rem">
@@ -4662,6 +4717,9 @@ function renderRecord() {
           </div>
         </div>
 
+        ${weeklyActivityHtml()}
+        ${weaknessesHtml()}
+
       </div>
     </div>
   </div>`;
@@ -4696,6 +4754,28 @@ function syncRowNote() {
        + "this only adds a copy somewhere you can reach from a phone.";
 }
 
+/* HanziWriter's own leniency: a multiplier on how far a drawn stroke may sit
+   from the real one and still be accepted (1 is its default, and what this
+   app has always used). Discrete steps rather than a free-ranging slider, so
+   every position means something you could read back — "a little more
+   forgiving" is a sentence; 1.23 is not. */
+const LENIENCY_LEVELS = [
+  { v: 0.7, label: "Strict" },
+  { v: 0.85, label: "A little stricter" },
+  { v: 1, label: "As it's always been" },
+  { v: 1.3, label: "A little more forgiving" },
+  { v: 1.6, label: "Forgiving" }
+];
+const leniencyIndex = () => {
+  const cur = state.writeLeniency ?? 1;
+  let best = 2, bestDiff = Infinity;
+  LENIENCY_LEVELS.forEach((lvl, i) => {
+    const diff = Math.abs(lvl.v - cur);
+    if (diff < bestDiff) { bestDiff = diff; best = i; }
+  });
+  return best;
+};
+
 function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
@@ -4716,6 +4796,16 @@ function openSettings() {
         <div class="settings-row">
           <label>Include writing drills<small>Trace from memory once a character is solid.</small></label>
           <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
+        </div>
+        <div class="settings-row stacked">
+          <label>Writing sensitivity<small>How closely a stroke has to match before it's accepted. Stricter
+            is more work for a squiggly component, but it's also the part that teaches the shape — this
+            doesn't change the strokes it's checking against, only how close is close enough.</small></label>
+          <span class="leniency-pick">
+            <input type="range" id="leniencySlider" min="0" max="${LENIENCY_LEVELS.length - 1}" step="1"
+              value="${leniencyIndex()}" aria-label="Writing sensitivity">
+            <small id="leniencyLabel">${esc(LENIENCY_LEVELS[leniencyIndex()].label)}</small>
+          </span>
         </div>
         <div class="settings-row">
           <label>Answer buttons<small>One row matches the keyboard, where 1-2-3-4 runs left to right.
@@ -4826,6 +4916,12 @@ function openSettings() {
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $("#leniencySlider").oninput = e => {
+    const lvl = LENIENCY_LEVELS[+e.target.value] || LENIENCY_LEVELS[2];
+    state.writeLeniency = lvl.v;
+    $("#leniencyLabel").textContent = lvl.label;
+    save();
+  };
   $$("#optColsPick button").forEach(b => b.onclick = () => {
     state.optCols = b.dataset.oc; save(); applyOptCols(); openSettings();
   });

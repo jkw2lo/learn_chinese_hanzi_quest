@@ -676,10 +676,17 @@ code {
 
 /* ---------- progress ---------- */
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; }
 .stat { padding: .8rem .7rem; text-align: center; display: flex; flex-direction: column; gap: .15rem; }
 .stat b { font-family: var(--f-display); font-size: 1.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .stat small { font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+
+/* ---------- the weekly reps chart ---------- */
+
+.wk-chart { display: block; width: 100%; height: auto; }
+.wk-base { stroke: var(--rule-2); stroke-width: .5; }
+.wk-bar { fill: var(--jade); }
+.wk-label { fill: var(--ink-3); font-size: 7px; font-family: var(--f-pin); }
 
 /* the streak calendar: every day is a 田字格 square that fills with ink */
 .cal-wrap { overflow-x: auto; padding: .2rem 0 .4rem; }
@@ -753,6 +760,14 @@ code {
 /* Settings lives in a 17rem rail on wide screens — a label, a dropdown and a
    button never fit on one line there, so this row stacks instead. */
 .settings-row.stacked { flex-direction: column; align-items: stretch; }
+/* .settings-row > label's flex-basis (8rem) means width in the default row
+   layout above — the right amount of room to leave the label before the
+   control starts. In a stacked, column-direction row the main axis is
+   height, not width, so the same 8rem became a height the label tried to
+   grow into: a two-line label sitting in a box tall enough for eight or
+   nine, with the control pushed down into the gap. Content decides the
+   label's height here; nothing about it should flex. */
+.settings-row.stacked > label { flex: none; }
 .settings-row.stacked .voice-pick { width: 100%; }
 .settings-row.stacked .voice-pick select { flex: 1 1 auto; min-width: 0; max-width: none; }
 .settings-row:last-of-type { border-bottom: 0; }
@@ -1270,17 +1285,25 @@ code {
    both, so a character lighting up here is the same code path, not a
    second one to keep in step with the first.
    ============================================================ */
-.song-grid { display: grid; grid-template-columns: 1fr; gap: .6rem; margin-top: .8rem; }
-@media (min-width: 480px) { .song-grid { grid-template-columns: 1fr 1fr; } }
+/* A card per song, roughly square rather than a full-width row — closer to
+   the flashcard-deck tiles than to a list, since a roster you're picking
+   from by glancing at a ring reads better as a grid of them. auto-fill
+   rather than a fixed count so a roster of two still gets small cards
+   instead of two halves of the row. */
+.song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: .6rem; margin-top: .8rem; }
 .song-card {
-  display: flex; align-items: center; gap: .65rem; text-align: left;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .4rem; text-align: center; aspect-ratio: 1;
   background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px;
-  padding: .7rem .8rem; cursor: pointer; color: inherit; font: inherit;
+  padding: .8rem; cursor: pointer; color: inherit; font: inherit;
 }
 .song-card:hover { border-color: var(--ink-3); box-shadow: var(--shadow); }
-.song-card-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
-.song-card-body b { font-family: var(--f-display); font-size: .96rem; }
-.song-card-body small { font-size: .74rem; color: var(--ink-3); }
+.song-card-body { display: flex; flex-direction: column; align-items: center; gap: .1rem; min-width: 0; width: 100%; }
+.song-card-body b {
+  font-family: var(--f-display); font-size: .88rem; width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.song-card-body small { font-size: .7rem; color: var(--ink-3); }
 
 .song-lines { display: flex; flex-direction: column; gap: .15rem; margin: .8rem 0; }
 .song-line {
@@ -1943,6 +1966,10 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 #voiceMsgRow { display: block; }
 #voiceMsgRow[hidden] { display: none; }
 
+.leniency-pick { display: flex; align-items: center; gap: .7rem; width: 100%; }
+.leniency-pick input[type="range"] { flex: 1; accent-color: var(--seal); }
+.leniency-pick small { flex: none; min-width: 8.5rem; text-align: right; color: var(--ink-2); }
+
 /* Four short options sit in one row on a wide screen, so 1-2-3-4 on the
    keyboard runs left to right the way the numbers read. Below that width
    they fall back to two-up, where the numbering still reads in order. */
@@ -2584,18 +2611,38 @@ button.tier-head:hover { border-color: var(--ink-3); }
 
 /* ---------- the board ---------- */
 
+/* Less padding than a default .sheet, and the two lists inside it (top 5,
+   latest 10) sit close under their own eyebrows rather than each carrying
+   a full section's worth of air — the board is a sidebar column, not a
+   page of its own, and used to read like one anyway. */
+.sp-board-sheet { padding: .8rem .9rem; }
 .sp-board { display: flex; flex-direction: column; gap: 0; }
+.sp-board-tight .sp-board-row { padding: .3rem 0; }
+/* Capped rather than left to run to ten rows' worth of height — a sidebar
+   column that grows past the practice list beside it stops reading as a
+   sidebar. About six rows show before it scrolls. */
+.sp-board-scroll { max-height: 13rem; overflow-y: auto; }
 .sp-board-row {
   display: flex; align-items: center; gap: .6rem;
   padding: .45rem 0; border-bottom: 1px solid var(--rule-2);
 }
 .sp-board-row:last-child { border-bottom: 0; }
-.sp-board-k { font-family: var(--f-han-ui); font-size: 1rem; color: var(--ink-3); flex: none; }
+.sp-board-k { font-family: var(--f-han-ui); font-size: .92rem; color: var(--ink-3); flex: none; }
 .sp-board.best .sp-board-k, .sp-board-row.best .sp-board-k { color: var(--seal); }
 .sp-board-body { display: flex; flex-direction: column; gap: .05rem; flex: 1; min-width: 0; }
-.sp-board-body b { font-size: .88rem; font-variant-numeric: tabular-nums; }
-.sp-board-body small { font-size: .7rem; color: var(--ink-3); }
-.sp-board-star { color: var(--gold); font-size: .85rem; flex: none; }
+.sp-board-body b { font-size: .82rem; font-variant-numeric: tabular-nums; }
+.sp-board-body small { font-size: .66rem; color: var(--ink-3); }
+.sp-board-star { color: var(--gold); font-size: .8rem; flex: none; }
+
+/* ---------- the spider ---------- */
+
+.sp-radar { display: block; width: 100%; max-width: 11rem; margin: 0 auto; }
+.sp-radar-ring { fill: none; stroke: var(--rule-2); stroke-width: .5; }
+.sp-radar-spoke { stroke: var(--rule-2); stroke-width: .5; }
+.sp-radar-shape { fill: color-mix(in srgb, var(--jade) 22%, transparent); stroke: var(--jade); stroke-width: 1.4; stroke-linejoin: round; }
+.sp-radar-dot { fill: var(--jade); stroke: var(--sheet); stroke-width: 1; }
+.sp-radar-dot.off { fill: var(--rule); }
+.sp-radar-label { fill: var(--ink-3); font-size: 7px; font-family: var(--f-han-ui); }
 
 @media (min-width: 860px) {
   .sp-inner { max-width: 44rem; }
@@ -3588,4 +3635,10 @@ button.tier-head:hover { border-color: var(--ink-3); }
     padding-left: 2.2rem; padding-right: 2.2rem; min-height: 6rem;
   }
   :root[data-opt-cols="row"] .opts.grid2 .opt .big { font-size: 3.6rem; }
+
+  /* Four stat tiles across is the same squeeze as four answer options —
+     "Time studied" is the longest label here, and at this width it wrapped
+     itself and its value ("under a minute") into three lines apiece rather
+     than the one every other tile got. Two by two instead. */
+  .stats { grid-template-columns: 1fr 1fr; }
 }

@@ -136,7 +136,7 @@ function songCard(song) {
     <span class="song-card-body">
       <b>${esc(song.title)}</b>
       ${song.artist ? `<small>${esc(song.artist)}</small>` : ""}
-      <small>${p.total ? `${p.known} of ${p.total} characters known` : "No characters yet"}</small>
+      <small>${p.total ? `${p.known}/${p.total} characters known` : "No characters yet"}</small>
     </span>
   </button>`;
 }
@@ -183,7 +183,7 @@ function openSong(id) {
     <div class="today-head">
       <h1>${esc(song.title)}</h1>
       ${song.artist ? `<p class="note">${esc(song.artist)}</p>` : ""}
-      <p class="note">${p.total ? `${p.known} of ${p.total} characters known` : "No characters in this one yet"}
+      <p class="note">${p.total ? `${p.known}/${p.total} characters known` : "No characters in this one yet"}
         · press and hold a character for its reading, tap it for the full card</p>
     </div>
     <div class="song-lines">
