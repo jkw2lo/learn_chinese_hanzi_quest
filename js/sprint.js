@@ -749,29 +749,105 @@ function sprintNotebookHtml(trouble, fluent) {
   </div>`;
 }
 
+/* ---------- the spider: pace, by mode, on one scale ----------
+
+   Seconds a question isn't comparable across modes — 2.4s is brisk reading
+   and impossible typing, because SPRINT[mode].par says so. sprintGrade
+   already turns a pace into one of five grades relative to that mode's own
+   par, so plotting the grade (0 = never run, 1 = 慢 through 5 = 狂) is what
+   makes four different-natured skills sit on one honest scale, the same way
+   the grade badge on a picker already does. The raw pace still rides along
+   in each point's title, for the number underneath the shape. */
+const SPRINT_RADAR_MODES = ["r", "w", "l", "a"];
+
+function sprintRadarHtml() {
+  const R = 54, CX = 62, CY = 62, RINGS = 5;
+  const n = SPRINT_RADAR_MODES.length;
+  const angleAt = i => -Math.PI / 2 + i * (2 * Math.PI / n);
+  const radiusAt = level => (level / RINGS) * R;
+  const pointAt = (i, level) => {
+    const a = angleAt(i), r = radiusAt(level);
+    return [(CX + r * Math.cos(a)).toFixed(1), (CY + r * Math.sin(a)).toFixed(1)];
+  };
+
+  const points = SPRINT_RADAR_MODES.map((m, i) => {
+    const best = sprintBests(m)[0];
+    if (!best) return { mode: m, level: 0, pace: null, xy: pointAt(i, 0) };
+    const pace = best.secs / best.n;
+    const level = SPRINT_GRADES.indexOf(sprintGrade(m, best.n, best.secs, best.style)) + 1;
+    return { mode: m, level, pace, xy: pointAt(i, level) };
+  });
+  const anyRuns = points.some(p => p.pace !== null);
+
+  const rings = Array.from({ length: RINGS }, (_, k) => {
+    const ring = SPRINT_RADAR_MODES.map((_, i) => pointAt(i, k + 1).join(",")).join(" ");
+    return `<polygon class="sp-radar-ring" points="${ring}"/>`;
+  }).join("");
+  const spokes = SPRINT_RADAR_MODES.map((_, i) => {
+    const [x, y] = pointAt(i, RINGS);
+    return `<line class="sp-radar-spoke" x1="${CX}" y1="${CY}" x2="${x}" y2="${y}"/>`;
+  }).join("");
+  const labels = SPRINT_RADAR_MODES.map((m, i) => {
+    const [x, y] = pointAt(i, RINGS + 1.15);
+    return `<text class="sp-radar-label han" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${esc(SPRINT[m].zh)}</text>`;
+  }).join("");
+  const shape = anyRuns
+    ? `<polygon class="sp-radar-shape" points="${points.map(p => p.xy.join(",")).join(" ")}"/>` : "";
+  const dots = points.map(p => `<circle class="sp-radar-dot ${p.pace === null ? "off" : ""}"
+    cx="${p.xy[0]}" cy="${p.xy[1]}" r="3"><title>${esc(SPRINT[p.mode].name)}${p.pace === null ? ": no sheet run yet"
+      : `: ${p.pace.toFixed(1)}s a question · ${esc(SPRINT_GRADES[p.level - 1].zh)} ${esc(SPRINT_GRADES[p.level - 1].name)}`}</title></circle>`).join("");
+
+  return `<svg class="sp-radar" viewBox="0 0 124 124">${rings}${spokes}${shape}${dots}${labels}</svg>`;
+}
+
+function sprintTopHtml() {
+  const top = Object.values(sprintState().best)
+    .sort((a, b) => (b.right / b.n - a.right / a.n) || ((a.secs / a.n) - (b.secs / b.n)))
+    .slice(0, 5);
+  if (!top.length) return "";
+  return `<div class="stack" style="gap:.3rem">
+    <span class="eyebrow">Top 5, all time ${hanLabel("最好")}</span>
+    <div class="sp-board sp-board-tight">
+      ${top.map(r => sprintRowHtml(r, true)).join("")}
+    </div>
+  </div>`;
+}
+
+function sprintRecentHtml() {
+  const runs = sprintRecent().slice(0, 10);
+  if (!runs.length) return `<p class="note">No sheets yet. The board fills with every run, and a ★ marks the
+    best you've done on a given size.</p>`;
+  return `<div class="stack" style="gap:.3rem">
+    <span class="eyebrow">Latest 10 ${hanLabel("最近")}</span>
+    <div class="sp-board sp-board-tight sp-board-scroll">
+      ${runs.map(r => sprintRowHtml(r, false)).join("")}
+    </div>
+  </div>`;
+}
+
+function sprintRowHtml(r, showAccuracy) {
+  const cfg = SPRINT[r.mode];
+  const b = sprintState().best[sheetKey(r)];
+  const isBest = !!b && b.at === r.at;
+  const pace = r.n ? (r.secs / r.n).toFixed(1) : "—";
+  return `<div class="sp-board-row ${isBest ? "best" : ""}">
+    <span class="sp-board-k han">${esc(cfg.zh)}</span>
+    <span class="sp-board-body"><b>${r.right}/${r.n}</b>
+      <small>${pace}s/q${showAccuracy ? "" : ` · ${esc(r.on)}`}${r.done ? "" : " · unfinished"}</small></span>
+    ${isBest ? `<span class="sp-board-star" title="Your best on this sheet">★</span>` : ""}
+  </div>`;
+}
+
 function sprintBoardHtml() {
-  const runs = sprintRecent().slice(0, 8);
   const total = sprintTotal();
-  return `<div class="sheet" style="padding:1rem">
-    <div class="stack" style="gap:.7rem">
+  return `<div class="sheet sp-board-sheet">
+    <div class="stack" style="gap:.6rem">
       <span class="eyebrow">The board ${hanLabel("记录")}</span>
-      ${runs.length ? `<div class="sp-board">
-        ${runs.map(r => {
-          const cfg = SPRINT[r.mode];
-          const b = sprintState().best[sheetKey(r)];
-          const isBest = !!b && b.at === r.at;
-          return `<div class="sp-board-row ${isBest ? "best" : ""}">
-            <span class="sp-board-k han">${esc(cfg.zh)}</span>
-            <span class="sp-board-body"><b>${r.right} / ${r.n}</b>
-              <small>${fmtClock(r.secs * 1000)} sheet · ${esc(r.on)}${r.done ? " · finished" : ` · ${r.n - r.answered} blank`}</small></span>
-            ${isBest ? `<span class="sp-board-star" title="Your best on this sheet">★</span>` : ""}
-          </div>`;
-        }).join("")}
-      </div>
-      <p class="note">${total} question${total === 1 ? "" : "s"} answered against the clock, all told.
-        The times to beat are your own — nothing here leaves this device.</p>`
-      : `<p class="note">No sheets yet. The board fills with every run, and a ★ marks the best you've done on
-        a given size.</p>`}
+      ${sprintRadarHtml()}
+      ${sprintTopHtml()}
+      ${sprintRecentHtml()}
+      ${total ? `<p class="note">${total} question${total === 1 ? "" : "s"} answered against the clock, all told.
+        The times to beat are your own — nothing here leaves this device.</p>` : ""}
     </div>
   </div>`;
 }

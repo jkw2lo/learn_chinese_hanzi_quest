@@ -56,6 +56,11 @@ const blank = () => ({
   timer: true,
   tour: false,
   writeDrills: true,
+  /* HanziWriter's own quiz tolerance multiplier — 1 is its default and the
+     strictness this app has always had. Lower is stricter (a squiggly
+     component that's genuinely close still gets rejected), higher is more
+     forgiving. See applyPenTo's sibling, writeLeniencyOpt, in app.js. */
+  writeLeniency: 1,
   /* Which of the two Go-deeper writing tiles the merged card currently
      shows — "write" (one character) or "write2" (a compound word). See the
      toggle in renderToday, js/app.js. */
@@ -75,6 +80,12 @@ const blank = () => ({
      list costs when something merges it the wrong way; a song never needs to
      be that, since nothing about it is positional. See mergeState. */
   songs: {},
+  /* Every graded answer, bucketed by ISO week and then by character — not by
+     individual event. A day-by-day, let alone event-by-event, log of every
+     rep would be the "mega list" this is deliberately not: a year of study
+     is at most ~52 weeks times however many distinct characters actually
+     came up that week, not one row per rep. See tallyCharWeek in grade(). */
+  charWeeks: {},
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
   name: "",
   interests: [],
@@ -290,6 +301,13 @@ function mergeState(a, b) {
      which side actually holds the edit. */
   const songStamp = s => s.edited || s.added || 0;
   out.songs = mergeBy(a.songs, b.songs, (x, y) => (!y ? x : !x ? y : (songStamp(y) >= songStamp(x) ? y : x)));
+  /* Two levels of mergeBy: a week is a keyed bag of characters, each an
+     object of counts that only ever go up within that week — the same
+     bigger()-per-field shape as mergeChar, one level down. */
+  const mergeWeekChar = (x, y) => (!y ? x : !x ? y : {
+    seen: bigger(x.seen, y.seen), right: bigger(x.right, y.right), wrong: bigger(x.wrong, y.wrong)
+  });
+  out.charWeeks = mergeBy(a.charWeeks, b.charWeeks, (wx, wy) => mergeBy(wx, wy, mergeWeekChar));
   out.sprint = mergeSprint(older.sprint, newer.sprint);
   /* by value, like `hailed` below it — both are lists, not flag objects */
   out.menuTaught = [...new Set([...asList(a.menuTaught), ...asList(b.menuTaught)])];
@@ -411,6 +429,7 @@ function grade(c, correct, skill, opts = {}) {
   const extra = opts.practice || opts.speed;
   r.seen++;
   r.last = dayKey();
+  tallyCharWeek(c, correct);
   if (skill && r.shown[skill] !== undefined) r.shown[skill]++;
   if (correct) {
     r.right++;
@@ -445,6 +464,65 @@ function grade(c, correct, skill, opts = {}) {
   }
   save();
   return r;
+}
+
+/* One line per character per week, not one per rep — see charWeeks in
+   blank(). Called from inside grade(), so it sees every graded answer
+   whatever drew it: a drill, extra practice, a repair round, a sprint. */
+function tallyCharWeek(c, ok) {
+  const wk = weekKey();
+  const t = state.charWeeks[wk] = state.charWeeks[wk] || {};
+  const e = t[c] = t[c] || { seen: 0, right: 0, wrong: 0 };
+  e.seen++;
+  if (ok) e.right++; else e.wrong++;
+}
+
+/* Reps per week, summed across every character — the shape a trend chart
+   wants, going back `weeks` ISO weeks from today (this week last). A week
+   with nothing in it still gets an entry, at zero, so a gap in practice
+   shows as a gap rather than disappearing from the axis. */
+function charWeekTrend(weeks = 8) {
+  const keys = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i * 7);
+    const k = weekKey(d);
+    if (keys[keys.length - 1] !== k) keys.push(k);
+  }
+  return keys.map(k => {
+    const chars = Object.values(state.charWeeks[k] || {});
+    return {
+      week: k,
+      seen: chars.reduce((a, v) => a + v.seen, 0),
+      right: chars.reduce((a, v) => a + v.right, 0),
+      wrong: chars.reduce((a, v) => a + v.wrong, 0),
+      chars: chars.length
+    };
+  });
+}
+
+/* "I can read it but I can't write it": for every character tried at least
+   3 times in two or more skills, the gap between its best-practiced skill
+   and its worst. Lifetime, not weekly — a skill gap is a standing fact
+   about a character, not something that needs a trend of its own, and
+   state.chars already keeps the per-skill counts this reads. */
+const WEAKNESS_SKILLS = ["r", "p", "c", "w"];
+const WEAKNESS_MIN_SHOWN = 3;
+const WEAKNESS_MIN_GAP = 0.34;
+function weaknessReport(limit = 10) {
+  const out = [];
+  for (const c of Object.keys(state.chars)) {
+    const r = state.chars[c];
+    const rates = WEAKNESS_SKILLS
+      .map(skill => ({ skill, shown: r.shown[skill] || 0, right: r.skills[skill] || 0 }))
+      .filter(x => x.shown >= WEAKNESS_MIN_SHOWN)
+      .map(x => Object.assign(x, { acc: x.right / x.shown }));
+    if (rates.length < 2) continue;
+    rates.sort((a, b) => a.acc - b.acc);
+    const worst = rates[0], best = rates[rates.length - 1];
+    const gap = best.acc - worst.acc;
+    if (gap >= WEAKNESS_MIN_GAP) out.push({ c, worst, best, gap });
+  }
+  return out.sort((a, b) => b.gap - a.gap).slice(0, limit);
 }
 
 function introduce(c) {
