@@ -1290,6 +1290,9 @@ code {
 }
 .song-line:hover { background: var(--sunken); }
 .song-line.said { background: var(--seal-wash); }
+.song-actions { display: flex; gap: .5rem; }
+.song-actions .btn { flex: 1; }
+.song-sort { margin-top: .8rem; }
 .menu-legend b { font-family: var(--f-han-ui); font-weight: 400; font-size: .95rem; cursor: default; }
 /* the line under the bar: the number you can check by looking at the card */
 .menu-read { margin: .45rem 0 0; line-height: 1.6; }

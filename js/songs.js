@@ -26,17 +26,61 @@
    is the only way in, for a first song exactly as much as a tenth.
    ============================================================ */
 
-const songList = () => Object.values(state.songs).sort((a, b) => (b.added || 0) - (a.added || 0));
+/* ---------- the roster, sorted ---------- */
+
+const SONG_SORTS = [
+  { id: "added",  label: "Newest" },
+  { id: "title",  label: "By name" },
+  { id: "artist", label: "By artist" },
+  { id: "chars",  label: "By characters" },
+  { id: "known",  label: "By known" }
+];
+/* A view preference, not a record — like wp.sort, it lives for the session
+   and nowhere in state, so there is nothing here for two devices to merge. */
+let songSort = "added";
+
+function songList() {
+  const list = Object.values(state.songs);
+  const byTitle = (a, b) => a.title.localeCompare(b.title);
+  if (songSort === "title") return list.sort(byTitle);
+  if (songSort === "artist") return list.sort((a, b) => (a.artist || "").localeCompare(b.artist || "") || byTitle(a, b));
+  if (songSort === "chars") return list.sort((a, b) => songProgress(b).total - songProgress(a).total || byTitle(a, b));
+  if (songSort === "known") return list.sort((a, b) => songProgress(b).pct - songProgress(a).pct || byTitle(a, b));
+  return list.sort((a, b) => (b.added || 0) - (a.added || 0));
+}
+
+/* ---------- one song ---------- */
+
+const parseLyrics = text => String(text || "").split("\n").map(l => l.trim()).filter(Boolean);
 
 function addSong(title, artist, text) {
-  const lines = String(text || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const lines = parseLyrics(text);
   const t = String(title || "").trim();
   if (!t || !lines.length) return null;
   /* Date.now() the way every other id in this record is minted (see
-     wpSave, diaryPut) — unique enough for one person's own library, and a
-     string because it lives as an object key, the way chars and days do. */
-  const id = String(Date.now());
+     wpSave, diaryPut), plus a random suffix — unlike a page saved by hand,
+     two songs added back to back (an import script, a fast double-submit)
+     are a real way to land in the same millisecond, and state.songs is a
+     plain object keyed by this id: a collision is not a duplicate, it is
+     the first song silently overwritten by the second. */
+  const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
   const song = { id, title: t, artist: String(artist || "").trim(), added: Date.now(), lines };
+  state.songs[id] = song;
+  save();
+  return song;
+}
+
+/* `edited` is separate from `added` on purpose — see mergeState in
+   js/srs.js: `added` never moves again once a song is created, so an edit
+   here and no edit on another device would otherwise tie on `added` and be
+   decided by argument order rather than by which side holds the edit. */
+function updateSong(id, title, artist, text) {
+  const existing = state.songs[id];
+  if (!existing) return null;
+  const lines = parseLyrics(text);
+  const t = String(title || "").trim();
+  if (!t || !lines.length) return null;
+  const song = Object.assign({}, existing, { title: t, artist: String(artist || "").trim(), lines, edited: Date.now() });
   state.songs[id] = song;
   save();
   return song;
@@ -67,14 +111,17 @@ function renderSongs() {
         known or not, for its reading and meaning.</p>
     </div>
     <button class="btn btn-block" id="songAdd">Add a song</button>
+    ${list.length > 1 ? `<div class="filters song-sort">${SONG_SORTS.map(o =>
+        `<button class="filt ${songSort === o.id ? "on" : ""}" data-song-sort="${o.id}">${esc(o.label)}</button>`).join("")}</div>` : ""}
     ${list.length ? `<div class="song-grid">${list.map(songCard).join("")}</div>`
       : `<div class="sheet song-empty" style="padding:1.2rem;text-align:center">
            <p class="note">Nothing here yet. Paste in the lyrics to a song you already half-know, and the
              words you've learned will light up as you go.</p>
          </div>`}
   </div>`;
-  $("#songAdd").onclick = openSongImport;
+  $("#songAdd").onclick = () => openSongImport();
   $$("#viewSongs .song-card").forEach(b => b.onclick = () => openSong(b.dataset.id));
+  $$("#viewSongs [data-song-sort]").forEach(b => b.onclick = () => { songSort = b.dataset.songSort; renderSongs(); });
 }
 
 function songCard(song) {
@@ -94,27 +141,34 @@ function songCard(song) {
   </button>`;
 }
 
-function openSongImport() {
-  openSheet(`<span class="han">加歌</span> Add a song`, `<div class="wrap"><div class="section">
+/* Add and Edit share one form — the only difference is whether songSave
+   creates a new record or writes back into the one it was opened from. */
+function openSongImport(existing) {
+  openSheet(existing ? `<span class="han">改歌</span> Edit song` : `<span class="han">加歌</span> Add a song`,
+    `<div class="wrap"><div class="section">
     <p class="note">Paste in the lyrics, one line at a time. Nothing here is checked or scheduled — it's for
       reading, the way the menu is.</p>
     <div class="sheet block">
       <div class="block-head"><span class="k">题</span><span class="t">Title</span></div>
-      <input type="text" id="songTitle" class="search" maxlength="80" placeholder="A song you already half-know">
+      <input type="text" id="songTitle" class="search" maxlength="80" placeholder="A song you already half-know"
+        value="${existing ? esc(existing.title) : ""}">
     </div>
     <div class="sheet block">
       <div class="block-head"><span class="k">artist</span><span class="t">Optional</span></div>
-      <input type="text" id="songArtist" class="search" maxlength="80" placeholder="Who sings it">
+      <input type="text" id="songArtist" class="search" maxlength="80" placeholder="Who sings it"
+        value="${existing ? esc(existing.artist || "") : ""}">
     </div>
     <div class="sheet block">
       <div class="block-head"><span class="k">词</span><span class="t">Lyrics, one line at a time</span></div>
-      <textarea id="songLyrics" class="search" rows="10" placeholder="第一行…&#10;第二行…"></textarea>
+      <textarea id="songLyrics" class="search" rows="10" placeholder="第一行…&#10;第二行…">${existing ? esc(existing.lines.join("\n")) : ""}</textarea>
     </div>
-    <button class="btn btn-block" id="songSave">Add to your songs</button>
+    <button class="btn btn-block" id="songSave">${existing ? "Save changes" : "Add to your songs"}</button>
     <p class="note" id="songErr" hidden>A title and at least one line of lyrics are both needed.</p>
   </div></div>`);
   $("#songSave").onclick = () => {
-    const song = addSong($("#songTitle").value, $("#songArtist").value, $("#songLyrics").value);
+    const song = existing
+      ? updateSong(existing.id, $("#songTitle").value, $("#songArtist").value, $("#songLyrics").value)
+      : addSong($("#songTitle").value, $("#songArtist").value, $("#songLyrics").value);
     if (!song) { $("#songErr").hidden = false; return; }
     closeSheet();
     openSong(song.id);
@@ -135,8 +189,12 @@ function openSong(id) {
     <div class="song-lines">
       ${song.lines.map(line => `<button class="song-line" data-speak="${esc(line)}">${glyphs(line)}</button>`).join("")}
     </div>
-    <button class="btn btn-ghost btn-block" id="songDel">Delete this song</button>
+    <div class="song-actions">
+      <button class="btn btn-ghost" id="songEdit">Edit this song</button>
+      <button class="btn btn-ghost" id="songDel">Delete this song</button>
+    </div>
   </div></div>`);
+  $("#songEdit").onclick = () => openSongImport(song);
   $("#songDel").onclick = async () => {
     if (!await askConfirm({
       k: "删除", title: "Delete this song?",
