@@ -710,6 +710,9 @@ code {
   display: none; flex-direction: column;
 }
 .sheetview.on { display: flex; animation: rise .25s ease both; }
+/* Above the sheet it opens on top of (55) rather than replacing it — see
+   openCharPeek in songs.js. */
+.char-peek { z-index: 92; }
 .sv-bar { display: flex; align-items: center; gap: .7rem; padding: .7rem 1rem; border-bottom: 1px solid var(--rule-2); }
 .sv-title { font-family: var(--f-display); font-weight: 600; flex: 1; }
 .sv-body { flex: 1; overflow-y: auto; }
@@ -1287,6 +1290,9 @@ code {
 }
 .song-line:hover { background: var(--sunken); }
 .song-line.said { background: var(--seal-wash); }
+.song-actions { display: flex; gap: .5rem; }
+.song-actions .btn { flex: 1; }
+.song-sort { margin-top: .8rem; }
 .menu-legend b { font-family: var(--f-han-ui); font-weight: 400; font-size: .95rem; cursor: default; }
 /* the line under the bar: the number you can check by looking at the card */
 .menu-read { margin: .45rem 0 0; line-height: 1.6; }
@@ -1569,6 +1575,12 @@ code {
 }
 .wp-page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #wpInk { cursor: crosshair; }
+/* Without an explicit CSS size, a <canvas> renders at its width/height
+   ATTRIBUTE values (the pixel buffer wpmSizeInk sets, dpr-scaled) rather
+   than the box its container actually has — so the box stayed the right
+   width but ballooned to roughly double its height, the ratio a 2x screen's
+   dpr would produce. Same fix as .wp-page canvas above. */
+#wpmInk { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
 .wp-page.padding-on { cursor: none; }
 .wp-page.padding-on { box-shadow: 0 0 0 3px var(--jade-wash), var(--shadow); }
 
@@ -3315,9 +3327,13 @@ button.tier-head:hover { border-color: var(--ink-3); }
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem;
     flex: none; scroll-snap-align: center;
     /* wide enough for two rows of a label that may run to "Radicals" without
-       wrapping, narrow enough that the next chip's edge still shows */
-    width: 4.6rem; min-height: 3.6rem; padding: .4rem .3rem; border: 0; border-radius: 14px;
+       wrapping, narrow enough that the next chip's edge still shows. Fully
+       rounded rather than a softened square, so a row of them reads as a
+       wheel of beads rather than a shelf of tiles — and drawerNavTick's
+       scale/fade as each one nears the edge sells the same idea in motion. */
+    width: 4.6rem; min-height: 3.6rem; padding: .4rem .3rem; border: 0; border-radius: 999px;
     background: none; color: var(--ink-2); font-size: .68rem; text-align: center; line-height: 1.2;
+    transition: transform .1s ease, opacity .1s ease;
   }
   .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.05rem; color: var(--ink-3); }
   .drawer-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
@@ -3476,10 +3492,21 @@ button.tier-head:hover { border-color: var(--ink-3); }
      rule above: the button beside it needs real width too, not the sliver
      that would be left over from a box sized to fill the column on its own. */
   .wp-tools, .wp-page, .wp-foot, .wp-note-desktop { display: none; }
-  .wp-mobile { display: flex; align-items: stretch; gap: .8rem; margin-bottom: .5rem; }
-  .wp-mobile .writer-box { flex: none; width: min(52vw, 15rem, 40dvh); }
-  .wp-mobile-side { display: flex; flex-direction: column; justify-content: center; gap: .5rem; flex: 1; min-width: 0; }
-  .wp-mobile-side .btn { width: 100%; }
+  /* Stacked, not side by side: the box no longer has to leave room for a
+     button column beside it, so it takes the same size the drill's own
+     writer-box does (see the rule above), and Add to page / Clear sit under
+     it in a row instead — the layout TODO.md actually asked for. */
+  .wp-mobile { display: flex; flex-direction: column; align-items: center; gap: .7rem; margin-bottom: .5rem; }
+  .wp-mobile .writer-box { width: min(100%, 24rem, 44dvh); }
+  /* Without this, a drag that starts on the canvas can still be read as a
+     page scroll (see wpmBindInk in js/app.js) — and each time it is, dvh
+     units resize against the address bar hiding, which grows the box, which
+     grows the page, which leaves more room to scroll next time. One swipe
+     that leaks becomes a page that is visibly longer by the next one. */
+  .wp-mobile .writer-box .tian { touch-action: none; }
+  .wp-mobile-actions { display: flex; width: 100%; max-width: 24rem; gap: .5rem; }
+  .wp-mobile-actions .btn { flex: 1; }
+  .wp-mobile-actions .btn#wpmAdd { flex: 2; }
   .wp-mobile-status, .wp-note-mobile { display: block; }
   .wp-mobile-status { text-align: center; margin: 0 0 .9rem; }
 

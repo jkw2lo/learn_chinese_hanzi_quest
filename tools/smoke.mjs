@@ -2103,7 +2103,7 @@ console.log('\nsprint: the record behind the sheets');
                               'SpeechSynthesisUtterance', 'matchMedia', 'structuredClone', 'queueMicrotask']);
   /* A name declared in any of the four counts: app.js is loaded last and
      shares the global scope with data.js, srs.js and sprint.js. */
-  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js');
+  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js') + read('js/songs.js');
   const isDeclared = n => new RegExp(
     `(?:const|let|var|function)\\s+${n.replace(/\$/g, '\\$')}(?![\\w$])`).test(declaredIn);
   const dead = [...called].filter(n => !NOT_A_CALL.has(n) && !isDeclared(n));
@@ -2394,7 +2394,9 @@ console.log('\ntwo devices, one record');
       streak: { cur: 3, best: 7, last: '2026-01-05' },
       hailed: [50],
       songs: { s1: { id: 's1', title: 'Morning only', added: 500, lines: ['一'] },
-               shared: { id: 'shared', title: 'Older copy', added: 100, lines: ['一'] } }
+               shared: { id: 'shared', title: 'Older copy', added: 100, lines: ['一'] },
+               /* same `added` on both sides — only an edit tells them apart */
+               tie: { id: 'tie', title: 'Edited on morning', added: 200, edited: 999, lines: ['一'] } }
     });
     const afternoon = Object.assign(blank(), {
       updated: 2000,
@@ -2404,7 +2406,8 @@ console.log('\ntwo devices, one record');
       hailed: [50, 100],
       goalNew: 9,
       songs: { s2: { id: 's2', title: 'Afternoon only', added: 600, lines: ['三'] },
-               shared: { id: 'shared', title: 'Newer copy', added: 700, lines: ['一', '三'] } }
+               shared: { id: 'shared', title: 'Newer copy', added: 700, lines: ['一', '三'] },
+               tie: { id: 'tie', title: 'Untouched on afternoon', added: 200, lines: ['一'] } }
     });
     const m = mergeState(morning, afternoon);
 
@@ -2436,6 +2439,13 @@ console.log('\ntwo devices, one record');
        && !!m.songs.s2 && m.songs.s2.title === 'Afternoon only');
     ok('  and the same id on both keeps the newer copy', m.songs.shared.title === 'Newer copy'
        && m.songs.shared.lines.length === 2);
+    /* `added` never changes once a song exists, so an edited copy and an
+       untouched one tie on it — mergeState has to break the tie on `edited`
+       (falling back to `added`) rather than on whichever side happened to
+       be passed second, or an edit made on only one device could vanish on
+       the very next sync from the other. */
+    ok('an edited copy beats an untouched one with the same `added`, regardless of which side it is on',
+       m.songs.tie.title === 'Edited on morning');
     /* menuTaught is a list of characters and was merged with unionKeys, which is
      for keyed flags and hands back a plain object. One sign-in turned ["菜"]
      into {"0":"菜"} and [] into {}, and the next `.includes` threw — inside

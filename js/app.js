@@ -2072,12 +2072,14 @@ function maybeHail(delay = 0) {
    ============================================================ */
 
 function openSheet(title, html) {
+  hideTip();
   $("#svTitle").innerHTML = title;
   $("#svBody").innerHTML = html;
   $("#charView").classList.add("on");
   document.body.style.overflow = "hidden";
 }
 function closeSheet() {
+  hideTip();
   $("#charView").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
@@ -2371,6 +2373,47 @@ function initSpeakables() {
 /* ---------- hover cards ---------- */
 
 let tipEl = null;
+
+/* Placed relative to the glyph itself, flipped below it when there's no room
+   above — shared by the hover path and the long-press path, so a touch peek
+   looks exactly like a mouse one. */
+function placeTip(g) {
+  const r = g.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+  let x = r.left + r.width / 2 - t.width / 2;
+  let y = r.top - t.height - 8;
+  if (y < 8) y = r.bottom + 8;
+  x = Math.max(8, Math.min(x, innerWidth - t.width - 8));
+  tipEl.style.left = x + "px";
+  tipEl.style.top = y + "px";
+}
+
+/* Not in the curriculum is not the same as nothing to say. A reference gloss
+   gets a reading and a sense and an honest line about why it has no progress
+   to report; bailing out here is what left the menu, the example words and
+   the headings silent. Returns false when there is truly nothing to show. */
+function showTip(g) {
+  const c = g.dataset.ch;
+  const ch = CHAR_INDEX[c];
+  if (!ch) {
+    const [p, m] = gloss(c);
+    if (!m) return false;
+    tipEl.innerHTML = `<div class="z">${esc(c)}</div>
+      <div class="p">${esc(p)}</div>
+      <div class="m">${esc(m)}</div>
+      <div class="s">Not in the curriculum — here for reference</div>`;
+  } else {
+    const known = isKnown(ch.c);
+    tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
+      <div class="p">${esc(ch.p)}</div>
+      <div class="m">${esc(ch.m)}</div>
+      <div class="s">${known ? "You know this one" : "Not learned yet"} · ${esc(ch.words[0][0])} ${esc(ch.words[0][2])}</div>`;
+  }
+  tipEl.classList.add("on");
+  placeTip(g);
+  return true;
+}
+const hideTip = () => tipEl && tipEl.classList.remove("on");
+
 function initTips() {
   tipEl = document.createElement("div");
   tipEl.className = "tip";
@@ -2381,51 +2424,23 @@ function initTips() {
      threw and took the rest of the handler chain down with it. */
   const hit = e => (e.target instanceof Element ? e.target.closest("[data-ch]") : null);
 
-  document.addEventListener("mouseover", e => {
-    const g = hit(e);
-    if (!g) return;
-    const c = g.dataset.ch;
-    const ch = CHAR_INDEX[c];
-    /* Not in the curriculum is not the same as nothing to say. A reference
-       gloss gets a reading and a sense and an honest line about why it has no
-       progress to report; bailing out here is what left the menu, the example
-       words and the headings silent. */
-    if (!ch) {
-      const [p, m] = gloss(c);
-      if (!m) return;
-      tipEl.innerHTML = `<div class="z">${esc(c)}</div>
-        <div class="p">${esc(p)}</div>
-        <div class="m">${esc(m)}</div>
-        <div class="s">Not in the curriculum — here for reference</div>`;
-      tipEl.classList.add("on");
-      return place(g);
-    }
-    const known = isKnown(ch.c);
-    tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
-      <div class="p">${esc(ch.p)}</div>
-      <div class="m">${esc(ch.m)}</div>
-      <div class="s">${known ? "You know this one" : "Not learned yet"} · ${esc(ch.words[0][0])} ${esc(ch.words[0][2])}</div>`;
-    tipEl.classList.add("on");
-    place(g);
-  });
-  document.addEventListener("mouseout", e => {
-    if (hit(e)) tipEl.classList.remove("on");
-  });
+  document.addEventListener("mouseover", e => { const g = hit(e); if (g) showTip(g); });
+  document.addEventListener("mouseout", e => { if (hit(e)) hideTip(); });
   /* touch has no hover — open the full card instead */
   document.addEventListener("click", e => {
     const g = hit(e);
     if (g && CHAR_INDEX[g.dataset.ch]) openChar(g.dataset.ch);
   });
-
-  function place(g) {
-    const r = g.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
-    let x = r.left + r.width / 2 - t.width / 2;
-    let y = r.top - t.height - 8;
-    if (y < 8) y = r.bottom + 8;
-    x = Math.max(8, Math.min(x, innerWidth - t.width - 8));
-    tipEl.style.left = x + "px";
-    tipEl.style.top = y + "px";
-  }
+  /* Belt and braces for a tip a long-press opened (see openSongLines in
+     songs.js): anywhere that isn't the tip and isn't another glyph closes it.
+     Without this, a tip shown by touch had no mouseout to ever clear it —
+     it sat there `.on` and reappeared, looking "stuck", the moment whatever
+     had been drawn on top of it (a session, a sheet) closed again. */
+  document.addEventListener("click", e => {
+    if (!tipEl.classList.contains("on")) return;
+    if (e.target === tipEl || tipEl.contains(e.target) || hit(e)) return;
+    hideTip();
+  });
 }
 
 /* ---------- flashcards ---------- */
@@ -3023,7 +3038,7 @@ function buildWritePage() {
              page-finding and square-placing that a free canvas never needed. -->
         <div class="wp-mobile">
           <div class="writer-box"><div class="tian">${TIAN_SVG}<canvas id="wpmInk"></canvas></div></div>
-          <div class="wp-mobile-side">
+          <div class="wp-mobile-actions">
             <button class="btn btn-seal" id="wpmAdd">Add to page</button>
             ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpmPad">触控 Trackpad</button>` : ""}
             <button class="btn btn-ghost btn-sm" id="wpmClear">Clear</button>
@@ -6170,6 +6185,7 @@ const RENDER = { today: renderToday, menu: renderQuest, songs: renderSongs, spri
 
 function go(v) {
   hqNote("view", v);
+  hideTip();
   view = v;
   const id = "view" + v[0].toUpperCase() + v.slice(1);
   $$(".view").forEach(el => el.classList.toggle("on", el.id === id));
@@ -6213,6 +6229,8 @@ function openDrawer() {
   d.classList.add("on");
   document.body.style.overflow = "hidden";
   $("#burgerBtn").setAttribute("aria-expanded", "true");
+  centerDrawerNav();
+  drawerNavTick();
 }
 function closeDrawer() {
   const d = $("#drawer");
@@ -6221,6 +6239,64 @@ function closeDrawer() {
   d.hidden = true;
   document.body.style.overflow = "";
   $("#burgerBtn").setAttribute("aria-expanded", "false");
+}
+
+/* ---------- the rolodex loops ----------
+
+   Three copies of the same sections, back to back. Scroll off the end of the
+   middle one and a silent, unanimated jump by exactly one copy's width lands
+   on the pixel-identical seam of the next — so scrolling in either direction
+   never actually runs out, the way a real rolodex wheel never does. The jump
+   only ever fires once scrolling has settled (see the debounce below):
+   moving scrollLeft out from under an active touch drag is what makes an
+   infinite scroller visibly stutter, so it waits to be asked. */
+function initDrawerLoop() {
+  const nav = $(".drawer-nav");
+  if (!nav || nav.dataset.looped) return;
+  nav.dataset.looped = "1";
+  const original = [...nav.children];
+  for (let i = 0; i < 2; i++) original.forEach(el => nav.appendChild(el.cloneNode(true)));
+  nav._loopOriginal = original;
+  nav._loopLen = original.length;
+
+  const reposition = () => {
+    const w = nav.scrollWidth / 3;
+    if (!w) return;
+    if (nav.scrollLeft < w * 0.5) nav.scrollLeft += w;
+    else if (nav.scrollLeft > w * 1.5) nav.scrollLeft -= w;
+  };
+  let settleT = null, tickQ = false;
+  nav.addEventListener("scroll", () => {
+    clearTimeout(settleT);
+    settleT = setTimeout(reposition, 120);
+    if (!tickQ) { tickQ = true; requestAnimationFrame(() => { drawerNavTick(); tickQ = false; }); }
+  });
+}
+
+/* Scrolls to the middle copy of whichever section is current, so opening the
+   drawer always starts on where you are — and lands with a full copy's width
+   of room to scroll either way before the loop above has anything to do. */
+function centerDrawerNav() {
+  const nav = $(".drawer-nav");
+  if (!nav || !nav._loopOriginal) return;
+  const idx = nav._loopOriginal.findIndex(el => el.dataset && el.dataset.nav === view);
+  if (idx < 0) return;
+  const mid = nav.children[nav._loopLen + idx];
+  nav.scrollLeft = Math.max(0, mid.offsetLeft - (nav.clientWidth - mid.clientWidth) / 2);
+}
+
+/* The wheel look: a chip scales and fades as it moves away from centre,
+   the way the numbers on either side of a real dial thumbwheel taper off. */
+function drawerNavTick() {
+  const nav = $(".drawer-nav");
+  if (!nav) return;
+  const mid = nav.getBoundingClientRect().left + nav.clientWidth / 2;
+  nav.querySelectorAll("[data-nav]").forEach(b => {
+    const r = b.getBoundingClientRect();
+    const d = Math.min(1, Math.abs((r.left + r.width / 2) - mid) / (nav.clientWidth / 2 || 1));
+    b.style.transform = `scale(${(1 - d * 0.22).toFixed(3)})`;
+    b.style.opacity = (1 - d * 0.55).toFixed(3);
+  });
 }
 
 function renderAll() {
@@ -6271,6 +6347,7 @@ function initTheme() {
 function boot() {
   load();
   initTheme();
+  initDrawerLoop();
   $$("[data-nav]").forEach(b => b.onclick = () => go(b.dataset.nav));
   $("#sesClose").onclick = async () => {
     if (session.idx > 0 && session.idx < session.queue.length
@@ -6284,6 +6361,7 @@ function boot() {
     endSession();
   };
   $("#svClose").onclick = closeSheet;
+  $("#charPeekClose").onclick = closeCharPeek;
   /* Abandoning a sheet halfway is a decision, not a slip of the finger — but
      once it is marked there is nothing left to lose by closing it. */
   $("#spClose").onclick = async () => {
@@ -6326,6 +6404,7 @@ function boot() {
     if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();
+    else if ($("#charPeek").classList.contains("on")) closeCharPeek();
     else if ($("#charView").classList.contains("on")) closeSheet();
     else if (session.active) $("#sesClose").click();
   });

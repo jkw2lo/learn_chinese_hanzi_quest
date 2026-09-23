@@ -277,11 +277,15 @@ function mergeState(a, b) {
 
   out.chars = mergeBy(a.chars, b.chars, mergeChar);
   out.days = mergeBy(a.days, b.days, mergeDay);
-  /* A song is imported whole, not built up over time the way a character's
-     record is — so there is nothing to accumulate, only a pick between two
-     copies of the same id. That should only ever happen from the same import
-     reaching both devices; the newer copy is kept on the rare chance it does. */
-  out.songs = mergeBy(a.songs, b.songs, (x, y) => (!y ? x : !x ? y : ((y.added || 0) >= (x.added || 0) ? y : x)));
+  /* A song is imported (or edited) whole, not built up over time the way a
+     character's record is — so there is nothing to accumulate, only a pick
+     between two copies of the same id, by whichever was touched more
+     recently. `edited` and not `added`: `added` never changes once a song is
+     created, so an edit on one device and no edit on the other would
+     otherwise tie on `added` and be decided by argument order rather than by
+     which side actually holds the edit. */
+  const songStamp = s => s.edited || s.added || 0;
+  out.songs = mergeBy(a.songs, b.songs, (x, y) => (!y ? x : !x ? y : (songStamp(y) >= songStamp(x) ? y : x)));
   out.sprint = mergeSprint(older.sprint, newer.sprint);
   /* by value, like `hailed` below it — both are lists, not flag objects */
   out.menuTaught = [...new Set([...asList(a.menuTaught), ...asList(b.menuTaught)])];
