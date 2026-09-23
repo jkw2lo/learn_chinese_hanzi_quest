@@ -36,7 +36,11 @@ const SPRINT = {
   l: { zh: "听力", name: "Listening", skill: "p", verb: "hear",
        blurb: "Hear it, pick the character.",
        long: "The skill that lags furthest behind the others, because almost nothing else in the app forces you to work from sound alone.",
-       par: 3.2 }
+       par: 3.2 },
+  a: { zh: "组词", name: "Build the word", skill: "c", verb: "build",
+       blurb: "Assemble a word from tiles, against the clock.",
+       long: "The daily drill's favourite, timed: given a meaning, tap out the word one tile at a time from a row that includes a few characters that don't belong. Slower than picking one option, so the par is generous.",
+       par: 5.4 }
 };
 
 /* Both are production — you are handed a meaning and have to come back with
@@ -162,6 +166,14 @@ function sprintQuestion(c, mode, style, known) {
     q.correct = c;
     q.opts = shuffle([c, ...sprintDistractors(ch, known, 5, "spot")])
       .map(x => ({ v: x, html: `<span class="big">${esc(x)}</span>` }));
+  } else if (mode === "a") {
+    /* Built once, here, rather than re-rolled on every render — the sheet
+       exists whole before the clock starts, tiles included, so no question
+       can be slower to appear than any other. */
+    q.word = one(buildWords(ch));
+    q.correct = q.word[0];
+    const target = [...q.word[0]];
+    q.tiles = shuffle([...target, ...pick(known.filter(x => !target.includes(x)), 3)]);
   } else {
     q.correct = c;                     /* typed: the candidates are live */
   }
@@ -178,6 +190,11 @@ function sprintPool(mode) {
     const withClips = known.filter(c => clipFor(c));
     if (withClips.length >= SPRINT_MIN_POOL) return withClips;
   }
+  /* Build the word can only ask about a character with a two-character (or
+     longer) word already readable — the same rule the daily drill and its
+     Practice mode use, so a sheet never has to bail mid-question the way a
+     single card falls back to "r" when it finds no word to build. */
+  if (mode === "a") return known.filter(c => buildWords(CHAR_INDEX[c]).length);
   return known;
 }
 
@@ -318,6 +335,41 @@ function sprintRenderQ() {
       <div class="sp-prompt"><span class="pin">${esc(ch.p)}</span> ${toneMark(ch.p)}<em>${esc(ch.m)}</em></div>
       <div class="sp-opts grid3">${sprintOptHtml(q.opts)}</div>
     </div>`;
+  } else if (sp.mode === "a") {
+    /* Multiple taps to one answer, which every other mode here needs only
+       one for — so a filled slot can be taken back before the word is
+       complete. That is a correction, not a verdict: nothing says whether a
+       placed tile is right until the whole word is handed in and the sheet
+       is marked, same as every other mode. */
+    const target = [...q.correct];
+    const filled = new Array(target.length).fill(null);   /* slot -> tile index */
+    body.innerHTML = `<div class="sp-q">
+      <div class="sp-prompt"><em class="lead">${esc(q.word[2])}</em> <span class="pin">${esc(q.word[1])}</span></div>
+      <div class="assemble">
+        <div class="slots">${target.map((_, i) => `<div class="slot" data-s="${i}"></div>`).join("")}</div>
+        <div class="tiles">${q.tiles.map((t, i) => `<button class="tile" data-c="${esc(t)}" data-i="${i}">${esc(t)}</button>`).join("")}</div>
+      </div>
+      <p class="note sp-tip">Tap a tile to place it, tap a filled slot to take it back.</p>
+    </div>`;
+    const paint = () => {
+      $$(".slot", body).forEach((s, i) => {
+        const ti = filled[i];
+        s.textContent = ti === null ? "" : q.tiles[ti];
+        s.classList.toggle("filled", ti !== null);
+      });
+      $$(".tile", body).forEach((t, i) => { t.disabled = filled.includes(i); });
+    };
+    $$(".tile", body).forEach(t => t.onclick = () => {
+      const i = +t.dataset.i, slot = filled.indexOf(null);
+      if (slot === -1 || filled.includes(i)) return;
+      filled[slot] = i;
+      paint();
+      if (!filled.includes(null)) sprintAnswer(filled.map(ti => q.tiles[ti]).join(""));
+    });
+    $$(".slot", body).forEach(s => s.onclick = () => {
+      const i = +s.dataset.s;
+      if (filled[i] !== null) { filled[i] = null; paint(); }
+    });
   } else {
     sp.typed = "";
     body.innerHTML = `<div class="sp-q">
@@ -425,7 +477,11 @@ function sprintFinish(completed) {
                    time to report, and Date.now() - 0 is not it */
                 ms: sp.startedAt ? Math.min(sp.secs * 1000, Date.now() - sp.startedAt) : 0 };
   const { best, prev } = recordRun(run);
-  if (answered) tallySprint(answered);
+  /* Sprint never runs through grades() in app.js — it grades its own
+     answers directly — so the day's study time and activity count are
+     tallied here instead, off the sheet's own elapsed clock, once for
+     whatever got answered rather than one call a question. */
+  if (answered) { tallySprint(answered); tallyTime(run.ms, run.ms); tallySession(); }
   sprintMarked(run, best, prev);
 }
 
@@ -474,8 +530,8 @@ function sprintMarked(run, best, prev) {
       ${missed.length ? `<div class="sp-wrong">
         <span class="eyebrow">What went wrong ${hanLabel("批改")}</span>
         ${missed.map(q => `<button class="sp-wrong-row" data-c="${esc(q.c)}">
-          <span class="han">${esc(q.ch.c)}</span>
-          <span class="sp-wrong-body"><b>${esc(q.ch.p)} · ${esc(q.ch.m)}</b>
+          <span class="han">${esc(q.word ? q.word[0] : q.ch.c)}</span>
+          <span class="sp-wrong-body"><b>${q.word ? `${esc(q.word[1])} · ${esc(q.word[2])}` : `${esc(q.ch.p)} · ${esc(q.ch.m)}`}</b>
             <small>you said ${sprintSaid(q)}</small></span>
         </button>`).join("")}
         <p class="note">${missed.length === 1 ? "It's" : "They're"} in your <span class="han">错字本</span> now.</p>
@@ -505,6 +561,7 @@ function sprintMarked(run, best, prev) {
    nothing; "事 shì · matter" says what the confusion was. */
 function sprintSaid(q) {
   if (q.got === null || q.got === undefined) return "nothing";
+  if (q.word) return `<b class="han">${esc(q.got)}</b>`;   /* a word, tile by tile — nothing to look up */
   const other = CHAR_INDEX[q.got];
   return other ? `<b class="han">${esc(other.c)}</b> ${esc(other.p)} · ${esc(other.m)}` : esc(q.got);
 }
@@ -533,7 +590,7 @@ function renderSprint() {
         Learn a few more on <b>Today</b> and this opens up.</p></div>` : ""}
     <div class="cols">
       <div class="section">
-        <div class="sp-panels">${["r", "w", "l"].map(m => sprintPanelHtml(m, short)).join("")}</div>
+        <div class="sp-panels">${["r", "w", "l", "a"].map(m => sprintPanelHtml(m, short)).join("")}</div>
         ${sprintNotebookHtml(trouble, fluent)}
       </div>
       <div class="col-side">${sprintBoardHtml()}</div>

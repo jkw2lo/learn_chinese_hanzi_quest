@@ -67,6 +67,10 @@ const blank = () => ({
   spTell: true,
   hailed: [],           /* milestones already celebrated — see MILESTONES */
   menuTaught: [],       /* the side quest's own book — see menuCanRead() */
+  /* Keyed by id, like chars and days — not a list. B1 in porting.md is what a
+     list costs when something merges it the wrong way; a song never needs to
+     be that, since nothing about it is positional. See mergeState. */
+  songs: {},
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
   name: "",
   interests: [],
@@ -180,7 +184,14 @@ function mergeDay(x, y) {
   if (!x) return y;
   if (!y) return x;
   const out = Object.assign({}, x, y);
-  ["new", "rev", "ahead", "extra"].forEach(k => {
+  /* Every count on a day record merges by the larger side, not a sum — two
+     devices that each logged a morning before ever syncing would otherwise
+     double it. `sp`, `ms` and `sessions` were missing from this list, which
+     left them to Object.assign's plain "y wins": whichever side merged in
+     last silently overwrote the other's count instead of keeping the bigger
+     one. Same bug as B1 in porting.md, smaller — a lost tally, not a broken
+     page — caught here while adding `ms` and `sessions` rather than repeating it. */
+  ["new", "rev", "ahead", "extra", "sp", "spr", "ms", "sessions"].forEach(k => {
     if (x[k] !== undefined || y[k] !== undefined) out[k] = bigger(x[k], y[k]);
   });
   if (x.revC || y.revC) out.revC = unionKeys(x.revC, y.revC);
@@ -230,10 +241,10 @@ function mergeSprint(x = {}, y = {}) {
   out.marks = mergeBy(x.marks, y.marks, (a, b) => {
     if (!a) return b;
     if (!b) return a;
-    const total = m => ["l", "r", "w"].reduce((n, k) => n + ((m[k] || [0, 0])[0] + (m[k] || [0, 0])[1]), 0);
+    const total = m => ["l", "r", "w", "a"].reduce((n, k) => n + ((m[k] || [0, 0])[0] + (m[k] || [0, 0])[1]), 0);
     const lead = total(b) >= total(a) ? b : a;
     const m = Object.assign({}, lead);
-    ["l", "r", "w"].forEach(k => {
+    ["l", "r", "w", "a"].forEach(k => {
       if (a[k] || b[k]) m[k] = [bigger((a[k] || [])[0], (b[k] || [])[0]),
                                 bigger((a[k] || [])[1], (b[k] || [])[1])];
     });
@@ -266,6 +277,11 @@ function mergeState(a, b) {
 
   out.chars = mergeBy(a.chars, b.chars, mergeChar);
   out.days = mergeBy(a.days, b.days, mergeDay);
+  /* A song is imported whole, not built up over time the way a character's
+     record is — so there is nothing to accumulate, only a pick between two
+     copies of the same id. That should only ever happen from the same import
+     reaching both devices; the newer copy is kept on the rare chance it does. */
+  out.songs = mergeBy(a.songs, b.songs, (x, y) => (!y ? x : !x ? y : ((y.added || 0) >= (x.added || 0) ? y : x)));
   out.sprint = mergeSprint(older.sprint, newer.sprint);
   /* by value, like `hailed` below it — both are lists, not flag objects */
   out.menuTaught = [...new Set([...asList(a.menuTaught), ...asList(b.menuTaught)])];
@@ -472,6 +488,42 @@ const extraToday = () => (state.days[dayKey()] || {}).extra || 0;
 const extraTotal = () => Object.values(state.days).reduce((a, d) => a + (d.extra || 0), 0);
 const extraBestDay = () => Object.values(state.days).reduce((a, d) => Math.max(a, d.extra || 0), 0);
 const extraDays = () => Object.values(state.days).filter(d => d.extra > 0).length;
+
+/* ---------- time and activities, for the tracker ----------
+
+   Not required for anything the SRS schedule reads — this is entirely for
+   the tracker, so a learner can see how much they actually did. Time is
+   summed per question rather than by timing a whole session end to end: a
+   session can be left open, backgrounded, or closed without ever reaching
+   endSession, and a per-question tally survives all three the same way `rev`
+   and `extra` already do. Each question's contribution is capped — a tab
+   left open overnight is a bug in this number, not three hundred minutes of
+   studying. */
+const STUDY_MS_CAP = 3 * 60 * 1000;
+/* `cap` defaults to guarding a single question against a backgrounded tab,
+   but a sprint sheet's own elapsed time is already bounded by its configured
+   length (recordRun does the same Math.min against sp.secs) — passed its own
+   value back as the cap there makes this a no-op ceiling rather than a
+   second, tighter one that would clip a real five-minute sheet to three. */
+function tallyTime(ms, cap = STUDY_MS_CAP) {
+  if (!(ms > 0)) return;
+  const t = today();
+  t.ms = (t.ms || 0) + Math.min(ms, cap);
+  save();
+}
+/* One activity = one session, practice round, repair round, or sprint sheet
+   that ran to a close — counted where each of those already funnels through
+   a single function (endSession, sprintFinish) on the way out, rather than
+   at every place one can be started, which is exactly the list `startTodayDrill`
+   once fell off (see X2 in porting.md). */
+function tallySession() {
+  const t = today();
+  t.sessions = (t.sessions || 0) + 1;
+  save();
+}
+const timeToday = () => (state.days[dayKey()] || {}).ms || 0;
+const timeTotal = () => Object.values(state.days).reduce((a, d) => a + (d.ms || 0), 0);
+const sessionsToday = () => (state.days[dayKey()] || {}).sessions || 0;
 
 /* ---------- studying ahead ----------
 
@@ -1228,11 +1280,11 @@ function sprintMark(c, mode, ok) {
 
 const sprintMarkOf = c => sprintState().marks[c] || null;
 
-/* Summed across the three modes. */
+/* Summed across every sprint mode. */
 function sprintCount(c, i) {
   const m = sprintMarkOf(c);
   if (!m) return 0;
-  return ["r", "w", "l"].reduce((a, k) => a + (m[k] ? m[k][i] : 0), 0);
+  return ["r", "w", "l", "a"].reduce((a, k) => a + (m[k] ? m[k][i] : 0), 0);
 }
 const sprintHits = c => sprintCount(c, 0);
 const sprintMisses = c => sprintCount(c, 1);
@@ -1252,7 +1304,7 @@ function rightRun(c) {
    hear it" is the useful sentence, and it needs the per-mode split. */
 function sprintByMode(c) {
   const m = sprintMarkOf(c);
-  return ["r", "w", "l"].map(k => ({ mode: k, hit: m && m[k] ? m[k][0] : 0, miss: m && m[k] ? m[k][1] : 0 }));
+  return ["r", "w", "l", "a"].map(k => ({ mode: k, hit: m && m[k] ? m[k][0] : 0, miss: m && m[k] ? m[k][1] : 0 }));
 }
 
 /* Recent misses weigh more than old ones: a character missed three times last
