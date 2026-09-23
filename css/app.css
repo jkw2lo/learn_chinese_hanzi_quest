@@ -1257,6 +1257,36 @@ code {
 
 .menu-legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .7rem; color: var(--ink-3); margin: .2rem 0 .8rem; }
 .menu-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+
+/* ============================================================
+   歌词 Songs
+
+   The roster is a grid of cards, each a small progress ring borrowed
+   wholesale from the Go-deeper tiles (.pr-ring). A song's own reading view
+   reuses .g/.g.known/.g.target from the menu above it — glyphs() renders
+   both, so a character lighting up here is the same code path, not a
+   second one to keep in step with the first.
+   ============================================================ */
+.song-grid { display: grid; grid-template-columns: 1fr; gap: .6rem; margin-top: .8rem; }
+@media (min-width: 480px) { .song-grid { grid-template-columns: 1fr 1fr; } }
+.song-card {
+  display: flex; align-items: center; gap: .65rem; text-align: left;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px;
+  padding: .7rem .8rem; cursor: pointer; color: inherit; font: inherit;
+}
+.song-card:hover { border-color: var(--ink-3); box-shadow: var(--shadow); }
+.song-card-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.song-card-body b { font-family: var(--f-display); font-size: .96rem; }
+.song-card-body small { font-size: .74rem; color: var(--ink-3); }
+
+.song-lines { display: flex; flex-direction: column; gap: .15rem; margin: .8rem 0; }
+.song-line {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  border-radius: 6px; padding: .4rem .5rem; cursor: pointer; color: inherit;
+  font: inherit; font-family: var(--f-han-ui); font-size: 1.05rem; line-height: 1.7;
+}
+.song-line:hover { background: var(--sunken); }
+.song-line.said { background: var(--seal-wash); }
 .menu-legend b { font-family: var(--f-han-ui); font-weight: 400; font-size: .95rem; cursor: default; }
 /* the line under the bar: the number you can check by looking at the card */
 .menu-read { margin: .45rem 0 0; line-height: 1.6; }
@@ -1545,6 +1575,11 @@ code {
 .wp-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .7rem; }
 #wpPad.on { border-color: var(--jade); color: var(--jade); background: var(--jade-wash); }
 
+/* The phone layer below swaps these two ways round: the free canvas by
+   default, the one-box-and-a-button layout under the phone breakpoint. */
+.wp-mobile, .wp-mobile-status, .wp-note-mobile { display: none; }
+#wpmPad.on { border-color: var(--jade); color: var(--jade); background: var(--jade-wash); }
+
 /* ============================================================
    Today's practice list
    ============================================================ */
@@ -1681,6 +1716,15 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
 @media (min-width: 620px) { .pr-grid-4 { grid-template-columns: repeat(4, 1fr); } }
+
+/* Five modes, once "build the word" and the two-character write joined
+   reading, writing and pronunciation — two columns until there is room for
+   more than three, the same staged widening .pr-grid-3 and .pr-grid-4 already
+   use, so a fifth tile never has to fight the first four for space at a
+   width that could not hold it. */
+.pr-grid-5 { grid-template-columns: 1fr 1fr; }
+@media (min-width: 620px) { .pr-grid-5 { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 900px) { .pr-grid-5 { grid-template-columns: repeat(5, 1fr); } }
 
 /* Three modes, three columns. This was never defined, so the row inherited
    .pr-grid's four and left a quarter of the sheet empty beside it — and the
@@ -3215,41 +3259,70 @@ button.tier-head:hover { border-color: var(--ink-3); }
 
   /* ---------- the sections sheet ---------- */
 
-  .icon-btn.burger { display: grid; }
-  .burger-bars { display: grid; gap: 3px; width: 15px; }
+  /* Fixed to the bottom-right rather than left in the top bar: a phone is
+     held from the bottom, and the button that opens seven destinations is
+     worth a thumb's reach rather than a stretch to the top corner. z-index 45
+     sits above the top bar (40) but below every full-screen overlay (60+),
+     so a session, the drawer itself, or a sprint run all cover it without
+     any extra code to hide it. */
+  .icon-btn.burger {
+    display: grid; position: fixed; z-index: 45;
+    right: calc(1rem + env(safe-area-inset-right));
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--paper); border-color: var(--rule-2);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .16);
+  }
+  .burger-bars { display: grid; gap: 3px; width: 16px; }
   .burger-bars i { display: block; height: 1.5px; background: currentColor; border-radius: 1px; }
 
   .drawer { position: fixed; inset: 0; z-index: 80; display: none; }
   .drawer.on { display: block; }
   .drawer-veil { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); animation: cheerFade .18s ease both; }
-  /* Anchored to the bottom, not dropped from the button. A phone is held from
-     the bottom and the list is the part you aim at — the button is one tap and
-     the list is seven. */
+  /* A capsule at bottom-centre rather than a sheet filling the width: a phone
+     is held from the bottom, so the row sits where a thumb already is, and
+     rounding the whole shape — not just the top corners — is what makes it
+     read as a wheel to scroll rather than a panel that happens to be short.
+     It floats free of both edges, so it never competes with the burger
+     sitting at bottom-right underneath it. */
   .drawer-sheet {
-    position: absolute; left: 0; right: 0; bottom: 0;
-    max-height: 84dvh; overflow-y: auto;
-    background: var(--paper); border-top: 1px solid var(--rule-2);
-    border-radius: 16px 16px 0 0;
-    padding: .5rem .7rem calc(.8rem + env(safe-area-inset-bottom));
+    position: absolute; left: 50%; bottom: calc(1rem + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(94vw, 26rem); max-width: calc(100vw - 1.6rem);
+    background: var(--paper); border: 1px solid var(--rule-2); border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .22);
+    padding: .55rem .4rem calc(.55rem + env(safe-area-inset-bottom));
     animation: drawer-up .22s cubic-bezier(.22, .9, .3, 1) both;
   }
-  @keyframes drawer-up { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes drawer-up { from { transform: translateX(-50%) translateY(14px); opacity: 0; }
+                          to { transform: translateX(-50%); opacity: 1; } }
   .drawer-grip {
-    display: block; width: 34px; height: 4px; border-radius: 2px;
-    background: var(--rule); margin: .15rem auto .5rem;
+    display: block; width: 28px; height: 4px; border-radius: 2px;
+    background: var(--rule); margin: 0 auto .4rem;
   }
-  .drawer-nav { display: flex; flex-direction: column; }
+  /* The rolodex: one row, scrolled rather than stacked, each button snapping
+     to the centre the way a wheel picker settles on a value. Four groups
+     still read as four — the rule that used to sit between them as a
+     horizontal line becomes a vertical one here, which if anything reads
+     more naturally beside things arranged left to right. */
+  .drawer-nav {
+    display: flex; align-items: stretch; gap: .2rem;
+    overflow-x: auto; scroll-snap-type: x mandatory;
+    padding: 0 .3rem; -webkit-overflow-scrolling: touch;
+  }
+  .drawer-nav::-webkit-scrollbar { display: none; }
   .drawer-nav button {
-    display: flex; align-items: baseline; gap: .7rem; text-align: left;
-    /* 3rem of row: a tab is the one control on this page you reach for without
-       looking, so it gets a target you cannot miss */
-    min-height: 3rem; padding: .6rem .7rem; border: 0; border-radius: 9px;
-    background: none; color: var(--ink-2); font-size: 1rem;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem;
+    flex: none; scroll-snap-align: center;
+    /* wide enough for two rows of a label that may run to "Radicals" without
+       wrapping, narrow enough that the next chip's edge still shows */
+    width: 4.6rem; min-height: 3.6rem; padding: .4rem .3rem; border: 0; border-radius: 14px;
+    background: none; color: var(--ink-2); font-size: .68rem; text-align: center; line-height: 1.2;
   }
-  .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.1rem; color: var(--ink-3); flex: none; }
+  .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.05rem; color: var(--ink-3); }
   .drawer-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
   .drawer-nav button.on .nz { color: var(--seal); }
-  .drawer-rule { display: block; height: 1px; background: var(--rule-2); margin: .3rem .7rem; }
+  .drawer-rule { display: block; flex: none; width: 1px; margin: .3rem .1rem; background: var(--rule-2); }
 
   /* The bottom bar used to hold 5.5rem of the page open under everything. It
      is gone, and so is the gap it was keeping clear. */
@@ -3396,6 +3469,20 @@ button.tier-head:hover { border-color: var(--ink-3); }
      case to fit. */
   .writer-box { width: min(100%, 24rem, 48dvh); }
 
+  /* ---------- the notebook, on a phone ----------
+
+     Swaps the free canvas for one box and a button — see wpmAdd in
+     js/app.js. The box takes a little less than half the writer-box's own
+     rule above: the button beside it needs real width too, not the sliver
+     that would be left over from a box sized to fill the column on its own. */
+  .wp-tools, .wp-page, .wp-foot, .wp-note-desktop { display: none; }
+  .wp-mobile { display: flex; align-items: stretch; gap: .8rem; margin-bottom: .5rem; }
+  .wp-mobile .writer-box { flex: none; width: min(52vw, 15rem, 40dvh); }
+  .wp-mobile-side { display: flex; flex-direction: column; justify-content: center; gap: .5rem; flex: 1; min-width: 0; }
+  .wp-mobile-side .btn { width: 100%; }
+  .wp-mobile-status, .wp-note-mobile { display: block; }
+  .wp-mobile-status { text-align: center; margin: 0 0 .9rem; }
+
   /* One shape for the whole session.
 
      .grid2 is set by the drill kind — character options get it, meaning and
@@ -3427,11 +3514,11 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .flash-taps { display: block; }
 }
 
-/* The burger is an eighth thing in a bar that already held seven, and the
-   wordmark is what gives. Measured, not guessed: the row needs about 410px to
-   lay out without squeezing, so below 480 the name stands down and the seal
-   carries the identity on its own — which is what it already does between
-   860 and the width where the tab row stops being tight, for the same reason. */
+/* The top bar's row of icons is tight at this width, and the wordmark is what
+   gives. Measured, not guessed: the row needs about 410px to lay out without
+   squeezing, so below 480 the name stands down and the seal carries the
+   identity on its own — which is what it already does between 860 and the
+   width where the tab row stops being tight, for the same reason. */
 @media (max-width: 479.98px) {
   /* Below this the buttons have taken the row and the line beside them has
      nothing left to say in: "Pinyin, then …" and "W" are worse than silence,
@@ -3439,4 +3526,20 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .sp-row-tip { display: none; }
   .brand-name { display: none; }
   .topbar { gap: .45rem; padding-left: .6rem; padding-right: .6rem; }
+
+  /* "One row" is an explicit choice (see optColsEffective, the setting this
+     writes data-opt-cols from) and stays honoured down to 480px — the four
+     single-character options it was designed for fit there without trouble.
+     Below it, a meaning or a reading is four columns of wrapped, stacked
+     text — legible in the sense that nothing is clipped or pushes the page
+     wider, but cramped enough that the two-up layout reads better regardless
+     of what was picked. Quiet, not a dead end: the setting itself is
+     untouched, so the row comes back the moment the window (or the setting)
+     allows it. */
+  :root[data-opt-cols="row"] .opts { grid-template-columns: 1fr 1fr; }
+  :root[data-opt-cols="row"] .opts.grid2 { grid-template-columns: 1fr 1fr; }
+  :root[data-opt-cols="row"] .opts.grid2 .opt {
+    padding-left: 2.2rem; padding-right: 2.2rem; min-height: 6rem;
+  }
+  :root[data-opt-cols="row"] .opts.grid2 .opt .big { font-size: 3.6rem; }
 }

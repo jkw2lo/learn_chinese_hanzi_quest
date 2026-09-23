@@ -24,6 +24,7 @@ const CONTRACT = [
   'dueList', 'dueCount', 'nextNew', 'remainingNew', 'stageProgress', 'currentStage',
   'skillStanding', 'passesIn', 'PASSES_FOR_SOLID', 'reviewedToday', 'resetProgress',
   'tallyExtra', 'extraToday', 'extraTotal', 'extraBestDay', 'dayReps',
+  'tallyTime', 'timeToday', 'timeTotal', 'tallySession', 'sessionsToday',
   'studyAhead', 'aheadToday', 'dayGoal', 'newLeftToday', 'GOAL_MIN', 'GOAL_MAX',
   'placeKnown', 'wasPlaced', 'PLACE_MISS_LIMIT', 'PLACED_REST',
   'wordOfWeek', 'weekKey', 'INTERESTS', 'INTEREST_KEYS', 'shownIn', 'shuffle', 'fillInterests',
@@ -2246,7 +2247,7 @@ console.log('\nthe phone layer stays on the phone');
      a row in the phone sheet. */
   const tabs = [...html.matchAll(/data-nav="(\w+)"/g)].map(m => m[1]);
   const inTop = new Set(tabs.slice(0, tabs.length / 2));
-  const secs = ['today', 'menu', 'sprint', 'write', 'library', 'radicals', 'record'];
+  const secs = ['today', 'menu', 'songs', 'sprint', 'write', 'library', 'radicals', 'record'];
   ok(`all ${secs.length} sections are in the desktop row`, secs.every(v => inTop.has(v)));
   ok('and all of them are in the phone sheet', secs.every(v =>
     new RegExp(`drawer-nav[\\s\\S]*data-nav="${v}"`).test(html)));
@@ -2389,17 +2390,21 @@ console.log('\ntwo devices, one record');
     const morning = Object.assign(blank(), {
       updated: 1000,
       chars: { 一: ch({ seen: 4, right: 4, last: '2026-01-05' }), 二: ch({ seen: 2, last: '2026-01-05' }) },
-      days: { '2026-01-05': { new: 2, rev: 9, revC: { 一: true } } },
+      days: { '2026-01-05': { new: 2, rev: 9, revC: { 一: true }, sp: 12, ms: 40000, sessions: 2 } },
       streak: { cur: 3, best: 7, last: '2026-01-05' },
-      hailed: [50]
+      hailed: [50],
+      songs: { s1: { id: 's1', title: 'Morning only', added: 500, lines: ['一'] },
+               shared: { id: 'shared', title: 'Older copy', added: 100, lines: ['一'] } }
     });
     const afternoon = Object.assign(blank(), {
       updated: 2000,
       chars: { 一: ch({ seen: 1, last: '2026-01-04' }), 三: ch({ seen: 6, last: '2026-01-05' }) },
-      days: { '2026-01-05': { new: 1, rev: 4, revC: { 三: true } }, '2026-01-04': { new: 5, rev: 0 } },
+      days: { '2026-01-05': { new: 1, rev: 4, revC: { 三: true }, sp: 5, ms: 90000, sessions: 1 }, '2026-01-04': { new: 5, rev: 0 } },
       streak: { cur: 1, best: 2, last: '2026-01-05' },
       hailed: [50, 100],
-      goalNew: 9
+      goalNew: 9,
+      songs: { s2: { id: 's2', title: 'Afternoon only', added: 600, lines: ['三'] },
+               shared: { id: 'shared', title: 'Newer copy', added: 700, lines: ['一', '三'] } }
     });
     const m = mergeState(morning, afternoon);
 
@@ -2408,6 +2413,13 @@ console.log('\ntwo devices, one record');
     ok('  and a character on both keeps the bigger count', m.chars['一'].seen === 4);
     ok('a day counted on both keeps the bigger tally',
        m.days['2026-01-05'].rev === 9 && m.days['2026-01-05'].new === 2);
+    /* sp, ms and sessions were missing from mergeDay's bigger()-merged field
+       list, which left them to Object.assign's plain "last side wins" — one
+       device's sprint count, minutes studied, or session count would silently
+       overwrite the other's instead of keeping the larger. Neither side here
+       wins on all three, so this fails if any one of them regresses to that. */
+    ok('sprint answers, minutes studied and session count all keep the bigger side',
+       m.days['2026-01-05'].sp === 12 && m.days['2026-01-05'].ms === 90000 && m.days['2026-01-05'].sessions === 2);
     ok('  and the characters revised are the union of both',
        !!m.days['2026-01-05'].revC['一'] && !!m.days['2026-01-05'].revC['三']);
     ok('  and a day only one device knew about survives', m.days['2026-01-04'].new === 5);
@@ -2415,6 +2427,15 @@ console.log('\ntwo devices, one record');
     ok('milestones already celebrated are never re-celebrated',
        m.hailed.length === 2 && m.hailed[0] === 50 && m.hailed[1] === 100);
     ok('a setting follows the clock, not the union', m.goalNew === 9);
+    /* songs is keyed by id, like chars and days — mergeBy unions it the same
+       way, so a song imported on only one device is never dropped, and one
+       imported (implausibly) on both under the same id keeps whichever copy
+       is newer rather than whichever side happened to win Object.assign. */
+    ok('a song imported on only one device survives the merge either way',
+       !!m.songs.s1 && m.songs.s1.title === 'Morning only'
+       && !!m.songs.s2 && m.songs.s2.title === 'Afternoon only');
+    ok('  and the same id on both keeps the newer copy', m.songs.shared.title === 'Newer copy'
+       && m.songs.shared.lines.length === 2);
     /* menuTaught is a list of characters and was merged with unionKeys, which is
      for keyed flags and hands back a plain object. One sign-in turned ["菜"]
      into {"0":"菜"} and [] into {}, and the next `.includes` threw — inside

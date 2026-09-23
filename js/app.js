@@ -884,9 +884,14 @@ const session = { queue: [], idx: 0, right: 0, wrong: 0, learned: 0, reviewed: 0
 const QUICK_MS = 6000;
 
 function startQuestionTimer(run) {
+  /* Every question's start, timed whether or not the pressure bar itself
+     runs — grades() reads this to tally study time, and a writing drill or a
+     session with the timer setting off deserves that time counted exactly
+     as much as a timed multiple-choice question does. */
+  session.qStart = Date.now();
   const bar = $("#qtimer");
   if (!bar) return;
-  if (!run || !state.timer) { bar.hidden = true; session.qStart = 0; return; }
+  if (!run || !state.timer) { bar.hidden = true; return; }
   bar.hidden = false;
   bar.classList.remove("spent");
   bar.style.setProperty("--q", QUICK_MS + "ms");
@@ -900,6 +905,9 @@ function startQuestionTimer(run) {
 const PRACTICE = {
   read:  { k: "\u9605\u8bfb", name: "Reading",       blurb: "Do you know what it means?", kinds: ["r", "d"], skill: "r" },
   write: { k: "\u9ed8\u5199", name: "Writing",       blurb: "Draw it from memory",        kinds: ["w"],      skill: "w" },
+  write2: { k: "\u53cc\u5b57\u9ed8\u5199", name: "Writing two characters",
+            blurb: "Draw a two-character word from memory", kinds: ["x"], skill: "w" },
+  build: { k: "\u7ec4\u8bcd", name: "Build the word", blurb: "Assemble a word from tiles", kinds: ["a"], skill: "c" },
   say:   { k: "\u53d1\u97f3", name: "Pronunciation", blurb: "Sound and tone",             kinds: ["p", "l"], skill: "p" }
 };
 
@@ -909,8 +917,25 @@ const PRACTICE = {
    would put the writing ring permanently short of full. */
 function practiceChars(mode) {
   const all = knownChars();
-  return mode === "write" ? all.filter(c => window.STROKE_DATA[c]) : all;
+  if (mode === "write") return all.filter(c => window.STROKE_DATA[c]);
+  if (mode === "write2") return all.filter(c => write2Words(CHAR_INDEX[c]).length);
+  if (mode === "build") return all.filter(c => buildWords(CHAR_INDEX[c]).length);
+  return all;
 }
+
+/* The words "build the word" can actually offer for a character: every
+   multi-character word on it that is readable already — assembling a word
+   out of tiles you have never met is a guess, not a drill. */
+const buildWords = ch => (ch.words || []).filter(w => cjkOf(w[0]).length > 1 && canRead(w[0]));
+
+/* The two-character words a character could be drilled through: every
+   multi-character word on it, cut down to the ones exactly two characters
+   long where both characters are ones you can already read and both have
+   stroke data to draw from. Writing a word you cannot read yet, or one whose
+   second character has no stroke data, is not a writing drill — it is
+   guessing. */
+const write2Words = ch => (ch.words || []).filter(w =>
+  cjkOf(w[0]).length === 2 && [...w[0]].every(c => canRead(c) && window.STROKE_DATA[c]));
 
 /* The characters one round draws, chosen by practicePool's 70/30 recency
    split and least-shown-first rotation. The eligible set is passed in rather
@@ -997,7 +1022,7 @@ const REPAIR_SIZE = 5;
 
 /* Which sprint mode a drill kind speaks for, so answers in a repair round
    count towards clearing the same character they would in a sprint. */
-const REPAIR_MODE = { r: "r", d: "r", p: "l", l: "l", c: "w", s: "w", a: "w", w: "w" };
+const REPAIR_MODE = { r: "r", d: "r", p: "l", l: "l", c: "w", s: "w", a: "w", w: "w", x: "w" };
 
 function startRepair(chars) {
   const cs = [...new Set(chars)].filter(c => CHAR_INDEX[c] && isKnown(c)).slice(0, REPAIR_SIZE);
@@ -1103,6 +1128,15 @@ function startSession() {
 }
 function endSession() {
   hqNote("session", `closed at ${session.idx}/${session.queue.length}`);
+  /* One activity, whatever kind of session this was — the daily list, a
+     practice round, a repair round, teaching one character, today's drill.
+     They all render into this same overlay and all close through here, which
+     is the one place to count "an activity happened" without touching every
+     way in (see X2 in porting.md for what happens to a list like that).
+     Opened and closed without reaching a single card doesn't count — the
+     same "did anything happen here" the leave-confirmation above already
+     asks. */
+  if (session.idx > 0) tallySession();
   clearWash();
   padStop();
   clearAdvance();
@@ -1198,7 +1232,7 @@ function drawStep() {
 
   /* handwriting is excluded: the input is slow by nature, and reaching for
      the Trackpad button shouldn't look like hesitation */
-  startQuestionTimer(item.t === "drill" && item.kind !== "w");
+  startQuestionTimer(item.t === "drill" && item.kind !== "w" && item.kind !== "x");
 
   if (item.t === "intro") {
     const isNew = !isKnown(item.c);
@@ -1277,9 +1311,10 @@ const KIND_LABEL = {
   w: ["笔顺", "Write it from memory"],
   l: ["听力", "Listen — which character?"],
   a: ["组词", "Build the word"],
-  d: ["阅读", "Read the sentence"]
+  d: ["阅读", "Read the sentence"],
+  x: ["双字笔顺", "Write the word from memory"]
 };
-const SKILL_OF = { r:"r", p:"p", l:"p", c:"c", s:"c", a:"c", d:"r", w:"w" };
+const SKILL_OF = { r:"r", p:"p", l:"p", c:"c", s:"c", a:"c", d:"r", w:"w", x:"w" };
 
 /* Four options that are genuinely four options.
 
@@ -1390,6 +1425,110 @@ function renderDrill(item, ch, body, foot) {
     return;
   }
 
+  /* --- write a two-character word from memory, one character at a time ---
+
+     Not two boxes side by side — the mobile writer box is already sized on
+     the assumption that a drill writes one character (see porting.md, M1),
+     and a phone has no room to halve it again. So this is the "w" drill run
+     twice in sequence through the same box: the word's meaning and pinyin
+     are the prompt throughout, two slots above the box fill in as each
+     character lands, and the whole word is graded together at the end,
+     against the item's own character — the same way "build the word" grades
+     the headword rather than every tile. */
+  if (kind === "x") {
+    const words2 = write2Words(ch);
+    if (!words2.length) return renderDrill(Object.assign({}, item, { kind: "w" }), ch, body, foot);
+    const w = one(words2);
+    const target = [...w[0]];
+    const totalStrokes = target.reduce((n, c) => n + ((window.STROKE_DATA[c]?.strokes || []).length || 1), 0);
+    const allowed = Math.max(1, Math.ceil(totalStrokes / 3));
+    let idx = 0, missed = 0, peeked = false;
+
+    body.innerHTML = `<div class="drill">
+      <div class="drill-prompt sheet">${head}
+        <div class="drill-q">${esc(w[2])}</div>
+        <div class="drill-hint"><span class="pin">${esc(w[1])}</span></div>
+        <div class="slots write2-slots">${target.map((_, i) => `<div class="slot" data-s="${i}"></div>`).join("")}</div>
+      </div>
+      <div class="write2-box"></div>
+      <p class="note" style="text-align:center" id="write2Note"></p>
+    </div>`;
+    const boxHost = $(".write2-box", body);
+    const note = $("#write2Note", body);
+    foot.innerHTML = "";
+
+    const turn = i => {
+      idx = i;
+      const wid = "q" + Math.random().toString(36).slice(2, 8);
+      boxHost.innerHTML = writerBox(target[i], wid);
+      boxHost.insertAdjacentHTML("beforeend", `<div class="write-tools"></div>`);
+      $(".writer-box", boxHost).style.margin = "0 auto";
+      const tools = $(".write-tools", boxHost);
+      const nStrokes = (window.STROKE_DATA[target[i]]?.strokes || []).length || 1;
+      const charAllowed = Math.max(1, Math.ceil(nStrokes / 3));
+      const w2 = makeWriter($("#" + wid, boxHost), target[i], { showCharacter: false, showOutline: false });
+      let charMissed = 0, charPeeked = false;
+      note.textContent = `Character ${i + 1} of ${target.length}. A hint appears if you miss twice.`;
+
+      const bindPad = () => $("#padW", tools)?.addEventListener("click", () => {
+        const btn = $("#padW", tools);
+        btn.disabled = true;
+        if (!padStart($(".tian", boxHost), $("#" + wid, boxHost), () => { btn.disabled = false; })) btn.disabled = false;
+      });
+      const autoPad = () => padHandoff($(".tian", boxHost), $("#" + wid, boxHost), () => {
+        const btn = $("#padW", tools); if (btn) btn.disabled = false;
+      });
+
+      const finishChar = () => {
+        missed += charMissed;
+        if (charPeeked) peeked = true;
+        $(`.write2-slots .slot[data-s="${i}"]`, body).classList.add("filled");
+        $(`.write2-slots .slot[data-s="${i}"]`, body).textContent = target[i];
+        if (i + 1 < target.length) return turn(i + 1);
+        settle(item, ch, !peeked && missed <= allowed, foot, null, peeked ? -1 : missed);
+      };
+
+      const showStrokes = () => {
+        padStop();
+        charPeeked = true;
+        w2.cancelQuiz();
+        w2.showCharacter();
+        w2.animateCharacter();
+        tools.innerHTML = `
+          <button class="btn btn-sm" id="tryW">Now you try <kbd class="opt-n">T</kbd></button>
+          <button class="btn btn-ghost btn-sm" id="againW">Show again <kbd class="opt-n">S</kbd></button>
+          <button class="btn btn-ghost btn-sm" id="moveW">Move on</button>`;
+        $("#againW").onclick = () => w2.animateCharacter();
+        $("#moveW").onclick = () => { peeked = true; settle(item, ch, false, foot, null, -1); };
+        $("#tryW").onclick = arm;
+      };
+
+      const arm = () => {
+        charMissed = 0;
+        w2.cancelQuiz();
+        w2.hideCharacter();
+        tools.innerHTML = `
+          ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="padW"><span class="han">触控</span> Trackpad <kbd class="opt-n">T</kbd></button>` : ""}
+          <button class="btn btn-ghost btn-sm" id="skipW">${charPeeked ? "Show me again" : "Show me the strokes"} <kbd class="opt-n">S</kbd></button>`;
+        bindPad();
+        const skip = $("#skipW", tools);
+        if (skip) skip.onclick = showStrokes;
+        autoPad();
+        w2.quiz({
+          showHintAfterMisses: 2,
+          onMistake: () => charMissed++,
+          onComplete: () => { padStop(); say(target[i]); finishChar(); }
+        });
+      };
+
+      if (w2) arm(); else finishChar();
+    };
+
+    if (target.every(c => window.STROKE_DATA[c])) turn(0);
+    else settle(item, ch, false, foot, null, -1);
+    return;
+  }
+
   /* --- build the word from tiles --- */
   if (kind === "a") {
     /* Every tile has to be a character you have actually learnt.
@@ -1400,7 +1539,7 @@ function renderDrill(item, ch, body, foot) {
        out of 笑, 完 and 便. Ninety-nine rounds in a hundred showed at least one
        character the learner had never seen, which makes the wrong answers
        noise rather than choices. */
-    const readable = ch.words.filter(x => cjkOf(x[0]).length > 1 && canRead(x[0]));
+    const readable = buildWords(ch);
     if (!readable.length) return renderDrill(Object.assign({}, item, { kind: "r" }), ch, body, foot);
     const w = one(readable);
     const target = [...w[0]];
@@ -1654,10 +1793,11 @@ function settle(item, ch, ok, foot, extra, slips) {
 }
 
 function grades(item, ch, ok, foot, extra, slips) {
-  const writing = item.kind === "w";
+  const writing = item.kind === "w" || item.kind === "x";
   const elapsed = session.qStart ? Date.now() - session.qStart : 0;
   const quick = ok && !writing && elapsed > 0 && elapsed <= QUICK_MS;
   if (elapsed > 0 && !writing) session.times.push(elapsed);
+  tallyTime(elapsed);
   if (quick) session.quick++;
   $("#qtimer")?.classList.add("spent");
   session.qStart = 0;
@@ -2806,6 +2946,44 @@ const diaryDel = id   => diaryTx("readwrite", st => st.delete(id));
 const diaryAll = ()   => diaryTx("readonly",  st => st.getAll()).then(r => r || []);
 const diaryClear = ()  => diaryTx("readwrite", st => st.clear());
 
+/* ---------- the notebook, on a phone: one box and Add to page ----------
+
+   The desktop page is one continuous canvas you draw on freely — there is no
+   notion of "squares" beyond the grid painted under the ink. The phone case
+   is different: write one character, tap Add to page, the box wipes and the
+   next character goes in the next square along, wherever that is. That needs
+   real bookkeeping a freeform page never had to do, layered on top of the
+   same storage so a page started either way still opens correctly.
+
+   `count` is that bookkeeping: how many squares of a page are filled. Only a
+   page written from this flow ever has it. A page with no `count` — every
+   page saved from the desktop canvas before this existed, or since, by
+   drawing rather than tapping Add to page — is left alone: appending "the
+   next square" into ink that was never laid out in squares would draw
+   straight over whatever is already there. Such a page simply never matches
+   wpTodayPage's search, and a fresh page is started instead. */
+const WP_COLS_DEFAULT = 6;                    /* 6 x the existing wp.rows (6) = the 36 squares in TODO.md */
+
+/* A page's own shape, reconstructed from what it was saved at — not assumed
+   to be today's default, because a page started on the wide desktop canvas
+   may have laid out a different column count than this phone would choose. */
+const wpPageCols = page => Math.max(1, Math.round((page.w || WP_COLS_DEFAULT * wp.cell) / wp.cell));
+const wpPageCap = page => (page.rows || wp.rows) * wpPageCols(page);
+
+/* Today's page that still has room, or a fresh one — never a page from
+   another day, and never one already full. Same three cases TODO.md spelled
+   out: no page today, a page today with room, or today's page full and a
+   new one needed, which this leaves the caller to create (by not returning
+   one) rather than assuming a suffix nobody will ever read. */
+async function wpTodayPage() {
+  const today = dayKey();
+  const mine = (await diaryAll())
+    .filter(p => p.date === today && typeof p.count === "number")
+    .sort((a, b) => a.id - b.id);
+  const open = mine.find(p => p.count < wpPageCap(p));
+  return { page: open || null, seq: mine.length + (open ? 0 : 1) };
+}
+
 function renderWrite() {
   if (!wp.built) buildWritePage(); else wpControls();
 }
@@ -2817,7 +2995,8 @@ function buildWritePage() {
         <div class="wp-bar">
           <div class="wp-title">
             <h1>Exercise book ${hanLabel("练字")}</h1>
-            <p class="note">A blank page. Nothing is checked here — fill it, scrawl on it, clear it and go again.</p>
+            <p class="note wp-note-desktop">A blank page. Nothing is checked here — fill it, scrawl on it, clear it and go again.</p>
+            <p class="note wp-note-mobile">Nothing is checked here. Write a character, tap Add to page, and the box wipes for the next one.</p>
           </div>
           <div class="wp-tools">
             <label class="wp-field">Nib
@@ -2838,6 +3017,19 @@ function buildWritePage() {
           <button class="btn btn-ghost btn-sm" id="wpMore">Add more rows</button>
           <span class="note" id="wpCount"></span>
         </div>
+        <!-- Mobile only (see the phone layer in css/app.css): one box, sized
+             the way the drill's writer-box already is, instead of a page you'd
+             need a trackpad to fill a square at a time. Add to page does the
+             page-finding and square-placing that a free canvas never needed. -->
+        <div class="wp-mobile">
+          <div class="writer-box"><div class="tian">${TIAN_SVG}<canvas id="wpmInk"></canvas></div></div>
+          <div class="wp-mobile-side">
+            <button class="btn btn-seal" id="wpmAdd">Add to page</button>
+            ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpmPad">触控 Trackpad</button>` : ""}
+            <button class="btn btn-ghost btn-sm" id="wpmClear">Clear</button>
+          </div>
+        </div>
+        <p class="note wp-mobile-status" id="wpmStatus"></p>
         <div class="sheet wp-diary" id="wpDiary"></div>
       </div>
       <div class="col-side">
@@ -2857,6 +3049,16 @@ function buildWritePage() {
   $("#wpPad")?.addEventListener("click", () => wpPad());
   $("#wpMore").onclick  = () => { wp.rows += 4; wpSizePage(); };
   addEventListener("resize", wpSizePage);
+
+  wpmSizeInk();
+  wpmBindInk();
+  $("#wpmAdd").onclick   = () => wpmAdd();
+  $("#wpmClear").onclick = () => wpmClear();
+  $("#wpmPad")?.addEventListener("click", () => wpmPad());
+  addEventListener("resize", wpmSizeInk);
+  addEventListener("orientationchange", wpmSizeInk);
+  wpTodayPage().then(({ page, seq }) => { if (page) wpmStatus(page, seq); });
+
   wpDiary();
 }
 
@@ -3171,6 +3373,121 @@ async function wpSave() {
   wpDiary();
 }
 
+/* ---------- the mobile box ----------
+
+   One character's ink at a time, captured the same way the desktop canvas
+   captures its whole page — pointer events turned into point paths — except
+   there is nothing to load or resume here: the box always starts empty, and
+   Add to page is the only thing that ever empties it again. */
+const wpm = { strokes: [], cur: null };
+
+function wpmSizeInk() {
+  const c = $("#wpmInk"), tian = c && c.closest(".tian");
+  if (!c || !tian) return;
+  const dpr = wpDPR(), w = tian.clientWidth, h = tian.clientHeight;
+  if (!w || !h) return;                     /* hidden tab, or the desktop layer is the one showing */
+  if (c.width === w * dpr && c.height === h * dpr) return;
+  c.width = w * dpr; c.height = h * dpr;
+  c.getContext("2d").scale(dpr, dpr);
+  wpmSetPen();
+}
+
+function wpmSetPen() {
+  const c = $("#wpmInk");
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  ctx.lineWidth = wp.pen; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+}
+
+function wpmDraw(type, x, y) {
+  const c = $("#wpmInk");
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  if (type === "mousedown") {
+    ctx.beginPath(); ctx.moveTo(x, y);
+    wpm.cur = [[Math.round(x), Math.round(y)]];
+    wpm.strokes.push(wpm.cur);
+  } else if (type === "mousemove" && wpm.cur) {
+    ctx.lineTo(x, y); ctx.stroke();
+    wpm.cur.push([Math.round(x), Math.round(y)]);
+  } else if (type === "mouseup") {
+    wpm.cur = null;
+  }
+}
+
+function wpmBindInk() {
+  const c = $("#wpmInk");
+  if (!c || c.dataset.bound) return;
+  c.dataset.bound = "1";
+  let drawing = false;
+  const at = e => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  c.addEventListener("pointerdown", e => {
+    if (pad.active) return;
+    drawing = true; const p = at(e); wpmDraw("mousedown", p.x, p.y);
+    c.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  c.addEventListener("pointermove", e => { if (drawing && !pad.active) { const p = at(e); wpmDraw("mousemove", p.x, p.y); } });
+  c.addEventListener("pointerup", () => { if (drawing) wpmDraw("mouseup"); drawing = false; });
+  c.addEventListener("pointercancel", () => { if (drawing) wpmDraw("mouseup"); drawing = false; });
+}
+
+function wpmClear() {
+  const c = $("#wpmInk");
+  if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  wpm.strokes = []; wpm.cur = null;
+}
+
+function wpmControls() {
+  const b = $("#wpmPad");
+  if (b) { b.textContent = pad.active ? "触控 Trackpad on" : "触控 Trackpad"; b.classList.toggle("on", pad.active); }
+}
+
+function wpmPad() {
+  if (pad.active) { padStop(); wpmControls(); return; }
+  const tian = $("#wpmInk")?.closest(".tian");
+  if (tian && padStart(tian, null, wpmControls, wpmDraw)) setTimeout(wpmControls, 50);
+}
+
+/* Add to page: find or start today's page, work out which square is next,
+   move this box's ink onto it at that square's position, and save the whole
+   page back — the same record wpSave writes, just grown by one square
+   instead of replaced. wp.cell is the fixed size a square is recorded at
+   regardless of how big the box is drawn on screen, so the only conversion
+   needed is the scale between this box's actual pixels and that. */
+async function wpmAdd() {
+  if (!wpm.strokes.length) return;
+  const tian = $("#wpmInk")?.closest(".tian");
+  const boxPx = tian ? tian.clientWidth : wp.cell;
+  const { page: existing, seq } = await wpTodayPage();
+  const page = existing || {
+    id: Date.now(), date: dayKey(), rows: wp.rows,
+    w: WP_COLS_DEFAULT * wp.cell, h: wp.rows * wp.cell,
+    guide: null, strokes: [], count: 0
+  };
+  const cols = wpPageCols(page);
+  const idx = page.count || 0;
+  const col = idx % cols, row = Math.floor(idx / cols);
+  const scale = wp.cell / boxPx;
+  const placed = wpm.strokes.map(pts => pts.map(([x, y]) => [
+    Math.round(col * wp.cell + x * scale), Math.round(row * wp.cell + y * scale)
+  ]));
+  page.strokes = [...(page.strokes || []), ...placed];
+  page.count = idx + 1;
+  await diaryPut(page);
+  wpmClear();
+  wpmStatus(page, existing ? seq || 1 : seq);
+  wpDiary();
+}
+
+function wpmStatus(page, seq) {
+  const el = $("#wpmStatus");
+  if (!el) return;
+  const cap = wpPageCap(page);
+  const full = page.count >= cap;
+  el.textContent = `Page ${seq || 1} today · ${page.count} of ${cap} squares${full ? " · full, next one starts a new page" : ""}`;
+}
+
 async function wpLoad(id) {
   const all = await diaryAll();
   const page = all.find(p => p.id === id);
@@ -3239,12 +3556,25 @@ function renderTracker() {
   /* No 🔥 N in here any more: this hangs off the chip that already says it, so
      it can spend its words on what the chip does not — the run, the days, the
      best. */
+  const ms = timeToday(), sess = sessionsToday();
   $("#tracker").innerHTML = `
     <span class="tracker-lbl">Last 4 weeks</span>
     <span class="tracker-row">${cells.join("")}</span>
     <span class="tracker-note" title="A missed day leaves an empty box — nothing you've done is ever cleared.">
       ${s ? `${s} day${s === 1 ? "" : "s"} in a row` : "No streak going"}<span class="sep">·</span>${
-      total} day${total === 1 ? "" : "s"} studied · best ${state.streak.best}</span>`;
+      total} day${total === 1 ? "" : "s"} studied · best ${state.streak.best}</span>
+    ${ms || sess ? `<span class="tracker-note" title="Time is summed from every question answered today, sprints included.">
+      Today<span class="sep">·</span>${fmtStudyTime(ms)}${sess ? `<span class="sep">·</span>${sess} activit${sess === 1 ? "y" : "ies"}` : ""}</span>` : ""}`;
+}
+
+/* "23 min" for the common case, an hour-and-minutes past that. Nothing here
+   needs second-level precision — this is for a glance, not a stopwatch. */
+function fmtStudyTime(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 1) return ms > 0 ? "under a minute" : "0 min";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return `${h}h${m ? ` ${m}m` : ""}`;
 }
 
 /* ---------- 正 as a counting mark ----------
@@ -3654,7 +3984,7 @@ function renderToday() {
         ${exAll ? `<span class="deeper-life">${exAll.toLocaleString()} all told</span>` : ""}
       </span>
     </div>
-    <div class="pr-grid pr-grid-3">
+    <div class="pr-grid pr-grid-5">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
         const chars = practiceChars(id);
         deepEligible = deepEligible || chars.length > 0;
@@ -3664,7 +3994,10 @@ function renderToday() {
         const seg = (cls, count) => count
           ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
         const line = !chars.length
-          ? (id === "write" ? "No character you know has stroke data yet" : "Learn a character first")
+          ? (id === "write" ? "No character you know has stroke data yet"
+             : id === "write2" ? "No two-character word you can read yet has stroke data for both characters"
+             : id === "build" ? "No two-character word you can read yet"
+             : "Learn a character first")
           : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
         return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
           title="${chars.length
@@ -5647,6 +5980,12 @@ const COACH = {
     { sel: ".menu-say", k: "口语", title: "What you say to the waiter",
       body: "Tap any of them to hear it. Six of the characters in these phrases are printed nowhere on the card, so this row is the only place they turn up." }
   ]},
+  songs: { label: "Songs", steps: [
+    { sel: ".today-head", k: "歌词", title: "Learn through lyrics you half-know",
+      body: "Nothing here is quizzed or scheduled — it borrows your progress rather than tracking its own. A character you already know lights up as you read; hover or tap any of them, known or not, for its reading and meaning." },
+    { sel: "#songAdd", k: "加歌", title: "Add a song",
+      body: "Paste in a title and the lyrics, one line at a time. There is no bundled roster — lyrics are copyrighted, so every song here starts as one you bring yourself." }
+  ]},
   sprint: { label: "Sprint", steps: [
     { sel: ".sp-panels", k: "速练", title: "A sheet against the clock",
       body: "So many questions, so many minutes. Reading, writing and listening each keep their own board." },
@@ -5826,7 +6165,7 @@ function renderCoach() {
   $("#coachNext").focus();
 }
 
-const RENDER = { today: renderToday, menu: renderQuest, sprint: renderSprint, library: renderLibrary,
+const RENDER = { today: renderToday, menu: renderQuest, songs: renderSongs, sprint: renderSprint, library: renderLibrary,
                  write: renderWrite, radicals: renderRadicals, record: renderRecord };
 
 function go(v) {
@@ -5899,10 +6238,18 @@ function renderStreakChip() {
     chip.innerHTML = `🔥 ${s}`;
     chip.title = s ? `${s} day streak · best ${state.streak.best}` : "No streak yet — study today to start one";
   });
-  const stale = backupStale();
+  /* The dot means "you could lose this" — which stops being true, in the
+     sense that matters, once sync is on: the record lives in the cloud too,
+     not only in this one browser. Signed in and syncing is the only status
+     that counts, not merely configured — "loading" and "error" are exactly
+     the states where a local file still matters most. */
+  const synced = typeof sync !== "undefined" && sync.status === "in";
+  const stale = backupStale() && !synced;
   $$(".save-btn").forEach(b => {
     b.classList.toggle("nudge", stale);
-    b.title = state.lastBackup
+    b.title = synced
+      ? "Save your progress to a file — you're syncing across devices, but a file is still yours to keep"
+      : state.lastBackup
       ? `Save your progress to a file — last saved ${new Date(state.lastBackup).toLocaleDateString()}`
       : "Save your progress to a file — you haven't saved a copy yet";
   });
@@ -6063,10 +6410,11 @@ function boot() {
   startIntro();
   /* Two ways the record can arrive from somewhere else, and one thing to do
      about it either way. srs.js calls onRemoteChange after a pull has merged
-     something in; sync.js calls onSyncChange when the signed-in state moves,
-     which only Settings is showing. */
+     something in; sync.js calls onSyncChange when the signed-in state moves —
+     Settings, if it's open, plus the save button's nudge dot, which depends
+     on that state whether or not Settings is anywhere on screen. */
   onRemoteChange = renderAll;
-  onSyncChange = () => { if ($("#syncRow")) openSettings(); };
+  onSyncChange = () => { renderStreakChip(); if ($("#syncRow")) openSettings(); };
   connectRemote().then(changed => { if (changed) renderAll(); });
   syncInit();
 }
