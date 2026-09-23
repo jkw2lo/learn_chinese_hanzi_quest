@@ -2103,7 +2103,7 @@ console.log('\nsprint: the record behind the sheets');
                               'SpeechSynthesisUtterance', 'matchMedia', 'structuredClone', 'queueMicrotask']);
   /* A name declared in any of the four counts: app.js is loaded last and
      shares the global scope with data.js, srs.js and sprint.js. */
-  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js');
+  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js') + read('js/songs.js');
   const isDeclared = n => new RegExp(
     `(?:const|let|var|function)\\s+${n.replace(/\$/g, '\\$')}(?![\\w$])`).test(declaredIn);
   const dead = [...called].filter(n => !NOT_A_CALL.has(n) && !isDeclared(n));

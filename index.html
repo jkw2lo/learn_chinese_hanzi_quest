@@ -23,15 +23,6 @@
 <div class="app">
 
   <header class="topbar">
-    <!-- Seven tabs fit the bottom bar exactly, which is one tab away from not
-         fitting and is in any case seven labels asked to be legible at 375px.
-         They live behind this instead. The sheet it opens is anchored to the
-         bottom of the screen rather than under the button, because that is
-         where a thumb is on a phone held from the bottom. -->
-    <button class="icon-btn burger" id="burgerBtn" aria-label="Sections"
-            aria-expanded="false" aria-controls="drawer">
-      <span class="burger-bars" aria-hidden="true"><i></i><i></i><i></i></span>
-    </button>
     <!-- the wordmark reopens the two explanatory stages of the introduction:
          "what was that about the parts" is a day-three question -->
     <button class="brand" id="brandBtn" title="What this is, and how it goes">
@@ -113,6 +104,20 @@
   </main>
 </div>
 
+<!-- Seven tabs fit the desktop row exactly, which is one tab away from not
+     fitting and is in any case seven labels asked to be legible at 375px.
+     They live behind this instead. The button is a sibling of .app rather
+     than a child of .topbar on purpose: .topbar has backdrop-filter, and a
+     filter or backdrop-filter on an ancestor becomes the containing block
+     for position:fixed — so a button "fixed" to the viewport while nested
+     inside .topbar was actually fixed to .topbar's own small box instead,
+     which is a handful of pixels tall and pinned to the top of the page.
+     That put "bottom: 1rem" a rem below the header, not the viewport. -->
+<button class="icon-btn burger" id="burgerBtn" aria-label="Sections"
+        aria-expanded="false" aria-controls="drawer">
+  <span class="burger-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+</button>
+
 <!-- sections, on a phone: the same four groups the desktop row has, in one
      bottom sheet. Each button carries data-nav, so go() lights it and the
      single [data-nav] handler in app.js wires it without knowing it exists. -->
@@ -172,6 +177,19 @@
     <span class="sv-title" id="svTitle"></span>
   </div>
   <div class="sv-body" id="svBody"></div>
+</div>
+
+<!-- A character's detail, layered on top of whatever else is open — used
+     from the song reader, where the normal open-a-character flow would
+     replace the sheet it was opened from (see openCharPeek in songs.js)
+     instead of sitting over it. Same markup as #charView; only where it
+     stacks differs. -->
+<div class="sheetview char-peek" id="charPeek" role="dialog" aria-label="Character detail">
+  <div class="sv-bar">
+    <button class="icon-btn" id="charPeekClose" aria-label="Back">←</button>
+    <span class="sv-title" id="charPeekTitle"></span>
+  </div>
+  <div class="sv-body" id="charPeekBody"></div>
 </div>
 
 <!-- flashcards -->
