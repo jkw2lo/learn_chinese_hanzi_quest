@@ -1224,6 +1224,8 @@ function drillKind(c) {
 }
 
 function startSession() {
+  /* the welcome-back offer is taken by starting — see welcomeOffer in srs.js */
+  if (welcomeOffer()) welcomeTake();
   if (!buildSession().length) return;
   session.active = true;
   hqNote("session", `daily · ${session.queue.length} cards · ${newLeftToday()} new, ${dueCount()} due`);
@@ -3870,7 +3872,8 @@ function welcomeCard(offer, w) {
       <span>${offer.due} reviews have piled up. Forgetting some is normal; it's part of learning, not a setback.
         Start with the ${offer.keep} shakiest today and the other ${offer.later} will come round over the next ${offer.days} days.
         Your new characters stay as they are.</span>
-      <button class="link-btn" id="welcomeAll">No thanks — give me all ${offer.due}</button>
+      <span class="welcome-links"><button class="link-btn" id="welcomeAll">No thanks — give me all ${offer.due}</button>
+        <button class="link-btn" data-manual="breaks">How this works</button></span>
     </div>
   </div>`;
   if (w && w.moved) {
@@ -4226,11 +4229,7 @@ function renderToday() {
     if (e) sayPhrase(e.word[0], true);
     renderToday();
   });
-  $("#startBtn")?.addEventListener("click", async () => {
-    if (!(await maybeAskLevel())) return;
-    if (welcomeOffer()) welcomeTake();
-    startSession();
-  });
+  $("#startBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) startSession(); });
   $("#welcomeAll")?.addEventListener("click", () => { welcomeDecline(); renderToday(); });
   $("#welcomeUndo")?.addEventListener("click", () => { welcomeUndo(); renderToday(); });
   $("#aheadBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) { studyAhead(5); startSession(); } });
@@ -4602,7 +4601,8 @@ function retentionSheet() {
         <div class="sheet stat"><b>${kept}</b><small>Remembered after ${KEPT_GAP}+ days away</small></div>
         <div class="sheet stat"><b>${resc}</b><small>Rescued from forgotten</small></div>
       </div>
-      <p class="note">The last two count the past 30 days. Forgetting and getting it back is how a character sticks — every rescue is one you now know better than before you lost it.</p>
+      <p class="note">The last two count the past 30 days. Forgetting and getting it back is how a character sticks — every rescue is one you now know better than before you lost it.
+        <button class="link-btn" data-manual="breaks">How this is counted</button></p>
     </div>
   </div>`;
 }
@@ -4767,6 +4767,21 @@ function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
+        <span class="eyebrow" style="margin-bottom:.5rem">Help ${hanLabel("帮助")}</span>
+        <div class="settings-row">
+          <label>How Hanzi Quest works<small>The full manual — the review schedule, every drill, streaks and rest days,
+            what each activity does to your progress, shortcuts and a glossary. For when you want the details.</small></label>
+          <button class="btn btn-ghost btn-sm" id="manualBtn">Open</button>
+        </div>
+        <div class="settings-row">
+          <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
+          <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet" style="padding:1rem">
+      <div class="stack" style="gap:.2rem">
         <span class="eyebrow" style="margin-bottom:.5rem">Studying ${hanLabel("学习")}</span>
         <div class="settings-row">
           <label>New characters a day<small>More isn't better — reviews compound.</small></label>
@@ -4862,10 +4877,6 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="placeBtn">${state.placed ? "Retake" : "Start"}</button>
         </div>
         <div class="settings-row">
-          <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
-          <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
-        </div>
-        <div class="settings-row">
           <label>Report a problem<small>${(() => {
             const n = window.HQDIAG ? HQDIAG.runs().reduce((t, r) => t + r.log.filter(e => e[1] === "error").length, 0) : 0;
             return n
@@ -4901,6 +4912,7 @@ function openSettings() {
   $("#syncIn")?.addEventListener("click", syncSignIn);
   $("#syncOut")?.addEventListener("click", syncSignOut);
   $("#backupBtn").onclick = openBackup;
+  $("#manualBtn").onclick = () => openManual();
   $("#reportBtn").onclick = openReport;
   $("#profileBtn").onclick = () => openProfile(false);
   $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
@@ -6506,6 +6518,11 @@ function boot() {
     unlockAudio(); primeSpeech(); save(); renderMuted();
     if (lastSaid) setTimeout(() => say(lastSaid, true), 80);
   };
+  /* "How this works" links anywhere open the manual at their section */
+  document.addEventListener("click", e => {
+    const a = e.target.closest("[data-manual]");
+    if (a) openManual(a.dataset.manual);
+  });
   $("#focusGo").onclick = focusStart;
   $("#focusNo").onclick = closeFocus;
   $("#focusClear").onclick = () => { focusUi.sel.clear(); renderFocus(); };

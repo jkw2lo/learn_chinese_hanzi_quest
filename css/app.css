@@ -3270,6 +3270,54 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .coach-nav { display: flex; gap: .4rem; }
 @media (prefers-reduced-motion: reduce) { .coach-ring { transition: none; } }
 
+/* welcome back — the offer to ease into a pile of reviews after days away */
+.welcome { display: flex; gap: .8rem; align-items: flex-start; padding: .8rem .9rem; margin-bottom: .6rem;
+  border: 1px solid color-mix(in srgb, var(--jade) 35%, var(--rule-2)); border-radius: 12px;
+  background: color-mix(in srgb, var(--jade) 7%, var(--paper)); text-align: left; }
+.welcome.done { padding: .55rem .9rem; border-style: dashed; background: none; }
+.welcome-k { flex: none; font-size: 1.4rem; line-height: 1.2; color: var(--jade); }
+.welcome.done .welcome-k { font-size: 1.05rem; }
+.welcome-body { display: flex; flex-direction: column; gap: .3rem; font-size: .84rem; color: var(--ink-2); line-height: 1.45; min-width: 0; }
+.welcome-body b { color: var(--ink); font-weight: 600; }
+.welcome-body .link-btn { align-self: flex-start; font-size: .8rem; }
+.stat b small.of { font-size: .6em; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+
+/* 使用说明 the manual — a long read behind a button in Settings */
+.manual { gap: .8rem; }
+.man-back { align-self: flex-start; }
+.man-find { width: 100%; padding: .6rem .8rem; border: 1px solid var(--rule-2); border-radius: 10px;
+  background: var(--paper); color: var(--ink); font: inherit; font-size: .9rem; }
+.man-toc { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(13rem, 42vw), 1fr)); gap: .15rem .8rem; }
+.man-toc a { display: flex; gap: .5rem; align-items: baseline; padding: .3rem 0; color: var(--ink-2);
+  font-size: .86rem; cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--rule-2); }
+.man-toc a:hover { color: var(--seal); }
+.man-toc a .han { color: var(--ink-3); font-size: .8rem; min-width: 2.2rem; }
+.man-sec { padding: 0; overflow: hidden; }
+.man-sec > summary { display: flex; gap: .8rem; align-items: center; padding: .85rem 1rem; cursor: pointer; list-style: none; }
+.man-sec > summary::-webkit-details-marker { display: none; }
+.man-sec > summary::after { content: "+"; margin-left: auto; color: var(--ink-3); font-size: 1.1rem; }
+.man-sec[open] > summary::after { content: "−"; }
+.man-k { flex: none; min-width: 2.4rem; color: var(--seal); font-size: 1.05rem; }
+.man-t { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.man-t small { font-size: .76rem; color: var(--ink-3); }
+.man-body { padding: 0 1rem 1rem; font-size: .88rem; line-height: 1.6; color: var(--ink-2); }
+.man-body p, .man-body ul { margin: 0 0 .7rem; }
+.man-body ul { padding-left: 1.2rem; }
+.man-body li { margin-bottom: .3rem; }
+.man-body h4 { margin: 1rem 0 .35rem; font-size: .78rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink); }
+.man-body h4:first-child { margin-top: 0; }
+.man-body b { color: var(--ink); }
+.man-body a { color: var(--jade); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.man-body code { font-size: .85em; background: var(--sunken); padding: 0 .25em; border-radius: 4px; }
+.man-table { width: 100%; border-collapse: collapse; margin: 0 0 .8rem; font-size: .82rem; display: block; overflow-x: auto; }
+.man-table th, .man-table td { padding: .35rem .5rem; border-bottom: 1px solid var(--rule-2); text-align: left; vertical-align: top; }
+.man-table th { color: var(--ink); font-weight: 600; }
+.man-table tr:first-child td, .man-table tr:first-child th { font-variant-numeric: tabular-nums; }
+.man-rules th { width: 34%; }
+.man-gloss td.han { color: var(--ink); font-size: 1rem; white-space: nowrap; }
+.man-gloss td.pin { color: var(--ink-3); white-space: nowrap; }
+.welcome-links { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+
 /* ============================================================
    On a phone
    ============================================================
@@ -3577,14 +3625,5 @@ button.tier-head:hover { border-color: var(--ink-3); }
   :root[data-opt-cols="row"] .opts.grid2 .opt .big { font-size: 3.6rem; }
 }
 
-/* welcome back — the offer to ease into a pile of reviews after days away */
-.welcome { display: flex; gap: .8rem; align-items: flex-start; padding: .8rem .9rem; margin-bottom: .6rem;
-  border: 1px solid color-mix(in srgb, var(--jade) 35%, var(--rule-2)); border-radius: 12px;
-  background: color-mix(in srgb, var(--jade) 7%, var(--paper)); text-align: left; }
-.welcome.done { padding: .55rem .9rem; border-style: dashed; background: none; }
-.welcome-k { flex: none; font-size: 1.4rem; line-height: 1.2; color: var(--jade); }
-.welcome.done .welcome-k { font-size: 1.05rem; }
-.welcome-body { display: flex; flex-direction: column; gap: .3rem; font-size: .84rem; color: var(--ink-2); line-height: 1.45; min-width: 0; }
-.welcome-body b { color: var(--ink); font-weight: 600; }
-.welcome-body .link-btn { align-self: flex-start; font-size: .8rem; }
-.stat b small.of { font-size: .6em; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+/* the manual's contents, two narrow columns on a phone */
+@media (max-width: 560px) { .man-toc a { font-size: .8rem; } .man-toc a .han { display: none; } }

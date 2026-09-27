@@ -30,6 +30,7 @@ whatever the Cantonese app writes.
 | **M3** | Sprint picker tidy | `css/app.css`, `js/sprint.js` | mostly mobile |
 | **X1** | Repair rounds actually write | `js/app.js` | behaviour, all platforms |
 | **X2** | `startTodayDrill` left `session.repair` set | `js/app.js` | bug |
+| **H1** | The in-app manual — [see below](#h1--the-manual-1140) | new `js/manual.js`, `js/app.js`, `css/app.css`, `index.html` | new, 1.14.0 |
 | **R1–R3** | Welcome back, retention wins, rest days — [see below](#r--review-without-the-grind-1130) | `js/srs.js`, `js/app.js`, `css/app.css` | new, 1.13.0 |
 
 ---
@@ -480,6 +481,37 @@ of `css/app.css` (`.welcome`, `.wins`, `.day.rest`). No new files.
 归 (the welcome card's glyph — "return") and 温故知新 (the Record sheet's
 label — "review the old to know the new"). Both read the same in Traditional
 except 归 → 歸.
+
+---
+
+## H1 — the manual (1.14.0)
+
+**Settings → Help → How Hanzi Quest works** opens a full user manual: 24
+collapsible sections (the review schedule, what each activity does to it,
+every drill and when it unlocks, skills, coming back after a break, streaks,
+tiers, placement, Go deeper, Sprint and the 错字本, writing, menu, songs,
+flashcards, library, sticking points, sound, shortcuts, data, a glossary of
+the app's Chinese labels, and every setting), with contents, search and
+cross-links. "How this works" links on the welcome card and the Record
+retention sheet open it at the right section (`data-manual="<id>"`, handled
+once in `boot`).
+
+New file `js/manual.js`, loaded before `app.js`. **Every number in it is read
+from the live constant** (`INTERVALS`, `REST_PER_WEEK`, `TIER_UNLOCK`…), so it
+can't drift from the rules — which is also why section bodies are functions.
+
+Porting it means rewriting prose, not copying it: pinyin → jyutping, the tone
+explanations, the glossary (readings and any Traditional forms), and any
+section describing a feature the Cantonese app doesn't have. Keep the
+live-constant pattern. The smoke check "every handler in app.js calls
+something that exists" needs `manual.js` added to its declared-in list, as
+done here.
+
+Also in this batch: the three failing smoke checks introduced by R1–R3 are
+fixed (the welcome offer is taken inside `startSession`, and the new CSS moved
+above the phone layer). The three "no interests, no word" checks were already
+failing before this batch — they predate `fillInterests()` and test the old
+behaviour.
 
 ---
 

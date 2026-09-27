@@ -990,6 +990,15 @@ is flagged as a leech (`isLeech`). Record lists them, and missing one in a
 drill says so and pushes you to the card rather than offering another
 identical repetition.
 
+## The manual
+
+**Settings → Help → How Hanzi Quest works** is the user-facing version of this
+README: what the app does, not why the code is shaped as it is. It lives in
+`js/manual.js`, and every number in it is read from the constant that decides
+it, so changing `INTERVALS` or `REST_PER_WEEK` changes the manual too. When you
+add a feature, add or extend a section there — the smoke test won't catch a
+missing paragraph. Other screens can link into it with `data-manual="<id>"`.
+
 ## Settings and the tour
 
 Settings used to sit at the bottom of the Record tab, where nobody would look
