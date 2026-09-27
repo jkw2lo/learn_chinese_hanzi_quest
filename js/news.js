@@ -49,7 +49,13 @@ const RELEASES = [
       "Build the word (组词): assemble a word from character tiles — as a Go deeper mode and as a timed sprint.",
       "Writing two characters: a drill for whole two-character words, drawn from memory.",
       "On a phone, the Write notebook is one big box with Add to page, and sections sit in a scrolling menu at the bottom of the screen.",
-      "The tracker shows how long you studied today and how many activities you did."
+      "The tracker shows how long you studied today and how many activities you did.",
+      "Pick a pen for the notebook — pen, brush, pencil or marker — and a nib thickness.",
+      "Settings → Writing sensitivity: make stroke checking stricter or more forgiving.",
+      "Go deeper's two writing tiles became one, with a 1 char / 2 chars switch.",
+      "Songs can be edited and sorted, and tapping a character opens its card over the song instead of replacing it.",
+      "Record gains a weekly activity chart and a list of characters whose skills are uneven; Sprint's board shows a chart per mode and your top five.",
+      "On a phone, the section menu scrolls round like a wheel."
     ]
   },
   {

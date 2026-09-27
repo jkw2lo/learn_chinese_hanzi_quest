@@ -840,7 +840,7 @@ function bindCard(root, ch, writerId) {
     writer.cancelQuiz();
     writer.hideCharacter();
     writer.quiz({
-      showHintAfterMisses: 2,
+      showHintAfterMisses: 2, leniency: state.writeLeniency,
       /* finishing releases the trackpad and gives the cursor back, so a
          completed character doesn't leave you pressing Escape */
       onComplete: () => { padStop(); say(ch.c, true); }
@@ -1517,7 +1517,7 @@ function renderDrill(item, ch, body, foot) {
       if (skip) skip.onclick = showStrokes;
       autoPad();
       w.quiz({
-        showHintAfterMisses: 2,
+        showHintAfterMisses: 2, leniency: state.writeLeniency,
         onMistake: () => missed++,
         onComplete: () => {
           padStop();
@@ -1622,7 +1622,7 @@ function renderDrill(item, ch, body, foot) {
         if (skip) skip.onclick = showStrokes;
         autoPad();
         w2.quiz({
-          showHintAfterMisses: 2,
+          showHintAfterMisses: 2, leniency: state.writeLeniency,
           onMistake: () => charMissed++,
           onComplete: () => { padStop(); say(target[i]); finishChar(); }
         });
@@ -2200,12 +2200,14 @@ function maybeHail(delay = 0) {
    ============================================================ */
 
 function openSheet(title, html) {
+  hideTip();
   $("#svTitle").innerHTML = title;
   $("#svBody").innerHTML = html;
   $("#charView").classList.add("on");
   document.body.style.overflow = "hidden";
 }
 function closeSheet() {
+  hideTip();
   $("#charView").classList.remove("on");
   document.body.style.overflow = "";
   renderAll();
@@ -2499,6 +2501,47 @@ function initSpeakables() {
 /* ---------- hover cards ---------- */
 
 let tipEl = null;
+
+/* Placed relative to the glyph itself, flipped below it when there's no room
+   above — shared by the hover path and the long-press path, so a touch peek
+   looks exactly like a mouse one. */
+function placeTip(g) {
+  const r = g.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+  let x = r.left + r.width / 2 - t.width / 2;
+  let y = r.top - t.height - 8;
+  if (y < 8) y = r.bottom + 8;
+  x = Math.max(8, Math.min(x, innerWidth - t.width - 8));
+  tipEl.style.left = x + "px";
+  tipEl.style.top = y + "px";
+}
+
+/* Not in the curriculum is not the same as nothing to say. A reference gloss
+   gets a reading and a sense and an honest line about why it has no progress
+   to report; bailing out here is what left the menu, the example words and
+   the headings silent. Returns false when there is truly nothing to show. */
+function showTip(g) {
+  const c = g.dataset.ch;
+  const ch = CHAR_INDEX[c];
+  if (!ch) {
+    const [p, m] = gloss(c);
+    if (!m) return false;
+    tipEl.innerHTML = `<div class="z">${esc(c)}</div>
+      <div class="p">${esc(p)}</div>
+      <div class="m">${esc(m)}</div>
+      <div class="s">Not in the curriculum — here for reference</div>`;
+  } else {
+    const known = isKnown(ch.c);
+    tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
+      <div class="p">${esc(ch.p)}</div>
+      <div class="m">${esc(ch.m)}</div>
+      <div class="s">${known ? "You know this one" : "Not learned yet"} · ${esc(ch.words[0][0])} ${esc(ch.words[0][2])}</div>`;
+  }
+  tipEl.classList.add("on");
+  placeTip(g);
+  return true;
+}
+const hideTip = () => tipEl && tipEl.classList.remove("on");
+
 function initTips() {
   tipEl = document.createElement("div");
   tipEl.className = "tip";
@@ -2509,51 +2552,23 @@ function initTips() {
      threw and took the rest of the handler chain down with it. */
   const hit = e => (e.target instanceof Element ? e.target.closest("[data-ch]") : null);
 
-  document.addEventListener("mouseover", e => {
-    const g = hit(e);
-    if (!g) return;
-    const c = g.dataset.ch;
-    const ch = CHAR_INDEX[c];
-    /* Not in the curriculum is not the same as nothing to say. A reference
-       gloss gets a reading and a sense and an honest line about why it has no
-       progress to report; bailing out here is what left the menu, the example
-       words and the headings silent. */
-    if (!ch) {
-      const [p, m] = gloss(c);
-      if (!m) return;
-      tipEl.innerHTML = `<div class="z">${esc(c)}</div>
-        <div class="p">${esc(p)}</div>
-        <div class="m">${esc(m)}</div>
-        <div class="s">Not in the curriculum — here for reference</div>`;
-      tipEl.classList.add("on");
-      return place(g);
-    }
-    const known = isKnown(ch.c);
-    tipEl.innerHTML = `<div class="z">${esc(ch.c)}</div>
-      <div class="p">${esc(ch.p)}</div>
-      <div class="m">${esc(ch.m)}</div>
-      <div class="s">${known ? "You know this one" : "Not learned yet"} · ${esc(ch.words[0][0])} ${esc(ch.words[0][2])}</div>`;
-    tipEl.classList.add("on");
-    place(g);
-  });
-  document.addEventListener("mouseout", e => {
-    if (hit(e)) tipEl.classList.remove("on");
-  });
+  document.addEventListener("mouseover", e => { const g = hit(e); if (g) showTip(g); });
+  document.addEventListener("mouseout", e => { if (hit(e)) hideTip(); });
   /* touch has no hover — open the full card instead */
   document.addEventListener("click", e => {
     const g = hit(e);
     if (g && CHAR_INDEX[g.dataset.ch]) openChar(g.dataset.ch);
   });
-
-  function place(g) {
-    const r = g.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
-    let x = r.left + r.width / 2 - t.width / 2;
-    let y = r.top - t.height - 8;
-    if (y < 8) y = r.bottom + 8;
-    x = Math.max(8, Math.min(x, innerWidth - t.width - 8));
-    tipEl.style.left = x + "px";
-    tipEl.style.top = y + "px";
-  }
+  /* Belt and braces for a tip a long-press opened (see openSongLines in
+     songs.js): anywhere that isn't the tip and isn't another glyph closes it.
+     Without this, a tip shown by touch had no mouseout to ever clear it —
+     it sat there `.on` and reappeared, looking "stuck", the moment whatever
+     had been drawn on top of it (a session, a sheet) closed again. */
+  document.addEventListener("click", e => {
+    if (!tipEl.classList.contains("on")) return;
+    if (e.target === tipEl || tipEl.contains(e.target) || hit(e)) return;
+    hideTip();
+  });
 }
 
 /* ---------- flashcards ---------- */
@@ -2960,7 +2975,7 @@ function startSquare(i) {
   if (!w) return;
   w.cancelQuiz();
   w.quiz({
-    showHintAfterMisses: 2,
+    showHintAfterMisses: 2, leniency: state.writeLeniency,
     onComplete: () => {
       nb.done[i] = true;
       say(nb.chars[i]);
@@ -3041,8 +3056,21 @@ function renderNotebookPadState() {
    trace like a 字帖 copybook.
    ============================================================ */
 
-const wp = { built: false, rows: 6, guide: null, pen: 8, cell: 84, strokes: [], cur: null,
+const wp = { built: false, rows: 6, guide: null, pen: 8, penStyle: "pen", cell: 84, strokes: [], cur: null,
              sort: "day", find: "" };
+
+/* Nib picks the base width (fine/medium/broad, in px); style is what draws
+   with it. widthMul scales the nib rather than replacing it, so "broad
+   brush" and "fine brush" both still mean something — a fixed brush width
+   would make the nib control lie for three of the four styles. cap "square"
+   on the marker is what actually reads as a flat chisel tip rather than a
+   thick pen; everything else keeps the round cap ink already draws with. */
+const PEN_STYLES = {
+  pen:    { zh: "钢笔",  name: "Pen",    alpha: 1,   widthMul: 1,    cap: "round" },
+  brush:  { zh: "毛笔",  name: "Brush",  alpha: .92, widthMul: 1.7,  cap: "round" },
+  pencil: { zh: "铅笔",  name: "Pencil", alpha: .62, widthMul: .65,  cap: "round" },
+  marker: { zh: "马克笔", name: "Marker", alpha: .4,  widthMul: 2.4,  cap: "square" }
+};
 
 /* ---------- the practice diary ----------
    Pages are stored as stroke vectors, not pictures: a densely filled page is
@@ -3132,6 +3160,11 @@ function buildWritePage() {
                 <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
               </select>
             </label>
+            <label class="wp-field">Pen
+              <select id="wpStyle">
+                ${Object.entries(PEN_STYLES).map(([id, s]) => `<option value="${id}" ${id === wp.penStyle ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+              </select>
+            </label>
             ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpPad">触控 Trackpad</button>` : ""}
             <button class="btn btn-ghost btn-sm" id="wpSave">Save page</button>
             <button class="btn btn-ghost btn-sm" id="wpClear">Clear page</button>
@@ -3150,8 +3183,20 @@ function buildWritePage() {
              need a trackpad to fill a square at a time. Add to page does the
              page-finding and square-placing that a free canvas never needed. -->
         <div class="wp-mobile">
+          <div class="wp-mobile-tools">
+            <label class="wp-field">Nib
+              <select id="wpmPen">
+                <option value="5">fine</option><option value="8" selected>medium</option><option value="13">broad</option>
+              </select>
+            </label>
+            <label class="wp-field">Pen
+              <select id="wpmStyle">
+                ${Object.entries(PEN_STYLES).map(([id, s]) => `<option value="${id}" ${id === wp.penStyle ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
           <div class="writer-box"><div class="tian">${TIAN_SVG}<canvas id="wpmInk"></canvas></div></div>
-          <div class="wp-mobile-side">
+          <div class="wp-mobile-actions">
             <button class="btn btn-seal" id="wpmAdd">Add to page</button>
             ${padSupported() ? `<button class="btn btn-ghost btn-sm" id="wpmPad">触控 Trackpad</button>` : ""}
             <button class="btn btn-ghost btn-sm" id="wpmClear">Clear</button>
@@ -3171,7 +3216,8 @@ function buildWritePage() {
   wpBindInk();
   wpAutoPad();
 
-  $("#wpPen").onchange  = e => { wp.pen = +e.target.value; wpSetPen(); };
+  $("#wpPen").onchange   = e => { wp.pen = +e.target.value; applyPenSettings(); };
+  $("#wpStyle").onchange = e => { wp.penStyle = e.target.value; applyPenSettings(); };
   $("#wpClear").onclick = () => wpClear();
   $("#wpSave").onclick  = () => wpSave();
   $("#wpPad")?.addEventListener("click", () => wpPad());
@@ -3180,6 +3226,8 @@ function buildWritePage() {
 
   wpmSizeInk();
   wpmBindInk();
+  $("#wpmPen").onchange   = e => { wp.pen = +e.target.value; applyPenSettings(); };
+  $("#wpmStyle").onchange = e => { wp.penStyle = e.target.value; applyPenSettings(); };
   $("#wpmAdd").onclick   = () => wpmAdd();
   $("#wpmClear").onclick = () => wpmClear();
   $("#wpmPad")?.addEventListener("click", () => wpmPad());
@@ -3410,15 +3458,43 @@ function wpSizeInk() {
   const ctx = c.getContext("2d");
   ctx.scale(dpr, dpr);
   wpSetPen();
-  if (keep) ctx.drawImage(keep, 0, 0, keep.width / dpr, keep.height / dpr);
+  /* keep is an already-rendered snapshot, not a new stroke — blitting it
+     under whatever globalAlpha the current pen style just set (a marker's
+     0.4, say) would fade the page a little more on every resize, purely
+     from being copied. Full alpha for the copy, then back to the pen's. */
+  if (keep) {
+    const a = ctx.globalAlpha;
+    ctx.globalAlpha = 1;
+    ctx.drawImage(keep, 0, 0, keep.width / dpr, keep.height / dpr);
+    ctx.globalAlpha = a;
+  }
 }
 
 function wpSetPen() {
   const c = $("#wpInk");
   if (!c) return;
-  const ctx = c.getContext("2d");
-  ctx.lineWidth = wp.pen; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  applyPenTo(c.getContext("2d"));
+}
+
+/* Shared by the desktop canvas and the mobile box, so nib and style read
+   the same on whichever one happens to be open — see wp.pen/wp.penStyle. */
+function applyPenTo(ctx) {
+  const s = PEN_STYLES[wp.penStyle] || PEN_STYLES.pen;
+  ctx.lineWidth = wp.pen * s.widthMul;
+  ctx.lineCap = s.cap; ctx.lineJoin = s.cap === "square" ? "miter" : "round";
+  ctx.globalAlpha = s.alpha;
   ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+}
+
+/* Both selects (desktop and mobile) and both canvases move together, so
+   whichever one you weren't just looking at is still correct when it next
+   shows — see the phone-layer swap that hides one and shows the other. */
+function applyPenSettings() {
+  wpSetPen();
+  wpmSetPen();
+  const pen = String(wp.pen), style = wp.penStyle;
+  [$("#wpPen"), $("#wpmPen")].forEach(el => { if (el) el.value = pen; });
+  [$("#wpStyle"), $("#wpmStyle")].forEach(el => { if (el) el.value = style; });
 }
 
 function wpDraw(type, x, y) {
@@ -3437,10 +3513,15 @@ function wpDraw(type, x, y) {
   }
 }
 
-/* Repaint a page from its vectors — used when loading from the diary. */
+/* Repaint a page from its vectors — used when loading from the diary.
+   lineCap/lineJoin are the caller's to set (or not): wpLoad repaints onto
+   the live canvas, where applyPenTo has already set them for the current
+   pen style, and overriding that here would mean a page loaded back in
+   never showed a marker's square cap even though drawing on it live would.
+   The diary thumbnails, which have no live pen state of their own, set
+   their own round default before calling this. */
 function wpPaint(strokes, ctx, scale) {
   ctx.save();
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
   strokes.forEach(pts => {
     if (!pts.length) return;
     ctx.beginPath();
@@ -3523,9 +3604,7 @@ function wpmSizeInk() {
 function wpmSetPen() {
   const c = $("#wpmInk");
   if (!c) return;
-  const ctx = c.getContext("2d");
-  ctx.lineWidth = wp.pen; ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
+  applyPenTo(c.getContext("2d"));
 }
 
 function wpmDraw(type, x, y) {
@@ -3658,7 +3737,7 @@ async function wpDiary() {
   const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#17211E";
   $$("#wpDiary .diary-thumb").forEach((b, i) => {
     const cv = b.querySelector("canvas"), ctx = cv.getContext("2d");
-    ctx.strokeStyle = ink; ctx.lineWidth = 1.6;
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.6; ctx.lineCap = "round"; ctx.lineJoin = "round";
     wpPaint(all[i].strokes, ctx, cv.width / (all[i].w || 1));
     b.onclick = () => wpLoad(all[i].id);
   });
@@ -3887,6 +3966,78 @@ function welcomeCard(offer, w) {
     </div>`;
   }
   return "";
+}
+
+function deepTileHtml(id, cfg, chars) {
+  const n = chars.length;
+  const st = skillStanding(cfg.skill, chars);
+  const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
+  const seg = (cls, count) => count
+    ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
+  const line = !chars.length
+    ? (id === "build" ? "No two-character word you can read yet" : "Learn a character first")
+    : `${st.solid}/${st.total} solid`;
+  return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
+    title="${chars.length
+      ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
+      : "Nothing to practise in this mode yet"}">
+    <span class="pr-ring">
+      <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
+        ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
+      <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
+    </span>
+    <span class="pr-deep-body">
+      <b>${esc(cfg.name)}</b>
+      <span class="pr-meter" aria-hidden="true">
+        ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
+      </span>
+      <small>${esc(line)}</small>
+    </span>
+  </button>`;
+}
+
+/* Reading, Build the word and Pronunciation each have exactly one thing to
+   practise; writing has two — one character, or a compound word — and used
+   to sit as two separate tiles for it, which is also what made the grid an
+   odd five instead of a clean four. Folded into one tile here: the toggle
+   picks which of PRACTICE.write / .write2 the ring, meter and tap-to-start
+   below it describe. state.writeVariant remembers the choice. */
+function deepWriteTileHtml() {
+  const variant = state.writeVariant === "write2" ? "write2" : "write";
+  const cfg = PRACTICE[variant];
+  const chars = practiceChars(variant);
+  const n = chars.length;
+  const st = skillStanding(cfg.skill, chars);
+  const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
+  const seg = (cls, count) => count
+    ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
+  const line = !chars.length
+    ? (variant === "write" ? "No character you know has stroke data yet"
+       : "No two-character word you can read yet has stroke data for both characters")
+    : `${st.solid}/${st.total} solid${practiceFocus(variant).length ? ` · ${practiceFocus(variant).length} chosen` : ""}`;
+  return `<div class="pr pr-deep pr-write">
+    <button class="pr-write-hit" data-practice="${variant}" ${n ? "" : "disabled"}
+      title="${chars.length
+        ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
+        : "Nothing to practise in this mode yet"}">
+      <span class="pr-ring">
+        <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
+          ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
+        <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
+      </span>
+      <span class="pr-deep-body">
+        <b>Writing</b>
+        <span class="pr-meter" aria-hidden="true">
+          ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
+        </span>
+        <small>${esc(line)}</small>
+      </span>
+    </button>
+    <div class="pr-write-pick" role="group" aria-label="Write one character, or two">
+      <button class="pr-write-opt ${variant === "write" ? "on" : ""}" data-write-variant="write">1 char</button>
+      <button class="pr-write-opt ${variant === "write2" ? "on" : ""}" data-write-variant="write2">2 chars</button>
+    </div>
+  </div>`;
 }
 
 function renderToday() {
@@ -4158,39 +4309,13 @@ function renderToday() {
         ${exAll ? `<span class="deeper-life">${exAll.toLocaleString()} all told</span>` : ""}
       </span>
     </div>
-    <div class="pr-grid pr-grid-5">
+    <div class="pr-grid pr-grid-4">
       ${Object.entries(PRACTICE).map(([id, cfg]) => {
+        if (id === "write2") return "";              /* folded into the "write" tile below */
         const chars = practiceChars(id);
         deepEligible = deepEligible || chars.length > 0;
-        const n = chars.length;
-        const st = skillStanding(cfg.skill, chars);
-        const RR = 15, CC = 2 * Math.PI * RR, aa = CC * Math.min(1, st.pct);
-        const seg = (cls, count) => count
-          ? `<i class="${cls}" style="flex:${count}" title="${count} character${count === 1 ? "" : "s"}"></i>` : "";
-        const line = !chars.length
-          ? (id === "write" ? "No character you know has stroke data yet"
-             : id === "write2" ? "No two-character word you can read yet has stroke data for both characters"
-             : id === "build" ? "No two-character word you can read yet"
-             : "Learn a character first")
-          : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}${
-              FOCUS_MODES.includes(id) && practiceFocus(id).length ? ` · ${practiceFocus(id).length} chosen` : ""}`;
-        return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
-          title="${chars.length
-            ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
-            : "Nothing to practise in this mode yet"}">
-          <span class="pr-ring">
-            <svg viewBox="0 0 38 38"><circle class="trk" cx="19" cy="19" r="${RR}"/>
-              ${aa > .5 ? `<circle class="val" cx="19" cy="19" r="${RR}" stroke-dasharray="${aa.toFixed(1)} ${CC.toFixed(1)}"/>` : ""}</svg>
-            <span class="pr-ring-k han">${esc(cfg.k[0])}</span>
-          </span>
-          <span class="pr-deep-body">
-            <b>${esc(cfg.name)}</b>
-            <span class="pr-meter" aria-hidden="true">
-              ${seg("s3", st.solid)}${seg("s2", st.buckets[2])}${seg("s1", st.buckets[1])}${seg("s0", st.untouched)}
-            </span>
-            <small>${esc(line)}</small>
-          </span>
-        </button>`;
+        if (id === "write") deepEligible = deepEligible || practiceChars("write2").length > 0;
+        return id === "write" ? deepWriteTileHtml() : deepTileHtml(id, cfg, chars);
       }).join("")}
     </div>
   </section>`;
@@ -4253,6 +4378,11 @@ function renderToday() {
   $$("#viewToday [data-practice]").forEach(b => b.onclick = () => {
     const m = b.dataset.practice;
     FOCUS_MODES.includes(m) ? openFocus(m) : startPractice(m);
+  });
+  $$("#viewToday [data-write-variant]").forEach(b => b.onclick = () => {
+    state.writeVariant = b.dataset.writeVariant;
+    save();
+    renderToday();
   });
   $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
     const id = b.dataset.todo;
@@ -4615,6 +4745,62 @@ function retentionSheet() {
   </div>`;
 }
 
+/* Reps a week, going back eight weeks — the one chart charWeekTrend exists
+   to draw. Bars, not a line: eight points is few enough that a line implies
+   a continuity between them that isn't really there, where a missed week
+   is a missed week and the bar for it is just short. */
+function weeklyRepsChartHtml() {
+  const weeks = charWeekTrend(8);
+  const max = Math.max(1, ...weeks.map(w => w.seen));
+  const W = 240, H = 84, BASE = H - 16, BW = W / weeks.length;
+  const bars = weeks.map((w, i) => {
+    const h = Math.max(w.seen ? 2 : 0, (w.seen / max) * (BASE - 6));
+    const x = i * BW + BW * 0.2, bw = BW * 0.6;
+    const acc = w.seen ? Math.round((w.right / w.seen) * 100) : null;
+    return `<rect class="wk-bar" x="${x.toFixed(1)}" y="${(BASE - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2">
+      <title>${esc(w.week)} — ${w.seen} rep${w.seen === 1 ? "" : "s"}${acc !== null ? ` · ${acc}% right` : ""}</title>
+    </rect>`;
+  }).join("");
+  const labels = weeks.map((w, i) => `<text class="wk-label" x="${(i * BW + BW / 2).toFixed(1)}" y="${H - 3}"
+    text-anchor="middle">${esc(w.week.split("W")[1])}</text>`).join("");
+  return `<svg class="wk-chart" viewBox="0 0 ${W} ${H}">
+    <line class="wk-base" x1="0" y1="${BASE}" x2="${W}" y2="${BASE}"/>${bars}${labels}
+  </svg>`;
+}
+
+function weeklyActivityHtml() {
+  const weeks = charWeekTrend(8);
+  const totalReps = weeks.reduce((a, w) => a + w.seen, 0);
+  return `<div class="sheet" style="padding:1rem">
+    <div class="stack" style="gap:.6rem">
+      <span class="eyebrow">Weekly activity ${hanLabel("每周")}</span>
+      ${totalReps ? weeklyRepsChartHtml()
+        : `<p class="note">Nothing yet — this fills in week by week as you go, oldest on the left.</p>`}
+      <p class="note">${timeTotal() ? `${fmtStudyTime(timeTotal())} studied all told, ${fmtStudyTime(timeToday())} today.`
+        : "Time studied adds up here as you go."}</p>
+    </div>
+  </div>`;
+}
+
+/* "I can read it, I can't write it": weaknessReport's per-character skill
+   gap, as a list. Reuses the .leech row look from Sticking points below —
+   same idea, a different measure of stuck. */
+function weaknessesHtml() {
+  const gaps = weaknessReport(12);
+  if (!gaps.length) return "";
+  return `<div class="sheet" style="padding:1rem">
+    <div class="stack" style="gap:.6rem">
+      <span class="eyebrow">Uneven skills ${hanLabel("差距")}</span>
+      <p class="note">Characters where one skill lags well behind another — practised enough in both to tell,
+        not just an unlucky guess.</p>
+      <div class="leech-list">${gaps.map(g => `<button class="leech" data-c="${esc(g.c)}"
+        title="${esc(SKILL_NAME[g.best.skill])} ${Math.round(g.best.acc * 100)}% · ${esc(SKILL_NAME[g.worst.skill])} ${Math.round(g.worst.acc * 100)}%">
+        <span class="z">${esc(g.c)}</span><span class="n">${esc(SKILL_NAME[g.worst.skill])}</span> lags</button>`).join("")}</div>
+    </div>
+  </div>`;
+}
+const SKILL_NAME = { r: "reading", p: "sound", c: "recall", w: "writing" };
+
 function renderRecord() {
   const known = Object.keys(state.chars).length;
   const strong = Object.keys(state.chars).filter(c => strength(c) === "strong").length;
@@ -4634,6 +4820,7 @@ function renderRecord() {
           <div class="sheet stat"><b>${known}</b><small>Characters</small></div>
           <div class="sheet stat"><b>${liveStreak()}</b><small>Day streak</small></div>
           <div class="sheet stat"><b>${totalCards}</b><small>Cards done</small></div>
+          <div class="sheet stat"><b>${fmtStudyTime(timeTotal())}</b><small>Time studied</small></div>
         </div>
 
         <div class="sheet" style="padding:1rem">
@@ -4737,6 +4924,9 @@ function renderRecord() {
           </div>
         </div>
 
+        ${weeklyActivityHtml()}
+        ${weaknessesHtml()}
+
       </div>
     </div>
   </div>`;
@@ -4770,6 +4960,28 @@ function syncRowNote() {
        + "between them. Everything keeps working offline and keeps working if you never do — "
        + "this only adds a copy somewhere you can reach from a phone.";
 }
+
+/* HanziWriter's own leniency: a multiplier on how far a drawn stroke may sit
+   from the real one and still be accepted (1 is its default, and what this
+   app has always used). Discrete steps rather than a free-ranging slider, so
+   every position means something you could read back — "a little more
+   forgiving" is a sentence; 1.23 is not. */
+const LENIENCY_LEVELS = [
+  { v: 0.7, label: "Strict" },
+  { v: 0.85, label: "A little stricter" },
+  { v: 1, label: "As it's always been" },
+  { v: 1.3, label: "A little more forgiving" },
+  { v: 1.6, label: "Forgiving" }
+];
+const leniencyIndex = () => {
+  const cur = state.writeLeniency ?? 1;
+  let best = 2, bestDiff = Infinity;
+  LENIENCY_LEVELS.forEach((lvl, i) => {
+    const diff = Math.abs(lvl.v - cur);
+    if (diff < bestDiff) { bestDiff = diff; best = i; }
+  });
+  return best;
+};
 
 function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
@@ -4806,6 +5018,16 @@ function openSettings() {
         <div class="settings-row">
           <label>Include writing drills<small>Trace from memory once a character is solid.</small></label>
           <button class="btn btn-ghost btn-sm" id="writeTgl">${state.writeDrills ? "On" : "Off"}</button>
+        </div>
+        <div class="settings-row stacked">
+          <label>Writing sensitivity<small>How closely a stroke has to match before it's accepted. Stricter
+            is more work for a squiggly component, but it's also the part that teaches the shape — this
+            doesn't change the strokes it's checking against, only how close is close enough.</small></label>
+          <span class="leniency-pick">
+            <input type="range" id="leniencySlider" min="0" max="${LENIENCY_LEVELS.length - 1}" step="1"
+              value="${leniencyIndex()}" aria-label="Writing sensitivity">
+            <small id="leniencyLabel">${esc(LENIENCY_LEVELS[leniencyIndex()].label)}</small>
+          </span>
         </div>
         <div class="settings-row">
           <label>Answer buttons<small>One row matches the keyboard, where 1-2-3-4 runs left to right.
@@ -4912,6 +5134,12 @@ function openSettings() {
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
+  $("#leniencySlider").oninput = e => {
+    const lvl = LENIENCY_LEVELS[+e.target.value] || LENIENCY_LEVELS[2];
+    state.writeLeniency = lvl.v;
+    $("#leniencyLabel").textContent = lvl.label;
+    save();
+  };
   $$("#optColsPick button").forEach(b => b.onclick = () => {
     state.optCols = b.dataset.oc; save(); applyOptCols(); openSettings();
   });
@@ -6227,8 +6455,8 @@ const COACH = {
   write: { label: "Write", steps: [
     { sel: ".wp-page", k: "练字", title: "A blank page",
       body: "Nothing is checked here. Fill it, scrawl on it, clear it and go again — it is an exercise book, not a test." },
-    { sel: ".wp-tools", k: "笔", title: "Nib, trackpad, save",
-      body: "Press T for the trackpad, where the browser allows it. Save a page and it is kept by date." },
+    { sel: ".wp-tools", k: "笔", title: "Nib, pen, trackpad, save",
+      body: "Nib is thickness, pen is what draws with it — a marker's flat tip is as different from a pencil's thin one as broad is from fine. Press T for the trackpad, where the browser allows it. Save a page and it is kept by date." },
     { sel: ".pick-stage", k: "笔顺", title: "Stroke order, while you write",
       body: "Pick a character below and its strokes play here — again, one at a time, or all at once. It stays while you copy it." },
     { sel: ".wp-picker", k: "描红", title: "Something to trace",
@@ -6390,6 +6618,7 @@ const RENDER = { today: renderToday, menu: renderQuest, songs: renderSongs, spri
 
 function go(v) {
   hqNote("view", v);
+  hideTip();
   view = v;
   const id = "view" + v[0].toUpperCase() + v.slice(1);
   $$(".view").forEach(el => el.classList.toggle("on", el.id === id));
@@ -6433,9 +6662,8 @@ function openDrawer() {
   d.classList.add("on");
   document.body.style.overflow = "hidden";
   $("#burgerBtn").setAttribute("aria-expanded", "true");
-  /* open settled on where you are, not on whichever end the row last sat at */
-  const on = d.querySelector(".drawer-nav button.on");
-  if (on) on.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+  centerDrawerNav();
+  drawerNavTick();
 }
 function closeDrawer() {
   const d = $("#drawer");
@@ -6444,6 +6672,64 @@ function closeDrawer() {
   d.hidden = true;
   document.body.style.overflow = "";
   $("#burgerBtn").setAttribute("aria-expanded", "false");
+}
+
+/* ---------- the rolodex loops ----------
+
+   Three copies of the same sections, back to back. Scroll off the end of the
+   middle one and a silent, unanimated jump by exactly one copy's width lands
+   on the pixel-identical seam of the next — so scrolling in either direction
+   never actually runs out, the way a real rolodex wheel never does. The jump
+   only ever fires once scrolling has settled (see the debounce below):
+   moving scrollLeft out from under an active touch drag is what makes an
+   infinite scroller visibly stutter, so it waits to be asked. */
+function initDrawerLoop() {
+  const nav = $(".drawer-nav");
+  if (!nav || nav.dataset.looped) return;
+  nav.dataset.looped = "1";
+  const original = [...nav.children];
+  for (let i = 0; i < 2; i++) original.forEach(el => nav.appendChild(el.cloneNode(true)));
+  nav._loopOriginal = original;
+  nav._loopLen = original.length;
+
+  const reposition = () => {
+    const w = nav.scrollWidth / 3;
+    if (!w) return;
+    if (nav.scrollLeft < w * 0.5) nav.scrollLeft += w;
+    else if (nav.scrollLeft > w * 1.5) nav.scrollLeft -= w;
+  };
+  let settleT = null, tickQ = false;
+  nav.addEventListener("scroll", () => {
+    clearTimeout(settleT);
+    settleT = setTimeout(reposition, 120);
+    if (!tickQ) { tickQ = true; requestAnimationFrame(() => { drawerNavTick(); tickQ = false; }); }
+  });
+}
+
+/* Scrolls to the middle copy of whichever section is current, so opening the
+   drawer always starts on where you are — and lands with a full copy's width
+   of room to scroll either way before the loop above has anything to do. */
+function centerDrawerNav() {
+  const nav = $(".drawer-nav");
+  if (!nav || !nav._loopOriginal) return;
+  const idx = nav._loopOriginal.findIndex(el => el.dataset && el.dataset.nav === view);
+  if (idx < 0) return;
+  const mid = nav.children[nav._loopLen + idx];
+  nav.scrollLeft = Math.max(0, mid.offsetLeft - (nav.clientWidth - mid.clientWidth) / 2);
+}
+
+/* The wheel look: a chip scales and fades as it moves away from centre,
+   the way the numbers on either side of a real dial thumbwheel taper off. */
+function drawerNavTick() {
+  const nav = $(".drawer-nav");
+  if (!nav) return;
+  const mid = nav.getBoundingClientRect().left + nav.clientWidth / 2;
+  nav.querySelectorAll("[data-nav]").forEach(b => {
+    const r = b.getBoundingClientRect();
+    const d = Math.min(1, Math.abs((r.left + r.width / 2) - mid) / (nav.clientWidth / 2 || 1));
+    b.style.transform = `scale(${(1 - d * 0.22).toFixed(3)})`;
+    b.style.opacity = (1 - d * 0.55).toFixed(3);
+  });
 }
 
 function renderAll() {
@@ -6494,6 +6780,7 @@ function initTheme() {
 function boot() {
   load();
   initTheme();
+  initDrawerLoop();
   $$("[data-nav]").forEach(b => b.onclick = () => go(b.dataset.nav));
   $("#sesClose").onclick = async () => {
     if (session.idx > 0 && session.idx < session.queue.length
@@ -6507,6 +6794,7 @@ function boot() {
     endSession();
   };
   $("#svClose").onclick = closeSheet;
+  $("#charPeekClose").onclick = closeCharPeek;
   /* Abandoning a sheet halfway is a decision, not a slip of the finger — but
      once it is marked there is nothing left to lose by closing it. */
   $("#spClose").onclick = async () => {
@@ -6559,6 +6847,7 @@ function boot() {
     if ($("#place").classList.contains("on")) { closePlacement(); return; }
     if ($("#notebook").classList.contains("on")) { if (pad.active) padStop(); else closeNotebook(); }
     else if ($("#flash").classList.contains("on")) closeFlash();
+    else if ($("#charPeek").classList.contains("on")) closeCharPeek();
     else if ($("#charView").classList.contains("on")) closeSheet();
     else if (session.active) $("#sesClose").click();
   });

@@ -246,6 +246,8 @@ const MANUAL = [
       <p>The calendars — four weeks in the tracker, six months on Record — shade each day by how much you did. A missed
         day is an empty box; nothing you've done is ever cleared. <b>Days studied</b> and your <b>best run</b> never go
         down.</p>
+      <p>Record also shows <b>weekly activity</b> — answers per week for the last eight weeks — and <b>uneven skills</b>:
+        characters where one skill lags well behind another, like one you read easily but can't write.</p>
       <p>Two things get a celebration: ticking off the whole of Today's practice, and every character solid in every
         Go deeper mode. Every hundredth character learned is a milestone too.</p>`
   },
@@ -278,7 +280,8 @@ const MANUAL = [
   {
     id: "deeper", k: "深入", title: "Go deeper", sub: "Practice on your whole library",
     body: () => `
-      <p>Five modes over everything you know: ${Object.values(PRACTICE).map(p => `${manHz(p.k)} ${esc(p.name)}`).join(", ")}.
+      <p>Four tiles over everything you know: Reading, Writing, Build the word and Pronunciation. The Writing tile has
+        a <b>1 char / 2 chars</b> switch under it — single characters, or whole two-character words drawn from memory.
         Each round is ${ROUND} questions.</p>
       <p>What a round draws on:</p>
       <ul>
@@ -304,8 +307,10 @@ const MANUAL = [
           type Chinese on a phone (tones not needed, <code>nv</code> works for nǚ), or ${manHz("辨形")} <b>spotting</b> it
           among look-alikes.</li>
         <li>${manHz("听力")} <b>Listening</b> — sound to character.</li>
+        <li>${manHz("组词")} <b>Build the word</b> — assemble a word from character tiles, against the clock.</li>
       </ul>
-      <p>Each mode has its own par time per question, and your pace earns a grade: ${manHz("慢")} Steady, ${manHz("稳")} Even,
+      <p>The board beside the sheets shows a chart with one axis per mode, your all-time top five and your latest
+        runs. Each mode has its own par time per question, and your pace earns a grade: ${manHz("慢")} Steady, ${manHz("稳")} Even,
         ${manHz("快")} Quick, ${manHz("疾")} Fast, ${manHz("狂")} Furious. Each sheet — mode, count and minutes — keeps its own best.
         You can choose whether answers are marked as you go (${manHz("即时")}) or all at once when you hand it in
         (${manHz("交卷")}).</p>
@@ -321,7 +326,8 @@ const MANUAL = [
     body: () => `
       <h4>${manHz("默写")} Writing drills</h4>
       <p>You draw the character stroke by stroke and each stroke is checked. You're allowed a few slips — one for every
-        three strokes, so one for 大 and three for 学 — and the drill tells you how many before you start.
+        three strokes, so one for 大 and three for 学 — and the drill tells you how many before you start. How closely a
+        stroke has to match is <b>Settings → Writing sensitivity</b>, from Strict to Forgiving.
         ${manKb("S")} shows the strokes (then "Now you try"); writing it after peeking still counts as practice but not
         toward ${manHz("笔顺")}. A miss never changes your review schedule.</p>
       <h4>${manHz("抄写")} Write them out</h4>
@@ -330,7 +336,8 @@ const MANUAL = [
       <h4>${manHz("练字")} The Write tab</h4>
       <p>A blank exercise book of ${manHz("米字格")} squares. Pick a character to trace from the panel (grouped by the day
         you learned it, or sorted by stage, alphabet or shakiness; search ignores tones), choose a pen and nib, and add
-        rows when you fill the page. Nothing is checked. Pages can be saved to a <b>practice diary</b> by date and
+        rows when you fill the page. Choose a pen — pen, brush, pencil or marker — and a nib thickness. On a phone the
+        notebook is one big box with <b>Add to page</b>. Nothing is checked. Pages can be saved to a <b>practice diary</b> by date and
         reopened later.</p>
       <h4>${manHz("触控")} Trackpad writing</h4>
       <p>On a laptop, ${manKb("T")} (or the 触控 button) turns the trackpad into a drawing surface: move your finger to move
@@ -352,7 +359,8 @@ const MANUAL = [
     id: "songs", k: "歌词", title: "Songs", sub: "Reading lyrics you choose",
     body: () => `
       <p>Paste in the lyrics of a song you like (the app can't ship lyrics — they're copyrighted — so it starts empty).
-        Characters you know light up, and hover or tap any character for its reading and meaning. Nothing is quizzed
+        Characters you know light up. Tap a character to open its card over the song; press and hold (or hover) for a
+        quick reading and meaning. Songs can be edited, and sorted by newest, name, artist, length or how much you know. Nothing is quizzed
         or scheduled; it shows how much of the song you can read, and that number rises as you learn.</p>`
   },
   {
@@ -470,6 +478,8 @@ const MANUAL = [
         <tr><th>Question timer</th><td>The draining bar and the ${manHz("快")} badge. Running out never costs anything.</td></tr>
         <tr><th>Include writing drills</th><td>Whether handwriting appears in the daily session once a character reaches
           level 4. Go deeper's writing modes are always available.</td></tr>
+        <tr><th>Writing sensitivity</th><td>How closely a drawn stroke has to match, in five steps from Strict to
+          Forgiving. The middle is how it has always been.</td></tr>
         <tr><th>Answer buttons</th><td>One row, two by two, or let the window decide.</td></tr>
         <tr><th>Start the trackpad automatically</th><td>Arms trackpad writing in every writing box.</td></tr>
         <tr><th>Sound</th><td>On or off, and which system voice to fall back on.</td></tr>

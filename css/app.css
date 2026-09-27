@@ -676,10 +676,17 @@ code {
 
 /* ---------- progress ---------- */
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; }
 .stat { padding: .8rem .7rem; text-align: center; display: flex; flex-direction: column; gap: .15rem; }
 .stat b { font-family: var(--f-display); font-size: 1.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .stat small { font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+
+/* ---------- the weekly reps chart ---------- */
+
+.wk-chart { display: block; width: 100%; height: auto; }
+.wk-base { stroke: var(--rule-2); stroke-width: .5; }
+.wk-bar { fill: var(--jade); }
+.wk-label { fill: var(--ink-3); font-size: 7px; font-family: var(--f-pin); }
 
 /* the streak calendar: every day is a 田字格 square that fills with ink */
 .cal-wrap { overflow-x: auto; padding: .2rem 0 .4rem; }
@@ -713,6 +720,9 @@ code {
   display: none; flex-direction: column;
 }
 .sheetview.on { display: flex; animation: rise .25s ease both; }
+/* Above the sheet it opens on top of (55) rather than replacing it — see
+   openCharPeek in songs.js. */
+.char-peek { z-index: 92; }
 .sv-bar { display: flex; align-items: center; gap: .7rem; padding: .7rem 1rem; border-bottom: 1px solid var(--rule-2); }
 .sv-title { font-family: var(--f-display); font-weight: 600; flex: 1; }
 .sv-body { flex: 1; overflow-y: auto; }
@@ -758,6 +768,14 @@ code {
 /* Settings lives in a 17rem rail on wide screens — a label, a dropdown and a
    button never fit on one line there, so this row stacks instead. */
 .settings-row.stacked { flex-direction: column; align-items: stretch; }
+/* .settings-row > label's flex-basis (8rem) means width in the default row
+   layout above — the right amount of room to leave the label before the
+   control starts. In a stacked, column-direction row the main axis is
+   height, not width, so the same 8rem became a height the label tried to
+   grow into: a two-line label sitting in a box tall enough for eight or
+   nine, with the control pushed down into the gap. Content decides the
+   label's height here; nothing about it should flex. */
+.settings-row.stacked > label { flex: none; }
 .settings-row.stacked .voice-pick { width: 100%; }
 .settings-row.stacked .voice-pick select { flex: 1 1 auto; min-width: 0; max-width: none; }
 .settings-row:last-of-type { border-bottom: 0; }
@@ -1275,17 +1293,25 @@ code {
    both, so a character lighting up here is the same code path, not a
    second one to keep in step with the first.
    ============================================================ */
-.song-grid { display: grid; grid-template-columns: 1fr; gap: .6rem; margin-top: .8rem; }
-@media (min-width: 480px) { .song-grid { grid-template-columns: 1fr 1fr; } }
+/* A card per song, roughly square rather than a full-width row — closer to
+   the flashcard-deck tiles than to a list, since a roster you're picking
+   from by glancing at a ring reads better as a grid of them. auto-fill
+   rather than a fixed count so a roster of two still gets small cards
+   instead of two halves of the row. */
+.song-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: .6rem; margin-top: .8rem; }
 .song-card {
-  display: flex; align-items: center; gap: .65rem; text-align: left;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .4rem; text-align: center; aspect-ratio: 1;
   background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px;
-  padding: .7rem .8rem; cursor: pointer; color: inherit; font: inherit;
+  padding: .8rem; cursor: pointer; color: inherit; font: inherit;
 }
 .song-card:hover { border-color: var(--ink-3); box-shadow: var(--shadow); }
-.song-card-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
-.song-card-body b { font-family: var(--f-display); font-size: .96rem; }
-.song-card-body small { font-size: .74rem; color: var(--ink-3); }
+.song-card-body { display: flex; flex-direction: column; align-items: center; gap: .1rem; min-width: 0; width: 100%; }
+.song-card-body b {
+  font-family: var(--f-display); font-size: .88rem; width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.song-card-body small { font-size: .7rem; color: var(--ink-3); }
 
 .song-lines { display: flex; flex-direction: column; gap: .15rem; margin: .8rem 0; }
 .song-line {
@@ -1295,6 +1321,9 @@ code {
 }
 .song-line:hover { background: var(--sunken); }
 .song-line.said { background: var(--seal-wash); }
+.song-actions { display: flex; gap: .5rem; }
+.song-actions .btn { flex: 1; }
+.song-sort { margin-top: .8rem; }
 .menu-legend b { font-family: var(--f-han-ui); font-weight: 400; font-size: .95rem; cursor: default; }
 /* the line under the bar: the number you can check by looking at the card */
 .menu-read { margin: .45rem 0 0; line-height: 1.6; }
@@ -1577,6 +1606,12 @@ code {
 }
 .wp-page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #wpInk { cursor: crosshair; }
+/* Without an explicit CSS size, a <canvas> renders at its width/height
+   ATTRIBUTE values (the pixel buffer wpmSizeInk sets, dpr-scaled) rather
+   than the box its container actually has — so the box stayed the right
+   width but ballooned to roughly double its height, the ratio a 2x screen's
+   dpr would produce. Same fix as .wp-page canvas above. */
+#wpmInk { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
 .wp-page.padding-on { cursor: none; }
 .wp-page.padding-on { box-shadow: 0 0 0 3px var(--jade-wash), var(--shadow); }
 
@@ -1722,17 +1757,10 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .solid-def b { color: var(--ink-2); font-weight: 600; }
 
 
+/* Four modes: Reading, the merged Writing tile (see .pr-write), Build the
+   word and Pronunciation. */
 .pr-grid-4 { grid-template-columns: 1fr 1fr; }
 @media (min-width: 620px) { .pr-grid-4 { grid-template-columns: repeat(4, 1fr); } }
-
-/* Five modes, once "build the word" and the two-character write joined
-   reading, writing and pronunciation — two columns until there is room for
-   more than three, the same staged widening .pr-grid-3 and .pr-grid-4 already
-   use, so a fifth tile never has to fight the first four for space at a
-   width that could not hold it. */
-.pr-grid-5 { grid-template-columns: 1fr 1fr; }
-@media (min-width: 620px) { .pr-grid-5 { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 900px) { .pr-grid-5 { grid-template-columns: repeat(5, 1fr); } }
 
 /* Three modes, three columns. This was never defined, so the row inherited
    .pr-grid's four and left a quarter of the sheet empty beside it — and the
@@ -1764,6 +1792,29 @@ button.todo:hover:not(:disabled) { background: var(--sunken); }
 .pr-meter .s2 { background: color-mix(in srgb, var(--jade) 58%, var(--rule-2)); }
 .pr-meter .s1 { background: color-mix(in srgb, var(--jade) 28%, var(--rule-2)); }
 .pr-meter .s0 { background: var(--rule-2); }
+
+/* The merged writing tile: a toggle row on top (1 char / 2 chars), the same
+   ring-and-meter row every other Go-deeper tile has underneath. .pr-write
+   overrides .pr-deep's row layout back to a column for that stacking; the
+   hover-lift that .pr normally gives a whole tile moves to the hit button,
+   since lifting the toggle along with it read as though the toggle itself
+   were about to do something when tapped. */
+.pr-write { flex-direction: column; align-items: stretch; gap: .5rem; cursor: default; }
+.pr-write:hover { transform: none; border-color: var(--rule); box-shadow: none; }
+.pr-write-pick { display: flex; gap: .3rem; }
+.pr-write-opt {
+  flex: 1; padding: .3rem .4rem; border-radius: 7px; border: 1px solid var(--rule);
+  background: var(--paper); color: var(--ink-3); font-size: .68rem; font-weight: 600;
+  text-align: center; cursor: pointer;
+}
+.pr-write-opt.on { background: var(--sunken); color: var(--ink); border-color: var(--ink-3); }
+.pr-write-hit {
+  display: flex; flex-direction: row; align-items: center; gap: .65rem;
+  border: 0; background: none; padding: 0; width: 100%; text-align: left;
+  color: inherit; font: inherit; cursor: pointer; border-radius: 6px;
+}
+.pr-write-hit:hover:not(:disabled) { background: var(--sunken); }
+.pr-write-hit:disabled { opacity: .45; cursor: default; }
 
 /* ---------- practice diary ---------- */
 
@@ -1922,6 +1973,10 @@ input[type="file"].search { padding: .5rem; font-size: .8rem; }
 }
 #voiceMsgRow { display: block; }
 #voiceMsgRow[hidden] { display: none; }
+
+.leniency-pick { display: flex; align-items: center; gap: .7rem; width: 100%; }
+.leniency-pick input[type="range"] { flex: 1; accent-color: var(--seal); }
+.leniency-pick small { flex: none; min-width: 8.5rem; text-align: right; color: var(--ink-2); }
 
 /* Four short options sit in one row on a wide screen, so 1-2-3-4 on the
    keyboard runs left to right the way the numbers read. Below that width
@@ -2585,18 +2640,38 @@ button.tier-head:hover { border-color: var(--ink-3); }
 
 /* ---------- the board ---------- */
 
+/* Less padding than a default .sheet, and the two lists inside it (top 5,
+   latest 10) sit close under their own eyebrows rather than each carrying
+   a full section's worth of air — the board is a sidebar column, not a
+   page of its own, and used to read like one anyway. */
+.sp-board-sheet { padding: .8rem .9rem; }
 .sp-board { display: flex; flex-direction: column; gap: 0; }
+.sp-board-tight .sp-board-row { padding: .3rem 0; }
+/* Capped rather than left to run to ten rows' worth of height — a sidebar
+   column that grows past the practice list beside it stops reading as a
+   sidebar. About six rows show before it scrolls. */
+.sp-board-scroll { max-height: 13rem; overflow-y: auto; }
 .sp-board-row {
   display: flex; align-items: center; gap: .6rem;
   padding: .45rem 0; border-bottom: 1px solid var(--rule-2);
 }
 .sp-board-row:last-child { border-bottom: 0; }
-.sp-board-k { font-family: var(--f-han-ui); font-size: 1rem; color: var(--ink-3); flex: none; }
+.sp-board-k { font-family: var(--f-han-ui); font-size: .92rem; color: var(--ink-3); flex: none; }
 .sp-board.best .sp-board-k, .sp-board-row.best .sp-board-k { color: var(--seal); }
 .sp-board-body { display: flex; flex-direction: column; gap: .05rem; flex: 1; min-width: 0; }
-.sp-board-body b { font-size: .88rem; font-variant-numeric: tabular-nums; }
-.sp-board-body small { font-size: .7rem; color: var(--ink-3); }
-.sp-board-star { color: var(--gold); font-size: .85rem; flex: none; }
+.sp-board-body b { font-size: .82rem; font-variant-numeric: tabular-nums; }
+.sp-board-body small { font-size: .66rem; color: var(--ink-3); }
+.sp-board-star { color: var(--gold); font-size: .8rem; flex: none; }
+
+/* ---------- the spider ---------- */
+
+.sp-radar { display: block; width: 100%; max-width: 11rem; margin: 0 auto; }
+.sp-radar-ring { fill: none; stroke: var(--rule-2); stroke-width: .5; }
+.sp-radar-spoke { stroke: var(--rule-2); stroke-width: .5; }
+.sp-radar-shape { fill: color-mix(in srgb, var(--jade) 22%, transparent); stroke: var(--jade); stroke-width: 1.4; stroke-linejoin: round; }
+.sp-radar-dot { fill: var(--jade); stroke: var(--sheet); stroke-width: 1; }
+.sp-radar-dot.off { fill: var(--rule); }
+.sp-radar-label { fill: var(--ink-3); font-size: 7px; font-family: var(--f-han-ui); }
 
 @media (min-width: 860px) {
   .sp-inner { max-width: 44rem; }
@@ -3383,7 +3458,7 @@ button.tier-head:hover { border-color: var(--ink-3); }
   .drawer-sheet {
     position: absolute; left: 50%; bottom: calc(1rem + env(safe-area-inset-bottom));
     transform: translateX(-50%);
-    width: min(96vw, 30rem); max-width: calc(100vw - 1rem);
+    width: min(94vw, 26rem); max-width: calc(100vw - 1.6rem);
     background: var(--paper); border: 1px solid var(--rule-2); border-radius: 999px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, .22);
     padding: .55rem .4rem calc(.55rem + env(safe-area-inset-bottom));
@@ -3401,25 +3476,27 @@ button.tier-head:hover { border-color: var(--ink-3); }
      horizontal line becomes a vertical one here, which if anything reads
      more naturally beside things arranged left to right. */
   .drawer-nav {
-    display: flex; align-items: stretch; gap: .7rem;
+    display: flex; align-items: stretch; gap: .2rem;
     overflow-x: auto; scroll-snap-type: x mandatory;
-    padding: 0 .5rem; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
+    padding: 0 .3rem; -webkit-overflow-scrolling: touch;
   }
   .drawer-nav::-webkit-scrollbar { display: none; }
   .drawer-nav button {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem;
-    /* snap-stop: a flick moves one button and settles, rather than coasting
-       past three and landing wherever momentum ran out */
-    flex: none; scroll-snap-align: center; scroll-snap-stop: always;
-    /* wide enough for "Radicals" at the larger size without wrapping, with
-       gap enough between buttons that a tap lands on one or the other */
-    width: 5.8rem; min-height: 4.4rem; padding: .5rem .3rem; border: 0; border-radius: 16px;
-    background: none; color: var(--ink-2); font-size: .86rem; text-align: center; line-height: 1.2;
+    flex: none; scroll-snap-align: center;
+    /* wide enough for two rows of a label that may run to "Radicals" without
+       wrapping, narrow enough that the next chip's edge still shows. Fully
+       rounded rather than a softened square, so a row of them reads as a
+       wheel of beads rather than a shelf of tiles — and drawerNavTick's
+       scale/fade as each one nears the edge sells the same idea in motion. */
+    width: 4.6rem; min-height: 3.6rem; padding: .4rem .3rem; border: 0; border-radius: 999px;
+    background: none; color: var(--ink-2); font-size: .68rem; text-align: center; line-height: 1.2;
+    transition: transform .1s ease, opacity .1s ease;
   }
-  .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.35rem; color: var(--ink-3); }
+  .drawer-nav button .nz { font-family: var(--f-han-ui); font-size: 1.05rem; color: var(--ink-3); }
   .drawer-nav button.on { background: var(--sunken); color: var(--ink); font-weight: 500; }
   .drawer-nav button.on .nz { color: var(--seal); }
-  .drawer-rule { display: block; flex: none; width: 1px; margin: .5rem 0; background: var(--rule-2); }
+  .drawer-rule { display: block; flex: none; width: 1px; margin: .3rem .1rem; background: var(--rule-2); }
 
   /* The bottom bar used to hold 5.5rem of the page open under everything. It
      is gone, and so is the gap it was keeping clear. */
@@ -3573,10 +3650,24 @@ button.tier-head:hover { border-color: var(--ink-3); }
      rule above: the button beside it needs real width too, not the sliver
      that would be left over from a box sized to fill the column on its own. */
   .wp-tools, .wp-page, .wp-foot, .wp-note-desktop { display: none; }
-  .wp-mobile { display: flex; align-items: stretch; gap: .8rem; margin-bottom: .5rem; }
-  .wp-mobile .writer-box { flex: none; width: min(52vw, 15rem, 40dvh); }
-  .wp-mobile-side { display: flex; flex-direction: column; justify-content: center; gap: .5rem; flex: 1; min-width: 0; }
-  .wp-mobile-side .btn { width: 100%; }
+  /* Stacked, not side by side: the box no longer has to leave room for a
+     button column beside it, so it takes the same size the drill's own
+     writer-box does (see the rule above), and Add to page / Clear sit under
+     it in a row instead — the layout TODO.md actually asked for. */
+  .wp-mobile { display: flex; flex-direction: column; align-items: center; gap: .7rem; margin-bottom: .5rem; }
+  .wp-mobile .writer-box { width: min(100%, 24rem, 44dvh); }
+  /* Without this, a drag that starts on the canvas can still be read as a
+     page scroll (see wpmBindInk in js/app.js) — and each time it is, dvh
+     units resize against the address bar hiding, which grows the box, which
+     grows the page, which leaves more room to scroll next time. One swipe
+     that leaks becomes a page that is visibly longer by the next one. */
+  .wp-mobile .writer-box .tian { touch-action: none; }
+  .wp-mobile-tools { display: flex; width: 100%; max-width: 24rem; gap: .5rem; }
+  .wp-mobile-tools .wp-field { flex: 1; justify-content: center; }
+  .wp-mobile-tools .wp-field select { flex: 1; min-width: 0; }
+  .wp-mobile-actions { display: flex; width: 100%; max-width: 24rem; gap: .5rem; }
+  .wp-mobile-actions .btn { flex: 1; }
+  .wp-mobile-actions .btn#wpmAdd { flex: 2; }
   .wp-mobile-status, .wp-note-mobile { display: block; }
   .wp-mobile-status { text-align: center; margin: 0 0 .9rem; }
 
@@ -3639,6 +3730,12 @@ button.tier-head:hover { border-color: var(--ink-3); }
     padding-left: 2.2rem; padding-right: 2.2rem; min-height: 6rem;
   }
   :root[data-opt-cols="row"] .opts.grid2 .opt .big { font-size: 3.6rem; }
+
+  /* Four stat tiles across is the same squeeze as four answer options —
+     "Time studied" is the longest label here, and at this width it wrapped
+     itself and its value ("under a minute") into three lines apiece rather
+     than the one every other tile got. Two by two instead. */
+  .stats { grid-template-columns: 1fr 1fr; }
 }
 
 /* the manual's contents, two narrow columns on a phone */
