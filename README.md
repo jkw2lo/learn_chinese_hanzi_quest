@@ -20,6 +20,7 @@ is deploying, and it goes live in under a minute.
     node tools/check-components.mjs
     node tools/check-strokes.mjs
     node tools/version.mjs patch      # or minor / major
+    # a minor or major bump needs a note at the top of js/news.js
     git add -A && git commit && git push
 
 **Bump the version every time.** A browser that has cached `js/app.js` keeps
@@ -998,6 +999,15 @@ README: what the app does, not why the code is shaped as it is. It lives in
 it, so changing `INTERVALS` or `REST_PER_WEEK` changes the manual too. When you
 add a feature, add or extend a section there — the smoke test won't catch a
 missing paragraph. Other screens can link into it with `data-manual="<id>"`.
+
+**What's new** is the manual's first section, and **Every release so far** its
+last. Both read `RELEASES` in `js/news.js`: one entry per minor version,
+written for someone studying, not for someone reading the diff — patches fold
+into the minor they shipped with. After an update, Today shows a one-line strip
+until the notes are opened or dismissed (`state.seenNews`); a brand-new record
+is never told about an update it didn't live through. The smoke test fails if
+the top entry isn't the current major.minor, so a minor bump can't ship
+without a note.
 
 ## Settings and the tour
 

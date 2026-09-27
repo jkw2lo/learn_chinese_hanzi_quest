@@ -30,6 +30,7 @@ whatever the Cantonese app writes.
 | **M3** | Sprint picker tidy | `css/app.css`, `js/sprint.js` | mostly mobile |
 | **X1** | Repair rounds actually write | `js/app.js` | behaviour, all platforms |
 | **X2** | `startTodayDrill` left `session.repair` set | `js/app.js` | bug |
+| **H2** | What's new and the release archive — [see below](#h2--whats-new-and-every-release-so-far-1150) | new `js/news.js`, `js/manual.js`, `js/app.js`, `js/srs.js`, `css/app.css`, `tools/smoke.mjs` | new, 1.15.0 |
 | **H1** | The in-app manual — [see below](#h1--the-manual-1140) | new `js/manual.js`, `js/app.js`, `css/app.css`, `index.html` | new, 1.14.0 |
 | **R1–R3** | Welcome back, retention wins, rest days — [see below](#r--review-without-the-grind-1130) | `js/srs.js`, `js/app.js`, `css/app.css` | new, 1.13.0 |
 
@@ -481,6 +482,23 @@ of `css/app.css` (`.welcome`, `.wins`, `.day.rest`). No new files.
 归 (the welcome card's glyph — "return") and 温故知新 (the Record sheet's
 label — "review the old to know the new"). Both read the same in Traditional
 except 归 → 歸.
+
+---
+
+## H2 — What's new, and every release so far (1.15.0)
+
+`js/news.js` holds `RELEASES`, one user-facing entry per minor version, newest
+first. The manual opens with **What's new** (everything since the version you
+last saw) and ends with **Every release so far**. Today shows a one-line
+strip after an update until you open the notes or dismiss it; `state.seenNews`
+records what was seen, and a fresh record is stamped current silently so a new
+user isn't told about an "update". A smoke check ties the top entry to
+`APP_VERSION`'s major.minor.
+
+**The Cantonese app needs its own history, not this one** — its releases and
+dates differ. Port the mechanism (`news.js` helpers, the strip, the two
+sections, the smoke check) and write `RELEASES` from its own git log, grouped
+by minor version. `git log -G'APP_VERSION = ' -- index.html` lists every bump.
 
 ---
 

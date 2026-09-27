@@ -3318,6 +3318,22 @@ button.tier-head:hover { border-color: var(--ink-3); }
 .man-gloss td.pin { color: var(--ink-3); white-space: nowrap; }
 .welcome-links { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
 
+/* 新 — one line on Today after an update, and the release notes in the manual */
+.news-strip { display: flex; align-items: center; gap: .6rem; margin-bottom: .8rem; padding: .45rem .7rem;
+  border: 1px solid color-mix(in srgb, var(--seal) 30%, var(--rule-2)); border-radius: 10px;
+  background: color-mix(in srgb, var(--seal) 6%, var(--paper)); font-size: .82rem; color: var(--ink-2); }
+.news-k { color: var(--seal); font-size: 1rem; }
+.news-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.news-strip .link-btn { flex: none; white-space: nowrap; }
+.news-t b { color: var(--ink); font-weight: 600; }
+.news-x { flex: none; background: none; border: 0; padding: 0 .2rem; color: var(--ink-3); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+.news-x:hover { color: var(--ink); }
+.man-rel { padding: .7rem 0; border-top: 1px solid var(--rule-2); }
+.man-rel:first-of-type { border-top: 0; }
+.man-rel-head { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; flex-wrap: wrap; margin-bottom: .3rem; }
+.man-rel-head .dim { font-size: .76rem; font-variant-numeric: tabular-nums; }
+.man-rel ul { margin: 0; }
+
 /* ============================================================
    On a phone
    ============================================================

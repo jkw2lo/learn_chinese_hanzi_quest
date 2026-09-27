@@ -75,6 +75,7 @@ const blank = () => ({
   focus: {},            /* characters chosen for a writing round, by mode — see practiceFocus */
   rests: {},            /* days a rest covered, keyed by date — see restCover */
   welcome: null,        /* the last welcome-back offer, and what it moved — see welcomeOffer */
+  seenNews: null,       /* the release you were last shown — see newsUnseen in news.js */
   name: "",
   interests: [],
   profiled: false,

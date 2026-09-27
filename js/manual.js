@@ -21,7 +21,29 @@ const manPct = x => `${Math.round(x * 100)}%`;
 const manKb = k => `<kbd class="opt-n">${k}</kbd>`;
 const manHz = s => `<span class="han">${s}</span>`;
 
+/* the version last seen before this opening of the manual — opening it
+   marks the news read, and "since you last looked" has to be asked first */
+let manualSeenBefore = null;
+
+const releaseHtml = r => `<div class="man-rel">
+  <div class="man-rel-head"><b>${esc(r.title)}</b><span class="dim">${esc(r.v)} · ${esc(
+    new Date(r.date + "T12:00").toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }))}</span></div>
+  <ul>${r.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>
+</div>`;
+
 const MANUAL = [
+  {
+    id: "news", k: "新", title: "What's new", sub: "The latest changes to the app",
+    body: () => {
+      const fresh = releasesSince(manualSeenBefore);
+      const list = fresh.length ? fresh : [latestRelease()];
+      return `<p>${fresh.length > 1
+          ? `${fresh.length} updates since you last looked, newest first.`
+          : `You're on version ${esc(appVersion())}.`}
+        The full history is in <a data-man="archive">Every release so far</a>.</p>
+        ${list.map(releaseHtml).join("")}`;
+    }
+  },
   {
     id: "idea", k: "总览", title: "The idea", sub: "What this app is doing, in one page",
     body: () => `
@@ -432,6 +454,14 @@ const MANUAL = [
       </table>`
   },
   {
+    id: "archive", k: "历程", title: "Every release so far", sub: "How the app got here, newest first",
+    body: () => `
+      <p>${RELEASES.length} releases since the first version on ${esc(new Date(RELEASES[RELEASES.length - 1].date + "T12:00")
+        .toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }))}. Smaller fixes are folded into
+        the release they came with.</p>
+      ${RELEASES.map(releaseHtml).join("")}`
+  },
+  {
     id: "settings", k: "设置", title: "Settings, one by one", sub: "What each switch does",
     body: () => `
       <table class="man-table man-rules">
@@ -454,6 +484,8 @@ const MANUAL = [
 /* ---------- the sheet ---------- */
 
 function openManual(section) {
+  manualSeenBefore = state.seenNews || null;
+  newsSeen();
   openSheet(`<span class="han">使用说明</span> How Hanzi Quest works`, `<div class="wrap"><div class="section manual">
     <button class="link-btn man-back" id="manBack">← Settings</button>
     <p class="note">Everything the app does and why, for when you want to know. None of it is needed to use the app —

@@ -3930,7 +3930,14 @@ function renderToday() {
     </div>`;
 
   /* ---- the invitation ---- */
+  const news = newsUnseen() ? latestRelease() : null;
   const hero = `<div class="hero">
+    ${news ? `<div class="news-strip">
+      <span class="han news-k" aria-hidden="true">新</span>
+      <span class="news-t">Updated: <b>${esc(news.title)}</b></span>
+      <button class="link-btn" data-manual="news">See what's new</button>
+      <button class="news-x" id="newsX" aria-label="Dismiss">×</button>
+    </div>` : ""}
     <div class="hero-top">
       ${ring}
       <div class="hero-head">
@@ -4231,6 +4238,7 @@ function renderToday() {
   });
   $("#startBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) startSession(); });
   $("#welcomeAll")?.addEventListener("click", () => { welcomeDecline(); renderToday(); });
+  $("#newsX")?.addEventListener("click", () => { newsSeen(); renderToday(); });
   $("#welcomeUndo")?.addEventListener("click", () => { welcomeUndo(); renderToday(); });
   $("#aheadBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) { studyAhead(5); startSession(); } });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
