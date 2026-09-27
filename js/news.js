@@ -22,7 +22,7 @@ const RELEASES = [
     v: "1.16", date: "2026-09-27", title: "Bigger text, bigger menu",
     items: [
       "Settings → Text size: five steps from Default to Largest. It really enlarges the text rather than zooming the page — buttons and spacing grow with the words so nothing spills out, titles grow more gently so they stay on one line, and grids drop to fewer columns when they need to.",
-      "It's saved on each device separately, so your phone can use large text while your laptop stays as it is.",
+      "It's saved on each device separately, so your phone can use large text while your laptop stays as it is. Phones start one step up, at Larger, until you choose.",
       "On a phone, the menu button and the section menu are bigger, with larger labels that are easier to read and tap."
     ]
   },

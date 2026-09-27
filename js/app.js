@@ -4997,9 +4997,13 @@ const TEXT_SIZES = [
   { v: 1.4,  label: "Very large" },
   { v: 1.6,  label: "Largest" }
 ];
+/* Until someone chooses, a phone starts at Larger: the default size was
+   drawn on a laptop and reads small in the hand. Same line in index.html,
+   which has to decide before app.js has loaded. */
+const TEXT_SIZE_PHONE = 1.12;
 function textSize() {
   try { const v = +localStorage.getItem(TEXT_SIZE_KEY); if (TEXT_SIZES.some(t => t.v === v)) return v; } catch {}
-  return 1;
+  return matchMedia("(max-width: 859.98px)").matches ? TEXT_SIZE_PHONE : 1;
 }
 function setTextSize(v) {
   try { localStorage.setItem(TEXT_SIZE_KEY, String(v)); } catch { /* storage unavailable — applies for this visit */ }

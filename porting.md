@@ -509,7 +509,9 @@ things make it hold up:
 
 Stored in `localStorage["hq-text-size"]`, **not** the synced record: a phone
 and a laptop want different sizes. An inline script in `<head>` applies it
-before first paint. Also `body` went from `15px` to `.9375rem` so it scales.
+before first paint. Until a size is chosen, a phone (max-width 859.98px)
+starts at 1.12 — both in that inline script and in `textSize()`, which must
+agree. Also `body` went from `15px` to `.9375rem` so it scales.
 
 The phone menu: burger 56 → 64px, drawer buttons `min(6.2rem, 29vw)` wide
 with .88rem labels and 1.5rem glyphs, sheet up to 34rem.

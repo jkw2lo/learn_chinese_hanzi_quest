@@ -475,7 +475,7 @@ const MANUAL = [
       <table class="man-table man-rules">
         <tr><th>Text size</th><td>Five steps from Default to Largest (160%). The text really gets bigger — buttons and
           spacing grow with it, titles grow more gently to stay on one line, and layouts re-flow to fit. Saved on this
-          device only.</td></tr>
+          device only; a phone starts at Larger until you choose.</td></tr>
         <tr><th>New characters a day</th><td>${GOAL_MIN}–${GOAL_MAX}; you're on ${state.goalNew}. Reviews compound, so
           more isn't better.</td></tr>
         <tr><th>Question timer</th><td>The draining bar and the ${manHz("快")} badge. Running out never costs anything.</td></tr>

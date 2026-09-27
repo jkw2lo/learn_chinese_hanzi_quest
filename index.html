@@ -13,7 +13,9 @@
      localStorage rather than in the synced record — a phone wants larger
      type than the laptop the same person studies on. See TEXT_SIZES. -->
 <script>try { var ts = +localStorage.getItem("hq-text-size");
-  if (ts >= 1 && ts <= 2) document.documentElement.style.setProperty("--ts", ts); } catch (e) {}</script>
+  /* nothing chosen yet: a phone starts a step up — see TEXT_SIZE_PHONE */
+  if (!(ts >= 1 && ts <= 2)) ts = matchMedia("(max-width: 859.98px)").matches ? 1.12 : 1;
+  document.documentElement.style.setProperty("--ts", ts); } catch (e) {}</script>
 <script>const APP_VERSION = "1.16.0", APP_DATE = "2026-09-27";</script>
 <!-- Before everything else it could possibly report on. js/diag.js registers
      the error handlers, so a script below that fails to parse or fails to
