@@ -72,6 +72,7 @@ const blank = () => ({
      be that, since nothing about it is positional. See mergeState. */
   songs: {},
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
+  focus: {},            /* characters chosen for a writing round, by mode — see practiceFocus */
   name: "",
   interests: [],
   profiled: false,

@@ -943,7 +943,108 @@ const write2Words = ch => (ch.words || []).filter(w =>
    writable ones used to hand a short round back, and quietly broke the split
    it had just been at pains to get right. */
 const ROUND = 10;
-const practiceRound = mode => practicePool(PRACTICE[mode].skill, ROUND, practiceChars(mode));
+const practiceRound = mode => {
+  const chosen = practiceFocus(mode);
+  if (chosen.length) return chosen.length <= FOCUS_ROUND
+    ? shuffle([...chosen])
+    : practicePool(PRACTICE[mode].skill, FOCUS_ROUND, chosen);
+  return practicePool(PRACTICE[mode].skill, ROUND, practiceChars(mode));
+};
+
+/* ---------- choosing what to write ----------
+
+   The writing rounds pick the shakiest characters on their own, which is
+   right most days and wrong on the day you notice last Tuesday's five have
+   gone soft. The chooser lets you name them. Whatever is chosen is kept, so
+   "Again" at the end of a round — and the next visit — draws on the same
+   set until it is cleared. Nothing chosen means the old behaviour exactly.
+
+   A chosen set is played whole, shuffled, up to FOCUS_ROUND. Past that it is
+   a pool like any other, and the usual shakiest-first rule picks from it. */
+const FOCUS_MODES = ["write", "write2"];
+const FOCUS_ROUND = 20;
+const practiceFocus = mode => {
+  const ok = new Set(practiceChars(mode));
+  return ((state.focus || {})[mode] || []).filter(c => ok.has(c));
+};
+
+const focusUi = { mode: null, sel: new Set() };
+
+function openFocus(mode) {
+  focusUi.mode = mode;
+  focusUi.sel = new Set(practiceFocus(mode));
+  $("#focus").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderFocus();
+}
+
+function closeFocus() {
+  $("#focus").classList.remove("on");
+  if (!session.active) document.body.style.overflow = "";
+}
+
+function focusGroups(mode) {
+  const by = {};
+  practiceChars(mode).forEach(c => {
+    const d = (rec(c) && rec(c).first) || "0000-00-00";
+    (by[d] = by[d] || []).push(c);
+  });
+  return Object.keys(by).sort().reverse().map(d => ({ d, label: dayLabel(d), chars: by[d] }));
+}
+
+function renderFocus() {
+  const mode = focusUi.mode, cfg = PRACTICE[mode], sel = focusUi.sel;
+  const groups = focusGroups(mode);
+  const n = sel.size;
+  $("#focusK").textContent = cfg.k;
+  $("#focusTitle").textContent = `${cfg.name} — which characters?`;
+  $("#focusBody").innerHTML = `
+    <p class="note">Tap the ones you want to refresh, or a day to take all of it. Leave it empty and the round
+      picks your shakiest ${ROUND} instead.</p>
+    <div class="focus-groups">${groups.map(g => {
+      const on = g.chars.filter(c => sel.has(c)).length;
+      return `<div class="focus-group">
+        <button class="focus-day ${on === g.chars.length ? "on" : on ? "some" : ""}" data-focus-day="${esc(g.d)}">
+          <span>${esc(g.label)}</span><span class="focus-day-n">${on ? `${on}/` : ""}${g.chars.length}</span>
+        </button>
+        <div class="pick-grid focus-grid">${g.chars.map(c => `<button class="pick ${sel.has(c) ? "on" : ""}"
+          data-focus-c="${esc(c)}" aria-pressed="${sel.has(c)}"
+          title="${esc(CHAR_INDEX[c].p)} · ${esc(CHAR_INDEX[c].m)}">${esc(c)}</button>`).join("")}</div>
+      </div>`;
+    }).join("")}</div>`;
+  $("#focusCount").textContent = n
+    ? `${n} chosen${n > FOCUS_ROUND ? ` · ${FOCUS_ROUND} a round` : ""}`
+    : `Shakiest ${ROUND}`;
+  $("#focusClear").hidden = !n;
+  $("#focusGo").textContent = n ? `Write these ${Math.min(n, FOCUS_ROUND)}` : "Start";
+
+  $$("#focus [data-focus-c]").forEach(b => b.onclick = () => {
+    const c = b.dataset.focusC;
+    sel.has(c) ? sel.delete(c) : sel.add(c);
+    renderFocusKeepScroll();
+  });
+  $$("#focus [data-focus-day]").forEach(b => b.onclick = () => {
+    const g = groups.find(x => x.d === b.dataset.focusDay);
+    const all = g.chars.every(c => sel.has(c));
+    g.chars.forEach(c => all ? sel.delete(c) : sel.add(c));
+    renderFocusKeepScroll();
+  });
+}
+
+/* a tap two screens down the list should not throw you back to the top */
+function renderFocusKeepScroll() {
+  const box = $("#focusBody"), y = box.scrollTop;
+  renderFocus();
+  box.scrollTop = y;
+}
+
+function focusStart() {
+  const mode = focusUi.mode;
+  state.focus = { ...(state.focus || {}), [mode]: [...focusUi.sel] };
+  save();
+  closeFocus();
+  startPractice(mode);
+}
 
 function startPractice(mode) {
   const cfg = PRACTICE[mode];
@@ -3998,7 +4099,8 @@ function renderToday() {
              : id === "write2" ? "No two-character word you can read yet has stroke data for both characters"
              : id === "build" ? "No two-character word you can read yet"
              : "Learn a character first")
-          : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}`;
+          : `${st.solid} of ${st.total} solid${st.partway ? ` · ${st.partway} part-way` : ""}${
+              FOCUS_MODES.includes(id) && practiceFocus(id).length ? ` · ${practiceFocus(id).length} chosen` : ""}`;
         return `<button class="pr pr-deep" data-practice="${id}" ${n ? "" : "disabled"}
           title="${chars.length
             ? `${st.passes} of ${st.goal} clean passes · solid means ${PASSES_FOR_SOLID} correct answers for a character in this mode`
@@ -4072,7 +4174,10 @@ function renderToday() {
     if (rail) rail.scrollBy({ left: +b.dataset.lt * rail.clientWidth * 0.8, behavior: "smooth" });
   });
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
-  $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
+  $$("#viewToday [data-practice]").forEach(b => b.onclick = () => {
+    const m = b.dataset.practice;
+    FOCUS_MODES.includes(m) ? openFocus(m) : startPractice(m);
+  });
   $$("#viewToday [data-todo]").forEach(b => b.onclick = () => {
     const id = b.dataset.todo;
     if (id === "learn") return startSession();
@@ -6213,6 +6318,9 @@ function openDrawer() {
   d.classList.add("on");
   document.body.style.overflow = "hidden";
   $("#burgerBtn").setAttribute("aria-expanded", "true");
+  /* open settled on where you are, not on whichever end the row last sat at */
+  const on = d.querySelector(".drawer-nav button.on");
+  if (on) on.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
 }
 function closeDrawer() {
   const d = $("#drawer");
@@ -6303,6 +6411,10 @@ function boot() {
     unlockAudio(); primeSpeech(); save(); renderMuted();
     if (lastSaid) setTimeout(() => say(lastSaid, true), 80);
   };
+  $("#focusGo").onclick = focusStart;
+  $("#focusNo").onclick = closeFocus;
+  $("#focusClear").onclick = () => { focusUi.sel.clear(); renderFocus(); };
+  $("#focus").addEventListener("pointerdown", e => { if (e.target === $("#focus")) closeFocus(); });
   $("#askYes").onclick = () => closeAsk(true);
   $("#askNo").onclick = () => closeAsk(false);
   /* clicking the dim backdrop is a cancel, like Escape */
@@ -6320,6 +6432,7 @@ function boot() {
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
+    if ($("#focus").classList.contains("on")) { closeFocus(); return; }
     if ($("#sprintRun").classList.contains("on")) { e.preventDefault(); $("#spClose").click(); return; }
     if (!$("#coach").hidden) { closeCoach(); return; }
     if (!$("#hail").hidden) { closeHail(); return; }
