@@ -30,6 +30,7 @@ whatever the Cantonese app writes.
 | **M3** | Sprint picker tidy | `css/app.css`, `js/sprint.js` | mostly mobile |
 | **X1** | Repair rounds actually write | `js/app.js` | behaviour, all platforms |
 | **X2** | `startTodayDrill` left `session.repair` set | `js/app.js` | bug |
+| **T1** | Text size setting and a bigger phone menu — [see below](#t1--text-size-and-a-bigger-phone-menu-1160) | `css/app.css`, `js/app.js`, `index.html`, `js/news.js`, `js/manual.js` | new, 1.16.0 |
 | **W1** | Choose which characters a writing round draws on (`openFocus`, `state.focus`), opened from Go deeper's Writing tile for either 1 or 2 chars | `js/app.js`, `js/srs.js`, `index.html`, `css/app.css` | new, 1.13.0 |
 | **H2** | What's new and the release archive — [see below](#h2--whats-new-and-every-release-so-far-1150) | new `js/news.js`, `js/manual.js`, `js/app.js`, `js/srs.js`, `css/app.css`, `tools/smoke.mjs` | new, 1.15.0 |
 | **H1** | The in-app manual — [see below](#h1--the-manual-1140) | new `js/manual.js`, `js/app.js`, `css/app.css`, `index.html` | new, 1.14.0 |
@@ -483,6 +484,40 @@ of `css/app.css` (`.welcome`, `.wins`, `.day.rest`). No new files.
 归 (the welcome card's glyph — "return") and 温故知新 (the Record sheet's
 label — "review the old to know the new"). Both read the same in Traditional
 except 归 → 歸.
+
+---
+
+## T1 — Text size, and a bigger phone menu (1.16.0)
+
+**Settings → Text size**, five steps (1, 1.12, 1.25, 1.4, 1.6). It sets `--ts`
+on `<html>` and `html { font-size: calc(100% * var(--ts)) }` does the rest:
+nearly every size in `app.css` is rem, so type, padding, gaps and rem widths
+scale together and text stays inside its buttons. Media queries are px, so
+the phone layout stays the phone layout — this is not page zoom. Three
+things make it hold up:
+
+- **Titles and big glyphs are damped.** `--title-k` grows them at 40% of
+  the body rate. Applied to h1/h2, `.hero-title`, and every font-size of
+  2.4rem or more (the drill characters, flashcards, etc.).
+- **Phone gutters don't grow.** `.wrap` and `.hero` side padding are held at
+  their default px (`calc(Xrem / var(--ts))`) in the phone layer, and the
+  day's ring lets the headline wrap below it.
+- **Fixed two-column grids re-flow.** `.pr-grid` / `.pr-grid-4` use
+  `auto-fit, minmax(min(100%, 9.5rem), 1fr)`. `1fr 1fr` held two columns at
+  160% and pushed the page to 486px wide, which a phone answers by zooming
+  the whole page out. Worth grepping the fork for other `1fr 1fr` grids.
+
+Stored in `localStorage["hq-text-size"]`, **not** the synced record: a phone
+and a laptop want different sizes. An inline script in `<head>` applies it
+before first paint. Until a size is chosen, a phone (max-width 859.98px)
+starts at 1.12 — both in that inline script and in `textSize()`, which must
+agree. Also `body` went from `15px` to `.9375rem` so it scales.
+
+The phone menu: burger 56 → 64px, drawer buttons `min(6.2rem, 29vw)` wide
+with .88rem labels and 1.5rem glyphs, sheet up to 34rem.
+
+Verified at 375px and 160%: no element past the viewport on any tab,
+Settings, the manual or a session; no label wider than its button.
 
 ---
 
