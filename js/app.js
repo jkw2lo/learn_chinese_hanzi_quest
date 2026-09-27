@@ -4983,6 +4983,30 @@ const leniencyIndex = () => {
   return best;
 };
 
+/* ---------- text size ----------
+
+   Kept per device in localStorage, not in the record that syncs: the same
+   person may want 140% on a phone and 100% on a laptop, and a synced value
+   would make every device argue about it. index.html applies it before the
+   first paint; this only changes it. The CSS side is at the top of app.css. */
+const TEXT_SIZE_KEY = "hq-text-size";
+const TEXT_SIZES = [
+  { v: 1,    label: "Default" },
+  { v: 1.12, label: "Larger" },
+  { v: 1.25, label: "Large" },
+  { v: 1.4,  label: "Very large" },
+  { v: 1.6,  label: "Largest" }
+];
+function textSize() {
+  try { const v = +localStorage.getItem(TEXT_SIZE_KEY); if (TEXT_SIZES.some(t => t.v === v)) return v; } catch {}
+  return 1;
+}
+function setTextSize(v) {
+  try { localStorage.setItem(TEXT_SIZE_KEY, String(v)); } catch { /* storage unavailable — applies for this visit */ }
+  document.documentElement.style.setProperty("--ts", v);
+  applyOptCols();
+}
+
 function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
@@ -5003,6 +5027,14 @@ function openSettings() {
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
         <span class="eyebrow" style="margin-bottom:.5rem">Studying ${hanLabel("学习")}</span>
+        <div class="settings-row stacked">
+          <label>Text size<small>Makes the words bigger everywhere, and the buttons and spacing grow with them so nothing
+            spills. On this device only — ${esc(TEXT_SIZES.find(t => t.v === textSize()).label.toLowerCase())} right now.</small></label>
+          <span class="pick-row text-size-pick" id="textSizePick" role="group" aria-label="Text size">
+            ${TEXT_SIZES.map((t, i) => `<button class="filt ${t.v === textSize() ? "on" : ""}" data-ts="${t.v}"
+              aria-label="${t.label}" aria-pressed="${t.v === textSize()}" style="--ts-i:${i}">A</button>`).join("")}
+          </span>
+        </div>
         <div class="settings-row">
           <label>New characters a day<small>More isn't better — reviews compound.</small></label>
           <span class="stepper" id="goalStep">
@@ -5133,6 +5165,12 @@ function openSettings() {
     save(); openSettings();
   });
   $("#timerTgl").onclick = () => { state.timer = !state.timer; save(); openSettings(); };
+  $$("#textSizePick button").forEach(b => b.onclick = () => {
+    const y = $("#svBody").scrollTop;
+    setTextSize(+b.dataset.ts);
+    openSettings();
+    $("#svBody").scrollTop = y;
+  });
   $("#writeTgl").onclick = () => { state.writeDrills = !state.writeDrills; save(); openSettings(); };
   $("#leniencySlider").oninput = e => {
     const lvl = LENIENCY_LEVELS[+e.target.value] || LENIENCY_LEVELS[2];
