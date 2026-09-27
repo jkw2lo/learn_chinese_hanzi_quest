@@ -943,7 +943,108 @@ const write2Words = ch => (ch.words || []).filter(w =>
    writable ones used to hand a short round back, and quietly broke the split
    it had just been at pains to get right. */
 const ROUND = 10;
-const practiceRound = mode => practicePool(PRACTICE[mode].skill, ROUND, practiceChars(mode));
+const practiceRound = mode => {
+  const chosen = practiceFocus(mode);
+  if (chosen.length) return chosen.length <= FOCUS_ROUND
+    ? shuffle([...chosen])
+    : practicePool(PRACTICE[mode].skill, FOCUS_ROUND, chosen);
+  return practicePool(PRACTICE[mode].skill, ROUND, practiceChars(mode));
+};
+
+/* ---------- choosing what to write ----------
+
+   The writing rounds pick the shakiest characters on their own, which is
+   right most days and wrong on the day you notice last Tuesday's five have
+   gone soft. The chooser lets you name them. Whatever is chosen is kept, so
+   "Again" at the end of a round — and the next visit — draws on the same
+   set until it is cleared. Nothing chosen means the old behaviour exactly.
+
+   A chosen set is played whole, shuffled, up to FOCUS_ROUND. Past that it is
+   a pool like any other, and the usual shakiest-first rule picks from it. */
+const FOCUS_MODES = ["write", "write2"];
+const FOCUS_ROUND = 20;
+const practiceFocus = mode => {
+  const ok = new Set(practiceChars(mode));
+  return ((state.focus || {})[mode] || []).filter(c => ok.has(c));
+};
+
+const focusUi = { mode: null, sel: new Set() };
+
+function openFocus(mode) {
+  focusUi.mode = mode;
+  focusUi.sel = new Set(practiceFocus(mode));
+  $("#focus").classList.add("on");
+  document.body.style.overflow = "hidden";
+  renderFocus();
+}
+
+function closeFocus() {
+  $("#focus").classList.remove("on");
+  if (!session.active) document.body.style.overflow = "";
+}
+
+function focusGroups(mode) {
+  const by = {};
+  practiceChars(mode).forEach(c => {
+    const d = (rec(c) && rec(c).first) || "0000-00-00";
+    (by[d] = by[d] || []).push(c);
+  });
+  return Object.keys(by).sort().reverse().map(d => ({ d, label: dayLabel(d), chars: by[d] }));
+}
+
+function renderFocus() {
+  const mode = focusUi.mode, cfg = PRACTICE[mode], sel = focusUi.sel;
+  const groups = focusGroups(mode);
+  const n = sel.size;
+  $("#focusK").textContent = cfg.k;
+  $("#focusTitle").textContent = `${cfg.name} — which characters?`;
+  $("#focusBody").innerHTML = `
+    <p class="note">Tap the ones you want to refresh, or a day to take all of it. Leave it empty and the round
+      picks your shakiest ${ROUND} instead.</p>
+    <div class="focus-groups">${groups.map(g => {
+      const on = g.chars.filter(c => sel.has(c)).length;
+      return `<div class="focus-group">
+        <button class="focus-day ${on === g.chars.length ? "on" : on ? "some" : ""}" data-focus-day="${esc(g.d)}">
+          <span>${esc(g.label)}</span><span class="focus-day-n">${on ? `${on}/` : ""}${g.chars.length}</span>
+        </button>
+        <div class="pick-grid focus-grid">${g.chars.map(c => `<button class="pick ${sel.has(c) ? "on" : ""}"
+          data-focus-c="${esc(c)}" aria-pressed="${sel.has(c)}"
+          title="${esc(CHAR_INDEX[c].p)} · ${esc(CHAR_INDEX[c].m)}">${esc(c)}</button>`).join("")}</div>
+      </div>`;
+    }).join("")}</div>`;
+  $("#focusCount").textContent = n
+    ? `${n} chosen${n > FOCUS_ROUND ? ` · ${FOCUS_ROUND} a round` : ""}`
+    : `Shakiest ${ROUND}`;
+  $("#focusClear").hidden = !n;
+  $("#focusGo").textContent = n ? `Write these ${Math.min(n, FOCUS_ROUND)}` : "Start";
+
+  $$("#focus [data-focus-c]").forEach(b => b.onclick = () => {
+    const c = b.dataset.focusC;
+    sel.has(c) ? sel.delete(c) : sel.add(c);
+    renderFocusKeepScroll();
+  });
+  $$("#focus [data-focus-day]").forEach(b => b.onclick = () => {
+    const g = groups.find(x => x.d === b.dataset.focusDay);
+    const all = g.chars.every(c => sel.has(c));
+    g.chars.forEach(c => all ? sel.delete(c) : sel.add(c));
+    renderFocusKeepScroll();
+  });
+}
+
+/* a tap two screens down the list should not throw you back to the top */
+function renderFocusKeepScroll() {
+  const box = $("#focusBody"), y = box.scrollTop;
+  renderFocus();
+  box.scrollTop = y;
+}
+
+function focusStart() {
+  const mode = focusUi.mode;
+  state.focus = { ...(state.focus || {}), [mode]: [...focusUi.sel] };
+  save();
+  closeFocus();
+  startPractice(mode);
+}
 
 function startPractice(mode) {
   const cfg = PRACTICE[mode];
@@ -952,6 +1053,7 @@ function startPractice(mode) {
   session.queue = pool.map(c => ({ t: "drill", c, kind: one(cfg.kinds) }));
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.kept = new Set(); session.rescued = new Set();
   session.combo = session.bestCombo = 0;
   session.got = {};
   session.times = []; session.quick = 0;
@@ -985,6 +1087,7 @@ function teachOne(c, opts = {}) {
     : [{ t: "intro", c }, { t: "drill", c, kind: "r", fresh: !isKnown(c) }];
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.kept = new Set(); session.rescued = new Set();
   session.combo = session.bestCombo = 0;
   session.got = {};
   session.times = []; session.quick = 0;
@@ -1046,6 +1149,7 @@ function startRepair(chars) {
   session.queue = items;
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.kept = new Set(); session.rescued = new Set();
   session.combo = session.bestCombo = 0;
   session.got = {};
   session.times = []; session.quick = 0;
@@ -1078,6 +1182,7 @@ function buildSession() {
   session.queue = items;
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.kept = new Set(); session.rescued = new Set();
   session.combo = session.bestCombo = 0;
   session.got = {};
   session.times = []; session.quick = 0;
@@ -1119,6 +1224,8 @@ function drillKind(c) {
 }
 
 function startSession() {
+  /* the welcome-back offer is taken by starting — see welcomeOffer in srs.js */
+  if (welcomeOffer()) welcomeTake();
   if (!buildSession().length) return;
   session.active = true;
   hqNote("session", `daily · ${session.queue.length} cards · ${newLeftToday()} new, ${dueCount()} due`);
@@ -1792,6 +1899,20 @@ function settle(item, ch, ok, foot, extra, slips) {
   }
 }
 
+/* What the session kept and rescued, in characters rather than counts — the
+   thing you remembered is more convincing than the number of them. */
+function winsBlock(kept, rescued) {
+  /* a rescue is the bigger news, so a character that was both is listed once, there */
+  kept = new Set([...kept].filter(c => !rescued.has(c)));
+  if (!kept.size && !rescued.size) return "";
+  const row = (label, set) => set.size ? `<div class="wins-row"><span class="wins-lbl">${label}</span>
+    <span class="wins-chars han">${[...set].map(esc).join(" ")}</span></div>` : "";
+  return `<div class="wins">
+    ${row(`Remembered after ${KEPT_GAP}+ days away`, kept)}
+    ${row("Brought back from forgotten", rescued)}
+  </div>`;
+}
+
 function grades(item, ch, ok, foot, extra, slips) {
   const writing = item.kind === "w" || item.kind === "x";
   const elapsed = session.qStart ? Date.now() - session.qStart : 0;
@@ -1802,6 +1923,9 @@ function grades(item, ch, ok, foot, extra, slips) {
   $("#qtimer")?.classList.add("spent");
   session.qStart = 0;
   grade(ch.c, ok, SKILL_OF[item.kind] || "r", { practice: !!session.practice || !!session.repair, gentle: writing });
+  const win = lastWin;
+  if (win && win.kept) session.kept.add(ch.c);
+  if (win && win.rescued) session.rescued.add(ch.c);
   /* A right answer here is worth exactly what a right answer in a sprint is
      worth, and it is the only way a character gets off the 错字本 page. */
   if (session.repair) sprintMark(ch.c, REPAIR_MODE[item.kind] || "r", ok);
@@ -1832,7 +1956,10 @@ function grades(item, ch, ok, foot, extra, slips) {
         : `<b>${esc(ch.c)}</b> · ${esc(ch.p)} · ${esc(ch.m)} — handwriting is its own skill, so this hasn't touched your review schedule.`;
   } else {
     const r0 = rec(ch.c);
-    said = ok ? esc(praise) + (extra ? " " + extra : "")
+    const winNote = !win ? ""
+      : win.rescued ? " Back where it was before you lost it."
+      : ` Still there after ${win.kept >= 28 ? `${Math.floor(win.kept / 7)} weeks` : `${win.kept} days`}.`;
+    said = ok ? esc(praise) + winNote + (extra ? " " + extra : "")
               : `<b>${esc(ch.c)}</b> · ${esc(ch.p)} · ${esc(ch.m)}${isLeech(ch.c)
                   ? ` — that's ${r0.wrong} misses. Another repetition won't fix this one; open the card.`
                   : " — you'll see it again shortly."}`;
@@ -1946,6 +2073,7 @@ function renderDone() {
         ${session.times.length ? `<div><b>${(session.times.reduce((a, b) => a + b, 0) / session.times.length / 1000).toFixed(1)}s</b><small>average</small></div>
         <div><b>${session.quick}</b><small><span class="han">快</span> under ${QUICK_MS / 1000}s</small></div>` : ""}
       </div>`}
+      ${session.menu ? "" : winsBlock(session.kept, session.rescued)}
       ${fixing ? `<button class="btn btn-ghost" id="againFix">Take the next five</button>`
       : prac ? `<button class="btn btn-ghost" id="again">Another ${esc(prac.name.toLowerCase())} round</button>`
       : `<div class="quest-bump">
@@ -3623,15 +3751,17 @@ async function wpDiary() {
 /* ---------- the four-week tracker ---------- */
 
 function renderTracker() {
-  const days = 28, cells = [];
+  const days = 28, cells = [], rests = restDays();
   const start = new Date(); start.setDate(start.getDate() - days + 1);
   for (let i = 0; i < days; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const k = dayKey(d), r = state.days[k], n = dayReps(r);
-    const lvl = n === 0 ? "" : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
-    cells.push(`<span class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></span>`);
+    const lvl = n === 0 ? (rests.has(k) ? "rest" : "") : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
+    cells.push(`<span class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${dayTitle(k, n, rests)}"></span>`);
   }
   const s = liveStreak(), total = daysStudied();
+  const left = restsLeftThisWeek();
+  const kept = winsOver("kept", 7).length, resc = winsOver("resc", 7).length;
   /* No 🔥 N in here any more: this hangs off the chip that already says it, so
      it can spend its words on what the chip does not — the run, the days, the
      best. */
@@ -3642,6 +3772,10 @@ function renderTracker() {
     <span class="tracker-note" title="A missed day leaves an empty box — nothing you've done is ever cleared.">
       ${s ? `${s} day${s === 1 ? "" : "s"} in a row` : "No streak going"}<span class="sep">·</span>${
       total} day${total === 1 ? "" : "s"} studied · best ${state.streak.best}</span>
+    <span class="tracker-note" title="Up to ${REST_PER_WEEK} missed days a week, Monday to Sunday, keep a streak standing. They hold the run without adding to it.">
+      ${left} rest day${left === 1 ? "" : "s"} left this week</span>
+    ${kept || resc ? `<span class="tracker-note" title="Remembered: right after ${KEPT_GAP} or more days unseen. Rescued: forgotten, then climbed back to where it was.">
+      This week<span class="sep">·</span>${kept} remembered after a gap${resc ? `<span class="sep">·</span>${resc} rescued` : ""}</span>` : ""}
     ${ms || sess ? `<span class="tracker-note" title="Time is summed from every question answered today, sprints included.">
       Today<span class="sep">·</span>${fmtStudyTime(ms)}${sess ? `<span class="sep">·</span>${sess} activit${sess === 1 ? "y" : "ies"}` : ""}</span>` : ""}`;
 }
@@ -3772,6 +3906,7 @@ function startTodayDrill(task) {
     .map((c, i) => ({ t: "drill", c, kind: kinds[i % kinds.length] }));
   session.idx = 0;
   session.right = session.wrong = session.learned = session.reviewed = 0;
+  session.kept = new Set(); session.rescued = new Set();
   session.combo = session.bestCombo = 0;
   session.got = {};
   session.times = []; session.quick = 0;
@@ -3806,6 +3941,32 @@ const charTile = c => {
   return `<button class="lc" data-c="${esc(c)}" title="${esc(ch.m)}">
     <span class="z">${esc(c)}</span><span class="p">${esc(ch.p)}</span></button>`;
 };
+
+/* The welcome-back offer, or what taking it did. See welcomeOffer in srs.js. */
+function welcomeCard(offer, w) {
+  if (offer) return `<div class="welcome">
+    <span class="welcome-k han" aria-hidden="true">归</span>
+    <div class="welcome-body">
+      <b>Welcome back — it's been ${offer.away} days.</b>
+      <span>${offer.due} reviews have piled up. Forgetting some is normal; it's part of learning, not a setback.
+        Start with the ${offer.keep} shakiest today and the other ${offer.later} will come round over the next ${offer.days} days.
+        Your new characters stay as they are.</span>
+      <span class="welcome-links"><button class="link-btn" id="welcomeAll">No thanks — give me all ${offer.due}</button>
+        <button class="link-btn" data-manual="breaks">How this works</button></span>
+    </div>
+  </div>`;
+  if (w && w.moved) {
+    const n = Object.keys(w.moved).length;
+    return `<div class="welcome done">
+      <span class="welcome-k han" aria-hidden="true">归</span>
+      <div class="welcome-body">
+        <span>Easing back in: ${n} review${n === 1 ? "" : "s"} spread over the next ${w.days} days.</span>
+        <button class="link-btn" id="welcomeUndo">Undo — put them back in today</button>
+      </div>
+    </div>`;
+  }
+  return "";
+}
 
 function deepTileHtml(id, cfg, chars) {
   const n = chars.length;
@@ -3853,7 +4014,7 @@ function deepWriteTileHtml() {
   const line = !chars.length
     ? (variant === "write" ? "No character you know has stroke data yet"
        : "No two-character word you can read yet has stroke data for both characters")
-    : `${st.solid}/${st.total} solid`;
+    : `${st.solid}/${st.total} solid${practiceFocus(variant).length ? ` · ${practiceFocus(variant).length} chosen` : ""}`;
   return `<div class="pr pr-deep pr-write">
     <button class="pr-write-hit" data-practice="${variant}" ${n ? "" : "disabled"}
       title="${chars.length
@@ -3893,6 +4054,10 @@ function renderToday() {
   const pct = (done + newLeft + due) ? done / (done + newLeft + due) : 1;
   const clear = newLeft === 0 && due === 0;
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  const offer = welcomeOffer();
+  const w = state.welcome && state.welcome.on === dayKey() ? state.welcome : null;
+  /* what the session will actually deal, if the offer is taken */
+  const qDue = offer ? offer.keep : due;
 
   /* The first name only. The headline is one line by design, and
      "Ready when you are, Jen O'Brien." came out as "…, J…". */
@@ -3906,7 +4071,7 @@ function renderToday() {
        : "Every character in the library is in your review rotation.")
     : done > 0
       ? `${newLeft} new and ${due} review${due === 1 ? "" : "s"} still waiting.`
-      : `${newLeft} new character${newLeft === 1 ? "" : "s"} and ${due} review${due === 1 ? "" : "s"} are queued. About ${Math.max(2, Math.round(newLeft * 1.2 + due * 0.3))} minutes.`;
+      : `${newLeft} new character${newLeft === 1 ? "" : "s"} and ${qDue} review${qDue === 1 ? "" : "s"} are queued. About ${Math.max(2, Math.round(newLeft * 1.2 + qDue * 0.3))} minutes.`;
 
   const R = 30, C = 2 * Math.PI * R, arc = C * Math.min(1, Math.max(0, clear ? 1 : pct));
   const ring = `<div class="hero-ring">
@@ -3916,7 +4081,14 @@ function renderToday() {
     </div>`;
 
   /* ---- the invitation ---- */
+  const news = newsUnseen() ? latestRelease() : null;
   const hero = `<div class="hero">
+    ${news ? `<div class="news-strip">
+      <span class="han news-k" aria-hidden="true">新</span>
+      <span class="news-t">Updated: <b>${esc(news.title)}</b></span>
+      <button class="link-btn" data-manual="news">See what's new</button>
+      <button class="news-x" id="newsX" aria-label="Dismiss">×</button>
+    </div>` : ""}
     <div class="hero-top">
       ${ring}
       <div class="hero-head">
@@ -3926,8 +4098,10 @@ function renderToday() {
       </div>
     </div>
     <div class="hero-cta">
+      ${welcomeCard(offer, w)}
       ${newLeft + due > 0
-        ? `<button class="btn btn-seal btn-lg btn-block" id="startBtn">${done > 0 ? "Continue today's session" : "Start today's session"}</button>`
+        ? `<button class="btn btn-seal btn-lg btn-block" id="startBtn">${offer ? `Start with the ${offer.keep} shakiest`
+            : done > 0 ? "Continue today's session" : "Start today's session"}</button>`
         : (remainingNew()
             ? `<button class="btn btn-ghost btn-lg btn-block" id="aheadBtn">Study ahead — ${Math.min(5, remainingNew())} more characters</button>`
             : "")}
@@ -4188,6 +4362,9 @@ function renderToday() {
     renderToday();
   });
   $("#startBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) startSession(); });
+  $("#welcomeAll")?.addEventListener("click", () => { welcomeDecline(); renderToday(); });
+  $("#newsX")?.addEventListener("click", () => { newsSeen(); renderToday(); });
+  $("#welcomeUndo")?.addEventListener("click", () => { welcomeUndo(); renderToday(); });
   $("#aheadBtn")?.addEventListener("click", async () => { if (await maybeAskLevel()) { studyAhead(5); startSession(); } });
   $("#deckToday")?.addEventListener("click", () => openFlash(got, "Today's characters"));
   $("#deckAll")?.addEventListener("click", () => openFlash(all, "All characters"));
@@ -4198,7 +4375,10 @@ function renderToday() {
     if (rail) rail.scrollBy({ left: +b.dataset.lt * rail.clientWidth * 0.8, behavior: "smooth" });
   });
   $$("#viewToday .lc").forEach(b => b.onclick = () => openChar(b.dataset.c));
-  $$("#viewToday [data-practice]").forEach(b => b.onclick = () => startPractice(b.dataset.practice));
+  $$("#viewToday [data-practice]").forEach(b => b.onclick = () => {
+    const m = b.dataset.practice;
+    FOCUS_MODES.includes(m) ? openFocus(m) : startPractice(m);
+  });
   $$("#viewToday [data-write-variant]").forEach(b => b.onclick = () => {
     state.writeVariant = b.dataset.writeVariant;
     save();
@@ -4215,15 +4395,18 @@ function renderToday() {
 }
 
 /* The streak calendar. Each day is a practice square that fills with ink. */
+const dayTitle = (k, n, rests) => n === 0 && rests.has(k)
+  ? `${k}: rest day — the streak held` : `${k}: ${n} card${n === 1 ? "" : "s"}`;
+
 function calendar(days) {
-  const cells = [];
+  const cells = [], rests = restDays();
   const start = new Date(); start.setDate(start.getDate() - days + 1);
   for (let i = 0, pad = (start.getDay() + 6) % 7; i < pad; i++) cells.push(`<div class="day blank"></div>`);
   for (let i = 0; i < days; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const k = dayKey(d), r = state.days[k], n = dayReps(r);
-    const lvl = n === 0 ? "" : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
-    cells.push(`<div class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${k}: ${n} card${n === 1 ? "" : "s"}"></div>`);
+    const lvl = n === 0 ? (rests.has(k) ? "rest" : "") : n < 5 ? "f1" : n < 12 ? "f2" : n < 25 ? "f3" : "f4";
+    cells.push(`<div class="day ${lvl} ${k === dayKey() ? "today" : ""}" title="${dayTitle(k, n, rests)}"></div>`);
   }
   return `<div class="cal">${cells.join("")}</div>`;
 }
@@ -4542,6 +4725,26 @@ function renderRadicals() {
 
 /* ---------- record ---------- */
 
+/* Reviewing is where learning is kept, and it deserves a scoreboard of its
+   own — see the retention notes in srs.js. */
+function retentionSheet() {
+  const long = heldFromLongAgo();
+  const kept = winsOver("kept", 30).length, resc = winsOver("resc", 30).length;
+  if (!long.total && !kept && !resc) return "";
+  return `<div class="sheet" style="padding:1rem">
+    <div class="stack" style="gap:.6rem">
+      <span class="eyebrow">What reviewing kept ${hanLabel("温故知新")}</span>
+      <div class="stats">
+        ${long.total ? `<div class="sheet stat"><b>${long.held}<small class="of"> / ${long.total}</small></b><small>Still solid from over a month ago</small></div>` : ""}
+        <div class="sheet stat"><b>${kept}</b><small>Remembered after ${KEPT_GAP}+ days away</small></div>
+        <div class="sheet stat"><b>${resc}</b><small>Rescued from forgotten</small></div>
+      </div>
+      <p class="note">The last two count the past 30 days. Forgetting and getting it back is how a character sticks — every rescue is one you now know better than before you lost it.
+        <button class="link-btn" data-manual="breaks">How this is counted</button></p>
+    </div>
+  </div>`;
+}
+
 /* Reps a week, going back eight weeks — the one chart charWeekTrend exists
    to draw. Bars, not a line: eight points is few enough that a line implies
    a continuity between them that isn't really there, where a missed week
@@ -4624,10 +4827,14 @@ function renderRecord() {
           <div class="stack" style="gap:.6rem">
             <span class="eyebrow">Every day since you started ${hanLabel("学习记录")}</span>
             <div class="cal-wrap">${calendar(182)}</div>
-            <div class="cal-legend">Less <span class="day"></span><span class="day f1"></span><span class="day f2"></span><span class="day f3"></span><span class="day f4"></span> More</div>
-            <p class="note">${activeDays} day${activeDays === 1 ? "" : "s"} studied · best run ${state.streak.best}</p>
+            <div class="cal-legend">Less <span class="day"></span><span class="day f1"></span><span class="day f2"></span><span class="day f3"></span><span class="day f4"></span> More
+              <span class="cal-legend-rest"><span class="day rest"></span> Rest day</span></div>
+            <p class="note">${activeDays} day${activeDays === 1 ? "" : "s"} studied · best run ${state.streak.best}
+              · ${REST_PER_WEEK} rest days a week keep a streak standing</p>
           </div>
         </div>
+
+        ${retentionSheet()}
 
         <div class="sec-head" style="margin-top:.4rem"><h2>The climb</h2>
           <span class="dim" style="font-size:.78rem">${known} of ${HQ.length} learned</span></div>
@@ -4780,6 +4987,21 @@ function openSettings() {
   openSheet(`<span class="han">设置</span> Settings`, `<div class="wrap"><div class="section">
     <div class="sheet" style="padding:1rem">
       <div class="stack" style="gap:.2rem">
+        <span class="eyebrow" style="margin-bottom:.5rem">Help ${hanLabel("帮助")}</span>
+        <div class="settings-row">
+          <label>How Hanzi Quest works<small>The full manual — the review schedule, every drill, streaks and rest days,
+            what each activity does to your progress, shortcuts and a glossary. For when you want the details.</small></label>
+          <button class="btn btn-ghost btn-sm" id="manualBtn">Open</button>
+        </div>
+        <div class="settings-row">
+          <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
+          <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet" style="padding:1rem">
+      <div class="stack" style="gap:.2rem">
         <span class="eyebrow" style="margin-bottom:.5rem">Studying ${hanLabel("学习")}</span>
         <div class="settings-row">
           <label>New characters a day<small>More isn't better — reviews compound.</small></label>
@@ -4885,10 +5107,6 @@ function openSettings() {
           <button class="btn btn-ghost btn-sm" id="placeBtn">${state.placed ? "Retake" : "Start"}</button>
         </div>
         <div class="settings-row">
-          <label>Show the tour again<small>The short walkthrough from your first visit.</small></label>
-          <button class="btn btn-ghost btn-sm" id="tourBtn">Replay</button>
-        </div>
-        <div class="settings-row">
           <label>Report a problem<small>${(() => {
             const n = window.HQDIAG ? HQDIAG.runs().reduce((t, r) => t + r.log.filter(e => e[1] === "error").length, 0) : 0;
             return n
@@ -4930,6 +5148,7 @@ function openSettings() {
   $("#syncIn")?.addEventListener("click", syncSignIn);
   $("#syncOut")?.addEventListener("click", syncSignOut);
   $("#backupBtn").onclick = openBackup;
+  $("#manualBtn").onclick = () => openManual();
   $("#reportBtn").onclick = openReport;
   $("#profileBtn").onclick = () => openProfile(false);
   $("#placeBtn").onclick = () => { closeSheet(); setTimeout(openPlacement, 250); };
@@ -6595,6 +6814,15 @@ function boot() {
     unlockAudio(); primeSpeech(); save(); renderMuted();
     if (lastSaid) setTimeout(() => say(lastSaid, true), 80);
   };
+  /* "How this works" links anywhere open the manual at their section */
+  document.addEventListener("click", e => {
+    const a = e.target.closest("[data-manual]");
+    if (a) openManual(a.dataset.manual);
+  });
+  $("#focusGo").onclick = focusStart;
+  $("#focusNo").onclick = closeFocus;
+  $("#focusClear").onclick = () => { focusUi.sel.clear(); renderFocus(); };
+  $("#focus").addEventListener("pointerdown", e => { if (e.target === $("#focus")) closeFocus(); });
   $("#askYes").onclick = () => closeAsk(true);
   $("#askNo").onclick = () => closeAsk(false);
   /* clicking the dim backdrop is a cancel, like Escape */
@@ -6612,6 +6840,7 @@ function boot() {
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (asking()) { e.preventDefault(); closeAsk(false); return; }   /* the topmost thing open */
+    if ($("#focus").classList.contains("on")) { closeFocus(); return; }
     if ($("#sprintRun").classList.contains("on")) { e.preventDefault(); $("#spClose").click(); return; }
     if (!$("#coach").hidden) { closeCoach(); return; }
     if (!$("#hail").hidden) { closeHail(); return; }

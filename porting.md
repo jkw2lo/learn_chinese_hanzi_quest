@@ -30,6 +30,10 @@ whatever the Cantonese app writes.
 | **M3** | Sprint picker tidy | `css/app.css`, `js/sprint.js` | mostly mobile |
 | **X1** | Repair rounds actually write | `js/app.js` | behaviour, all platforms |
 | **X2** | `startTodayDrill` left `session.repair` set | `js/app.js` | bug |
+| **W1** | Choose which characters a writing round draws on (`openFocus`, `state.focus`), opened from Go deeper's Writing tile for either 1 or 2 chars | `js/app.js`, `js/srs.js`, `index.html`, `css/app.css` | new, 1.13.0 |
+| **H2** | What's new and the release archive — [see below](#h2--whats-new-and-every-release-so-far-1150) | new `js/news.js`, `js/manual.js`, `js/app.js`, `js/srs.js`, `css/app.css`, `tools/smoke.mjs` | new, 1.15.0 |
+| **H1** | The in-app manual — [see below](#h1--the-manual-1140) | new `js/manual.js`, `js/app.js`, `css/app.css`, `index.html` | new, 1.14.0 |
+| **R1–R3** | Welcome back, retention wins, rest days — [see below](#r--review-without-the-grind-1130) | `js/srs.js`, `js/app.js`, `css/app.css` | new, 1.13.0 |
 
 ---
 
@@ -443,6 +447,90 @@ Worth a check in the fork, since starters are easy to add and easy to forget:
     .every(f => body.includes(f + ' ='));
 });
 ```
+
+---
+
+## R — review without the grind (1.13.0)
+
+Three changes for part-time learners, who forget between sessions and should
+not be punished for it. **None of this is in the Cantonese app yet.** All of
+it lives in `js/srs.js` (logic) and `js/app.js` (UI), with styles at the end
+of `css/app.css` (`.welcome`, `.wins`, `.day.rest`). No new files.
+
+| | Change | Files |
+|---|---|---|
+| **R1** | Welcome back: after 3+ days away with more than 20 due, the first session offers the 20 shakiest and spreads the rest over up to 7 days, shakiest soonest | `srs.js` (`welcomeOffer`, `welcomeTake`, `welcomeUndo`), `app.js` (`welcomeCard`, start button) |
+| **R2** | Retention wins: *kept* (right after 14+ days unseen) and *rescued* (missed at level 3+, then climbed back to that level), recorded on the day; shown on the finish screen, in the tracker and on the Record page | `srs.js` (`grade`, `winTally`, `winsOver`, `heldFromLongAgo`), `app.js` (`winsBlock`, `retentionSheet`) |
+| **R3** | Rest days: up to 2 missed days a week (Mon–Sun) leave a streak standing. Automatic, nothing to spend; a rest holds the run and does not lengthen it. Dashed outline on both calendars | `srs.js` (`restCover`, `restDays`, `touchStreak`, `liveStreak`), `app.js` (tracker, `calendar`) |
+
+### Traps worth knowing
+
+- **Merge.** `state.rests` is unioned in `mergeState`; `kept` and `resc` on a
+  day record are unioned in `mergeDay`. A spread moves due dates without a
+  sighting, so `mergeChar` now breaks a same-day `last` tie on `r.rs` (the
+  reschedule stamp) — without it, sync can quietly undo the spread.
+- **R1 is applied on Start, not on load.** Sync can land after the first
+  render; a record that studied yesterday on another device owes no welcome.
+  `welcomeOffer()` re-checks every render, so the card vanishes once a merge
+  brings a recent `streak.last`.
+- **R1 leaves new characters alone.** Deliberately: coming back should still
+  move you forward.
+- **R3 gap limit.** Only a run of up to 4 missed days can ever be covered
+  (Sat–Tue), so `restCover` refuses anything longer before walking it.
+
+### Strings
+
+归 (the welcome card's glyph — "return") and 温故知新 (the Record sheet's
+label — "review the old to know the new"). Both read the same in Traditional
+except 归 → 歸.
+
+---
+
+## H2 — What's new, and every release so far (1.15.0)
+
+`js/news.js` holds `RELEASES`, one user-facing entry per minor version, newest
+first. The manual opens with **What's new** (everything since the version you
+last saw) and ends with **Every release so far**. Today shows a one-line
+strip after an update until you open the notes or dismiss it; `state.seenNews`
+records what was seen, and a fresh record is stamped current silently so a new
+user isn't told about an "update". A smoke check ties the top entry to
+`APP_VERSION`'s major.minor.
+
+**The Cantonese app needs its own history, not this one** — its releases and
+dates differ. Port the mechanism (`news.js` helpers, the strip, the two
+sections, the smoke check) and write `RELEASES` from its own git log, grouped
+by minor version. `git log -G'APP_VERSION = ' -- index.html` lists every bump.
+
+---
+
+## H1 — the manual (1.14.0)
+
+**Settings → Help → How Hanzi Quest works** opens a full user manual: 24
+collapsible sections (the review schedule, what each activity does to it,
+every drill and when it unlocks, skills, coming back after a break, streaks,
+tiers, placement, Go deeper, Sprint and the 错字本, writing, menu, songs,
+flashcards, library, sticking points, sound, shortcuts, data, a glossary of
+the app's Chinese labels, and every setting), with contents, search and
+cross-links. "How this works" links on the welcome card and the Record
+retention sheet open it at the right section (`data-manual="<id>"`, handled
+once in `boot`).
+
+New file `js/manual.js`, loaded before `app.js`. **Every number in it is read
+from the live constant** (`INTERVALS`, `REST_PER_WEEK`, `TIER_UNLOCK`…), so it
+can't drift from the rules — which is also why section bodies are functions.
+
+Porting it means rewriting prose, not copying it: pinyin → jyutping, the tone
+explanations, the glossary (readings and any Traditional forms), and any
+section describing a feature the Cantonese app doesn't have. Keep the
+live-constant pattern. The smoke check "every handler in app.js calls
+something that exists" needs `manual.js` added to its declared-in list, as
+done here.
+
+Also in this batch: the three failing smoke checks introduced by R1–R3 are
+fixed (the welcome offer is taken inside `startSession`, and the new CSS moved
+above the phone layer). The three "no interests, no word" checks were already
+failing before this batch — they predate `fillInterests()` and test the old
+behaviour.
 
 ---
 

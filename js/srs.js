@@ -87,6 +87,10 @@ const blank = () => ({
      came up that week, not one row per rep. See tallyCharWeek in grade(). */
   charWeeks: {},
   sprint: { marks: {}, runs: [], best: {}, pick: {} },
+  focus: {},            /* characters chosen for a writing round, by mode — see practiceFocus */
+  rests: {},            /* days a rest covered, keyed by date — see restCover */
+  welcome: null,        /* the last welcome-back offer, and what it moved — see welcomeOffer */
+  seenNews: null,       /* the release you were last shown — see newsUnseen in news.js */
   name: "",
   interests: [],
   profiled: false,
@@ -181,7 +185,11 @@ function mergeChar(x, y) {
   /* the later sighting carries the schedule: the other device's queue has
      since moved on, and its lvl/due are a snapshot of a queue that no longer
      exists */
-  const lead = day(y.last) >= day(x.last) ? y : x;
+  /* On the same day, a record rescheduled later wins: a welcome-back spread
+     moves due dates without a sighting, and would otherwise lose to a stale
+     copy of the pile it just spread. */
+  const lead = day(y.last) > day(x.last) ? y : day(y.last) < day(x.last) ? x
+    : ((y.rs || 0) >= (x.rs || 0) ? y : x);
   const out = Object.assign({}, lead);
   CH_COUNTS.forEach(k => out[k] = bigger(x[k], y[k]));
   out.skills = {}; out.shown = {};
@@ -210,6 +218,8 @@ function mergeDay(x, y) {
     if (x[k] !== undefined || y[k] !== undefined) out[k] = bigger(x[k], y[k]);
   });
   if (x.revC || y.revC) out.revC = unionKeys(x.revC, y.revC);
+  if (x.kept || y.kept) out.kept = unionKeys(x.kept, y.kept);
+  if (x.resc || y.resc) out.resc = unionKeys(x.resc, y.resc);
   return out;
 }
 
@@ -319,6 +329,8 @@ function mergeState(a, b) {
     cur: (newer.streak || {}).cur || 0,
     last: laterDay(a.streak && a.streak.last, b.streak && b.streak.last)
   };
+  /* a rest a device recorded was a real gap bridged, whichever device saw it */
+  out.rests = unionKeys(a.rests, b.rests);
   out.started = earlierDay(a.started, b.started);
   out.lastBackup = bigger(a.lastBackup, b.lastBackup) || null;
   out.placed = (a.placed && b.placed)
@@ -423,10 +435,18 @@ function strength(c) {
 
 /* ---------- grading ---------- */
 
+/* What the last grade() was worth beyond right or wrong — a character kept
+   across a long gap, or one brought back from being forgotten. Read by the
+   session so the end of it can say so; see retention below. */
+let lastWin = null;
+
 function grade(c, correct, skill, opts = {}) {
   const r = ensure(c);
   /* Both kinds of extra work reinforce without rescheduling. */
   const extra = opts.practice || opts.speed;
+  const gap = r.last ? daysBetween(r.last, dayKey()) : 0;
+  const was = r.lvl;
+  lastWin = null;
   r.seen++;
   r.last = dayKey();
   tallyCharWeek(c, correct);
@@ -440,7 +460,12 @@ function grade(c, correct, skill, opts = {}) {
     if (!extra || r.due <= dayKey()) {
       r.lvl = Math.min(MAX_LVL, r.lvl + 1);
       r.due = addDays(dayKey(), INTERVALS[r.lvl]);
+      if (r.lapse && r.lvl >= r.lapse) { delete r.lapse; lastWin = { rescued: true }; winTally("resc", c, 1); }
     }
+    /* Remembering something you had not seen in a fortnight is the whole
+       point of reviewing, wherever it happens — a sprint or Go deeper
+       counts as much as the daily list. */
+    if (!lastWin && gap >= KEPT_GAP) { lastWin = { kept: gap }; winTally("kept", c, gap); }
   } else if (opts.speed) {
     /* A sprint. Racing produces slips that say nothing about whether you know
        the character — you knew it, you were two hundred milliseconds late
@@ -459,6 +484,9 @@ function grade(c, correct, skill, opts = {}) {
     r.due = addDays(dayKey(), INTERVALS[r.lvl]);
   } else {
     r.wrong++;
+    /* Forgotten, having once been known: it is owed a rescue, which it gets
+       when it climbs back to where it was. */
+    if (was >= LAPSE_FROM) r.lapse = Math.max(r.lapse || 0, was);
     r.lvl = Math.max(0, r.lvl - 2);
     r.due = dayKey();            /* comes round again today */
   }
@@ -653,7 +681,16 @@ function touchStreak() {
   const k = dayKey();
   const s = state.streak;
   if (s.last === k) return;
-  if (s.last && daysBetween(s.last, k) === 1) s.cur++;
+  const gap = s.last ? daysBetween(s.last, k) : 0;
+  const cover = gap > 1 ? restCover(s.last, k) : null;
+  if (gap === 1) s.cur++;
+  else if (cover) {
+    /* the missed days become rest days: they bridge the run without adding
+       to it — a streak counts days studied */
+    state.rests = state.rests || {};
+    cover.forEach(d => state.rests[d] = true);
+    s.cur++;
+  }
   else s.cur = 1;
   s.last = k;
   if (s.cur > s.best) s.best = s.cur;
@@ -670,13 +707,67 @@ function markDone(id) {
 }
 const didToday = id => !!(state.days[dayKey()] && state.days[dayKey()].did && state.days[dayKey()].did[id]);
 
-/* A streak only stands if you studied today or yesterday. */
+/* A streak stands if you studied today or yesterday — or if the days since
+   can all be rest days. */
 function liveStreak() {
   const s = state.streak;
   if (!s.last) return 0;
   const gap = daysBetween(s.last, dayKey());
-  return gap <= 1 ? s.cur : 0;
+  return gap <= 1 || restCover(s.last, dayKey()) ? s.cur : 0;
 }
+
+/* ---------- rest days ----------
+
+   Somebody learning a language around a job misses days, and a streak that
+   dies on the first one teaches that the second, third and fourth don't
+   matter either. So each week (Monday to Sunday) allows REST_PER_WEEK missed
+   days that leave the streak standing. Nothing to switch on and nothing to
+   spend: a missed day is simply covered, if the week has one left. A rest
+   holds the run; it doesn't lengthen it.
+
+   A gap is covered whole or not at all. The longest run of missed days that
+   can be is four (Saturday to Tuesday), so anything longer is refused before
+   walking it. */
+const REST_PER_WEEK = 2;
+const REST_MAX_GAP = 4;
+
+function weekOf(k) {
+  const [y, m, d] = k.split("-").map(Number);
+  return addDays(k, -((new Date(y, m - 1, d).getDay() + 6) % 7));
+}
+
+/* The days strictly between `from` and `to` that would need to be rests, or
+   null if some week hasn't that many left. */
+function restCover(from, to) {
+  const missed = daysBetween(from, to) - 1;
+  if (missed < 1) return [];
+  if (missed > REST_MAX_GAP) return null;
+  const rests = state.rests || {};
+  const used = {};
+  Object.keys(rests).forEach(k => { const w = weekOf(k); used[w] = (used[w] || 0) + 1; });
+  const need = [];
+  for (let k = addDays(from, 1); k < to; k = addDays(k, 1)) {
+    if (rests[k]) continue;
+    const w = weekOf(k);
+    if ((used[w] = (used[w] || 0) + 1) > REST_PER_WEEK) return null;
+    need.push(k);
+  }
+  return need;
+}
+
+/* Recorded rests, plus the ones the current gap is leaning on but hasn't
+   claimed yet — they are claimed when you next study. For the calendar. */
+function restDays() {
+  const out = new Set(Object.keys(state.rests || {}));
+  const s = state.streak;
+  if (s.last && s.cur) (restCover(s.last, dayKey()) || []).forEach(k => out.add(k));
+  return out;
+}
+
+const restsLeftThisWeek = () => {
+  const w = weekOf(dayKey());
+  return Math.max(0, REST_PER_WEEK - [...restDays()].filter(k => weekOf(k) === w).length);
+};
 
 /* Deliberately the standing goal and not dayGoal(): asking for five more
    characters is extra credit, and extra credit cannot take back a day you had
@@ -685,6 +776,112 @@ function goalMet() {
   const t = state.days[dayKey()];
   if (!t) return false;
   return t.new + t.rev > 0 && t.new >= Math.min(state.goalNew, remainingNew()) && dueCount() === 0;
+}
+
+/* ---------- retention: what reviewing earned ----------
+
+   New characters are easy to celebrate and reviews are not, so reviewing
+   feels like standing still. It isn't: it is the part that keeps anything.
+   Two things are worth saying out loud, and both are recorded on the day:
+
+   kept    — answered right after KEPT_GAP or more days unseen
+   rescued — forgotten having once been known (a miss at LAPSE_FROM or
+             higher), and now back up to the level it fell from */
+const KEPT_GAP = 14;
+const LAPSE_FROM = 3;
+const HELD_AGE = 30;              /* "learnt more than a month ago" */
+
+function winTally(kind, c, v) {
+  const t = today();
+  (t[kind] = t[kind] || {})[c] = v;
+}
+
+/* distinct characters over the last n days, today included */
+function winsOver(kind, n) {
+  const out = new Set();
+  for (let i = 0; i < n; i++) Object.keys((state.days[addDays(dayKey(), -i)] || {})[kind] || {}).forEach(c => out.add(c));
+  return [...out];
+}
+
+/* Of what you learnt over a month ago, how much is still solid. */
+function heldFromLongAgo() {
+  const cut = addDays(dayKey(), -HELD_AGE);
+  const old = Object.keys(state.chars).filter(c => CHAR_INDEX[c] && state.chars[c].first <= cut);
+  const held = old.filter(c => state.chars[c].lvl >= LAPSE_FROM && !state.chars[c].lapse);
+  return { total: old.length, held: held.length };
+}
+
+/* ---------- welcome back ----------
+
+   Three days away and the queue is every review those days owed, all at
+   once — the moment most likely to make somebody close the app. So after a
+   gap of WELCOME_GAP days with more than WELCOME_KEEP due, the first session
+   back offers to take only the shakiest WELCOME_KEEP and spread the rest
+   across the days after, shakiest soonest.
+
+   It is an offer, applied when the session starts rather than when the page
+   loads: sync can land after the first render, and a record that turns out
+   to have studied yesterday on the laptop owes nobody a welcome. New
+   characters are untouched — coming back should still move you forward. */
+const WELCOME_GAP = 3;
+const WELCOME_KEEP = 20;
+const WELCOME_SPREAD = 7;
+
+const awayDays = () => state.streak.last ? daysBetween(state.streak.last, dayKey()) : 0;
+
+/* What would happen, or null if nothing is owed. */
+function welcomeOffer() {
+  const w = state.welcome;
+  if (w && w.on === dayKey()) return null;           /* taken, or declined, today */
+  if (awayDays() < WELCOME_GAP) return null;
+  const due = dueList();
+  if (due.length <= WELCOME_KEEP) return null;
+  return { away: awayDays(), due: due.length, keep: WELCOME_KEEP, later: due.length - WELCOME_KEEP,
+           days: Math.min(WELCOME_SPREAD, Math.max(2, Math.ceil((due.length - WELCOME_KEEP) / WELCOME_KEEP))) };
+}
+
+/* lowest level first, then the worst hit rate, then the longest overdue */
+function shakiestFirst(list) {
+  const r = c => state.chars[c];
+  const hit = c => (r(c).right + 1) / (r(c).right + r(c).wrong + 2);
+  return [...list].sort((a, b) => (r(a).lvl - r(b).lvl) || (hit(a) - hit(b)) || (r(a).due < r(b).due ? -1 : 1));
+}
+
+function welcomeTake() {
+  const offer = welcomeOffer();
+  if (!offer) return null;
+  const k = dayKey(), now = Date.now();
+  const later = shakiestFirst(dueList()).slice(offer.keep);
+  const moved = {};
+  later.forEach((c, i) => {
+    const r = state.chars[c];
+    const to = addDays(k, 1 + Math.floor(i * offer.days / later.length));
+    moved[c] = [r.due, to];
+    r.due = to;
+    r.rs = now;
+  });
+  state.welcome = { on: k, away: offer.away, kept: offer.keep, days: offer.days, moved };
+  save();
+  return state.welcome;
+}
+
+function welcomeDecline() {
+  state.welcome = { on: dayKey(), declined: true };
+  save();
+}
+
+/* Put back whatever hasn't moved since — a character reviewed in the
+   meantime keeps its new place. */
+function welcomeUndo() {
+  const w = state.welcome;
+  if (!w || !w.moved) return;
+  const now = Date.now();
+  Object.entries(w.moved).forEach(([c, [from, to]]) => {
+    const r = state.chars[c];
+    if (r && r.due === to) { r.due = from; r.rs = now; }
+  });
+  state.welcome = { on: w.on, declined: true, undone: true };
+  save();
 }
 
 /* ---------- queues ---------- */

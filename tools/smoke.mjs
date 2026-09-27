@@ -2102,9 +2102,11 @@ console.log('\nsprint: the record behind the sheets');
                               'RegExp', 'KeyboardEvent', 'CustomEvent', 'Event', 'IntersectionObserver',
                               'getComputedStyle', 'addEventListener', 'removeEventListener', 'scrollTo',
                               'SpeechSynthesisUtterance', 'matchMedia', 'structuredClone', 'queueMicrotask']);
-  /* A name declared in any of the four counts: app.js is loaded last and
-     shares the global scope with data.js, srs.js and sprint.js. */
-  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js') + read('js/songs.js');
+  /* A name declared in any of these counts: app.js is loaded last and
+     shares the global scope with data.js, srs.js, sprint.js, songs.js,
+     news.js and manual.js. */
+  const declaredIn = appSrc + sprintSrc + read('js/srs.js') + read('js/data.js') + read('js/songs.js')
+    + read('js/manual.js') + read('js/news.js');
   const isDeclared = n => new RegExp(
     `(?:const|let|var|function)\\s+${n.replace(/\$/g, '\\$')}(?![\\w$])`).test(declaredIn);
   const dead = [...called].filter(n => !NOT_A_CALL.has(n) && !isDeclared(n));
@@ -2673,6 +2675,19 @@ console.log('\nthe black box, and the report built from it');
        const body = app.slice(app.indexOf(fn), app.indexOf(fn) + 1600);
        return ['session.menu', 'session.practice', 'session.todo', 'session.repair'].every(f => body.includes(f + ' ='));
      }));
+}
+
+console.log('\nwhat\'s new keeps up with the version');
+{
+  const news = new Function(read('js/news.js') + '\nreturn {RELEASES, verNewer, releasesSince};')();
+  const ver = /APP_VERSION = "(\d+)\.(\d+)\./.exec(read('index.html'));
+  ok('the newest release note is for this minor version — bump minor, write a note in js/news.js',
+     ver && news.RELEASES[0].v === `${ver[1]}.${ver[2]}`, `${news.RELEASES[0].v} vs ${ver && ver[1] + '.' + ver[2]}`);
+  ok('  and the notes run newest first, with no version twice',
+     news.RELEASES.every((r, i) => i === 0 || news.verNewer(news.RELEASES[i - 1].v, r.v)));
+  ok('  and 1.10 counts as newer than 1.9', news.verNewer('1.10', '1.9') && !news.verNewer('1.9', '1.10'));
+  ok('  and "since you last looked" lists only what came after', news.releasesSince('1.13').map(r => r.v).join() ===
+     news.RELEASES.filter(r => news.verNewer(r.v, '1.13')).map(r => r.v).join());
 }
 
 console.log(failures ? `\nFAILED — ${failures} check(s)\n` : '\nall checks passed\n');
