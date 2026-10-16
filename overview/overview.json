@@ -1,0 +1,40 @@
+{
+  "version": 3,
+  "name": "Hanzi Quest",
+  "tagline": "Read Chinese characters",
+  "pitch": "A practice notebook for reading Chinese, taught in an order where each character makes the next easier.",
+  "accent": "#c0392b",
+  "status": "Live",
+
+  "problem": "Learning to read Chinese can feel like memorising pictures.",
+  "stats": [
+    { "value": "763", "label": "characters in 12 stages, plus a kitchen pack" },
+    { "value": "4", "label": "skills kept apart: read, say, recall, write" },
+    { "value": "30", "label": "radicals taught, each with its characters" }
+  ],
+
+  "features": [
+    { "title": "Characters in families", "text": "Most characters are two parts: one hints at the meaning, one at the sound.",
+      "details": ["Learn a radical once and every character carrying it gets easier", "Each card names its parts: 大 big + 人 person", "A Words you can read deck fills itself as characters pile up"],
+      "screen": { "src": "radicals.png", "alt": "The radicals page explaining 女 woman plus 马 mǎ makes 妈 mā, mum" } },
+    { "title": "Read a real menu", "text": "One character a day from a restaurant menu, inked in as you learn it.",
+      "details": ["The menu grows with you: dishes, then descriptions, then specials", "Hover any character for its pinyin and meaning", "Every glyph on it is one the app teaches"],
+      "screen": { "src": "menu.png", "alt": "A Chinese restaurant menu of noodles, rice, dishes, soup and drinks with prices and pinyin" } },
+    { "title": "See what's sticking", "text": "A calendar of every day studied, and each skill's progress on its own.",
+      "details": ["You'll recognise 学 long before you can write it, and it shows", "What reviewing kept: still solid a month later", "Rest days keep a streak standing"],
+      "screen": { "src": "record.png", "alt": "The Record: 140 characters, a 16-day streak, a calendar of study days and skill bars for recognise, pronounce, recall and write" } },
+    { "title": "Practice that's fair", "text": "No drill ever shows a character you haven't met yet.",
+      "details": ["Timed Sprint sheets, marked only when you hand them in", "Handwriting allows slips and never sets reading back", "A placement quiz credits only what you got right"] }
+  ],
+
+  "screens": [
+    { "src": "desktop.png", "alt": "Hanzi Quest's Today page: today's session, a five-step practice list, word of the week and flashcard decks", "caption": "Today: a short list you can finish" }
+  ],
+
+  "facts": {
+    "worksOn": "Desktop and phone browsers",
+    "data": "In your browser, or synced",
+    "builtWith": "Plain HTML, CSS and JS",
+    "started": "Sep 2026"
+  }
+}

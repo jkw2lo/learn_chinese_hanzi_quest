@@ -1,0 +1,67 @@
+{
+  "url": "https://jkw2lo.github.io/learn_chinese_hanzi_quest/",
+  "shots": [
+    {
+      "file": "desktop.png",
+      "steps": [
+        "eval:const N = 140, DAYS = 44; const pad = n => String(n).padStart(2, '0'); const key = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); const ago = n => { const d = new Date(); d.setHours(12); d.setDate(d.getDate() - n); return key(d); }; let r = 11; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647; const s = blank(); const learned = HQ.slice(0, N).map(e => e.c); learned.forEach((c, i) => { const age = Math.round(DAYS * (1 - i / N)); const lvl = Math.max(1, Math.min(7, Math.round(age / 7) + (rnd() < 0.3 ? -1 : 0))); const seen = 3 + Math.round(age / 3), wrong = Math.round(seen * 0.15 * rnd()); const k = Math.round(seen * 0.6); s.chars[c] = { lvl, due: rnd() < 0.12 ? ago(0) : ago(-1 - Math.round(rnd() * 9)), seen, right: seen - wrong, wrong, skills: { r: k, p: Math.round(k * 0.8), c: Math.round(k * 0.5), w: Math.round(k * 0.25) }, shown: { r: k + 1, p: k, c: Math.round(k * 0.6), w: Math.round(k * 0.3) }, first: ago(age), last: ago(Math.min(age, Math.round(rnd() * 4))) }; }); for (let n = DAYS; n >= 1; n--) if (n !== 17 && n !== 30) s.days[ago(n)] = { new: 2 + Math.round(rnd() * 3), rev: 18 + Math.round(rnd() * 40), ms: Math.round((12 + rnd() * 14) * 60000), sessions: 1 }; s.days[ago(0)] = { new: 0, rev: 0 }; s.streak = { cur: 16, best: 16, last: ago(1) }; s.started = ago(DAYS); s.tour = true; s.intro = true; s.profiled = true; s.levelAsked = true; s.level = 'none'; s.seenNews = typeof APP_VERSION === 'string' ? APP_VERSION : null; s.hailed = (typeof MILESTONES !== 'undefined' && Array.isArray(MILESTONES)) ? MILESTONES.map(m => m.id || m.n || m).filter(x => typeof x !== 'object') : []; const menu = (typeof MENU_CHARS !== 'undefined' ? MENU_CHARS : []).filter(c => learned.includes(c)); s.menuTaught = menu.slice(0, Math.round(menu.length * 0.7)); localStorage.setItem(KEY, JSON.stringify(s));",
+        "reload"
+      ],
+      "size": [
+        1440,
+        760
+      ]
+    },
+    {
+      "file": "menu.png",
+      "size": [
+        1280,
+        900
+      ],
+      "scale": 2,
+      "steps": [
+        "eval:const N = 140, DAYS = 44; const pad = n => String(n).padStart(2, '0'); const key = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); const ago = n => { const d = new Date(); d.setHours(12); d.setDate(d.getDate() - n); return key(d); }; let r = 11; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647; const s = blank(); const learned = HQ.slice(0, N).map(e => e.c); learned.forEach((c, i) => { const age = Math.round(DAYS * (1 - i / N)); const lvl = Math.max(1, Math.min(7, Math.round(age / 7) + (rnd() < 0.3 ? -1 : 0))); const seen = 3 + Math.round(age / 3), wrong = Math.round(seen * 0.15 * rnd()); const k = Math.round(seen * 0.6); s.chars[c] = { lvl, due: rnd() < 0.12 ? ago(0) : ago(-1 - Math.round(rnd() * 9)), seen, right: seen - wrong, wrong, skills: { r: k, p: Math.round(k * 0.8), c: Math.round(k * 0.5), w: Math.round(k * 0.25) }, shown: { r: k + 1, p: k, c: Math.round(k * 0.6), w: Math.round(k * 0.3) }, first: ago(age), last: ago(Math.min(age, Math.round(rnd() * 4))) }; }); for (let n = DAYS; n >= 1; n--) if (n !== 17 && n !== 30) s.days[ago(n)] = { new: 2 + Math.round(rnd() * 3), rev: 18 + Math.round(rnd() * 40), ms: Math.round((12 + rnd() * 14) * 60000), sessions: 1 }; s.days[ago(0)] = { new: 0, rev: 0 }; s.streak = { cur: 16, best: 16, last: ago(1) }; s.started = ago(DAYS); s.tour = true; s.intro = true; s.profiled = true; s.levelAsked = true; s.level = 'none'; s.seenNews = typeof APP_VERSION === 'string' ? APP_VERSION : null; s.hailed = (typeof MILESTONES !== 'undefined' && Array.isArray(MILESTONES)) ? MILESTONES.map(m => m.id || m.n || m).filter(x => typeof x !== 'object') : []; const menu = (typeof MENU_CHARS !== 'undefined' ? MENU_CHARS : []).filter(c => learned.includes(c)); s.menuTaught = menu.slice(0, Math.round(menu.length * 0.7)); localStorage.setItem(KEY, JSON.stringify(s));",
+        "reload",
+        "eval:[...document.querySelectorAll('button, a')].find(b => b.offsetParent && b.textContent.replace(/\\s+/g,' ').trim().endsWith(\"Menu\")).click()",
+        "wait:800"
+      ],
+      "clip": "#viewMenu .menu-card",
+      "pad": 12,
+      "maxHeight": 560
+    },
+    {
+      "file": "radicals.png",
+      "size": [
+        1280,
+        900
+      ],
+      "scale": 2,
+      "steps": [
+        "eval:const N = 140, DAYS = 44; const pad = n => String(n).padStart(2, '0'); const key = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); const ago = n => { const d = new Date(); d.setHours(12); d.setDate(d.getDate() - n); return key(d); }; let r = 11; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647; const s = blank(); const learned = HQ.slice(0, N).map(e => e.c); learned.forEach((c, i) => { const age = Math.round(DAYS * (1 - i / N)); const lvl = Math.max(1, Math.min(7, Math.round(age / 7) + (rnd() < 0.3 ? -1 : 0))); const seen = 3 + Math.round(age / 3), wrong = Math.round(seen * 0.15 * rnd()); const k = Math.round(seen * 0.6); s.chars[c] = { lvl, due: rnd() < 0.12 ? ago(0) : ago(-1 - Math.round(rnd() * 9)), seen, right: seen - wrong, wrong, skills: { r: k, p: Math.round(k * 0.8), c: Math.round(k * 0.5), w: Math.round(k * 0.25) }, shown: { r: k + 1, p: k, c: Math.round(k * 0.6), w: Math.round(k * 0.3) }, first: ago(age), last: ago(Math.min(age, Math.round(rnd() * 4))) }; }); for (let n = DAYS; n >= 1; n--) if (n !== 17 && n !== 30) s.days[ago(n)] = { new: 2 + Math.round(rnd() * 3), rev: 18 + Math.round(rnd() * 40), ms: Math.round((12 + rnd() * 14) * 60000), sessions: 1 }; s.days[ago(0)] = { new: 0, rev: 0 }; s.streak = { cur: 16, best: 16, last: ago(1) }; s.started = ago(DAYS); s.tour = true; s.intro = true; s.profiled = true; s.levelAsked = true; s.level = 'none'; s.seenNews = typeof APP_VERSION === 'string' ? APP_VERSION : null; s.hailed = (typeof MILESTONES !== 'undefined' && Array.isArray(MILESTONES)) ? MILESTONES.map(m => m.id || m.n || m).filter(x => typeof x !== 'object') : []; const menu = (typeof MENU_CHARS !== 'undefined' ? MENU_CHARS : []).filter(c => learned.includes(c)); s.menuTaught = menu.slice(0, Math.round(menu.length * 0.7)); localStorage.setItem(KEY, JSON.stringify(s));",
+        "reload",
+        "eval:[...document.querySelectorAll('button, a')].find(b => b.offsetParent && b.textContent.replace(/\\s+/g,' ').trim().endsWith(\"Radicals\")).click()",
+        "wait:800"
+      ],
+      "clip": "#viewRadicals .sheet.rx",
+      "pad": 12,
+      "maxHeight": 320
+    },
+    {
+      "file": "record.png",
+      "size": [
+        1280,
+        900
+      ],
+      "scale": 2,
+      "steps": [
+        "eval:const N = 140, DAYS = 44; const pad = n => String(n).padStart(2, '0'); const key = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); const ago = n => { const d = new Date(); d.setHours(12); d.setDate(d.getDate() - n); return key(d); }; let r = 11; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647; const s = blank(); const learned = HQ.slice(0, N).map(e => e.c); learned.forEach((c, i) => { const age = Math.round(DAYS * (1 - i / N)); const lvl = Math.max(1, Math.min(7, Math.round(age / 7) + (rnd() < 0.3 ? -1 : 0))); const seen = 3 + Math.round(age / 3), wrong = Math.round(seen * 0.15 * rnd()); const k = Math.round(seen * 0.6); s.chars[c] = { lvl, due: rnd() < 0.12 ? ago(0) : ago(-1 - Math.round(rnd() * 9)), seen, right: seen - wrong, wrong, skills: { r: k, p: Math.round(k * 0.8), c: Math.round(k * 0.5), w: Math.round(k * 0.25) }, shown: { r: k + 1, p: k, c: Math.round(k * 0.6), w: Math.round(k * 0.3) }, first: ago(age), last: ago(Math.min(age, Math.round(rnd() * 4))) }; }); for (let n = DAYS; n >= 1; n--) if (n !== 17 && n !== 30) s.days[ago(n)] = { new: 2 + Math.round(rnd() * 3), rev: 18 + Math.round(rnd() * 40), ms: Math.round((12 + rnd() * 14) * 60000), sessions: 1 }; s.days[ago(0)] = { new: 0, rev: 0 }; s.streak = { cur: 16, best: 16, last: ago(1) }; s.started = ago(DAYS); s.tour = true; s.intro = true; s.profiled = true; s.levelAsked = true; s.level = 'none'; s.seenNews = typeof APP_VERSION === 'string' ? APP_VERSION : null; s.hailed = (typeof MILESTONES !== 'undefined' && Array.isArray(MILESTONES)) ? MILESTONES.map(m => m.id || m.n || m).filter(x => typeof x !== 'object') : []; const menu = (typeof MENU_CHARS !== 'undefined' ? MENU_CHARS : []).filter(c => learned.includes(c)); s.menuTaught = menu.slice(0, Math.round(menu.length * 0.7)); localStorage.setItem(KEY, JSON.stringify(s));",
+        "reload",
+        "eval:[...document.querySelectorAll('button, a')].find(b => b.offsetParent && b.textContent.replace(/\\s+/g,' ').trim().endsWith(\"Record\")).click()",
+        "wait:800"
+      ],
+      "clip": "#viewRecord .cols",
+      "pad": 12,
+      "maxHeight": 560
+    }
+  ]
+}
