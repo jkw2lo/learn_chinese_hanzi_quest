@@ -1270,9 +1270,8 @@ so a stray JSON file doesn't wipe a streak, asks (via `askConfirm`, not
 
 ## Licensing
 
-The code is yours to license as you see fit — there's no LICENSE file, which
-means all rights reserved by default. Two things in here aren't yours to
-relicense, though:
+The code is under the [MIT licence](LICENSE). Two things in here aren't
+covered by it:
 
 - **Stroke data** (`js/strokes.js`) comes from Make Me a Hanzi, under the
   Arphic Public License. Keep the attribution below if you publish this.
