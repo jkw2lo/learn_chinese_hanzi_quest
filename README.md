@@ -1029,6 +1029,20 @@ A missed day draws an **empty box** in the tracker — the row is built from
 calendar dates, so nothing you've done is ever cleared. Only the 🔥 counter
 resets. The tracker also shows total days studied, which never resets.
 
+## Demo for portfolio visitors
+
+Opened from Jen's portfolio (`?from=portfolio`) with nothing saved yet, the app offers two ways
+in. **See the demo** loads the learner the screenshots use (`overview/shots.json`): 140
+characters over six weeks, a 16-day streak, most of the menu read, and the tour, intro, profile
+and placement already done. It then walks round the app in seven steps: Today, the app's four
+defining features, where every section lives, and over to you. **Start fresh** leaves a new
+learner. While the demo is in use, a small banner at the bottom left offers Start fresh, which
+puts the record back to blank. Anyone arriving another way, or with their own record, sees none
+of it.
+
+`js/demo.js` holds the learner and the steps; `js/demo-welcome.js` is the overlay, shared with
+the other projects (its master and the style guide, `DEMO.md`, are in the portfolio repo).
+
 ## Files
 
     index.html        page shell
